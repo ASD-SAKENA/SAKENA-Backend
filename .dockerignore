@@ -1,0 +1,22 @@
+# Build output
+build/
+.gradle/
+
+# IDE / OS
+.idea/
+*.iml
+.vscode/
+.DS_Store
+
+# Git & docs
+.git/
+.gitignore
+*.md
+
+# Env files (never bake secrets into the image)
+.env
+.env.*
+!.env.example
+
+# Tests / logs
+*.log

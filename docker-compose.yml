@@ -1,0 +1,42 @@
+services:
+  db:
+    image: postgres:14
+    container_name: sakena-db
+    environment:
+      POSTGRES_DB: ${DB_NAME:-sakena}
+      POSTGRES_USER: ${DB_USERNAME:-sakena}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-sakena}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - sakena-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-sakena} -d ${DB_NAME:-sakena}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sakena-app
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:postgresql://db:5432/${DB_NAME:-sakena}
+      DB_USERNAME: ${DB_USERNAME:-sakena}
+      DB_PASSWORD: ${DB_PASSWORD:-sakena}
+      SERVER_PORT: 8080
+    ports:
+      - "${SERVER_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health | grep -q UP || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+
+volumes:
+  sakena-db-data:

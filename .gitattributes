@@ -1,0 +1,5 @@
+# Keep shell scripts and the Gradle wrapper LF on every platform.
+* text=auto eol=lf
+*.bat text eol=crlf
+gradlew text eol=lf
+*.jar binary
