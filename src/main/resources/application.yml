@@ -49,3 +49,7 @@ logging:
   level:
     root: INFO
     com.sakena: ${LOG_LEVEL_APP:DEBUG}
+
+jwt:
+  secret: ipp3tok924jIS0d2q7PklWf6HwvPoUjIGsFU2a9kvMs=
+  expiration-ms: 86400000
