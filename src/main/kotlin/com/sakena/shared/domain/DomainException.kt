@@ -5,7 +5,7 @@ package com.sakena.shared.domain
  * domain layer free of any web/framework dependency while still letting the
  * presentation layer translate failures into HTTP responses in one place.
  */
-sealed class DomainException(message: String) : RuntimeException(message)
+open class DomainException(message: String) : RuntimeException(message)
 
 /** The requested aggregate/entity does not exist. Maps to HTTP 404. */
 open class EntityNotFoundException(message: String) : DomainException(message)
