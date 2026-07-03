@@ -25,6 +25,10 @@ class UserRepositoryAdapter(
         return jpaRepo.findByEmail(email)?.let { toDomain(it) }
     }
 
+    override fun findById(id: UserId): User? {
+        return jpaRepo.findById(id.value).orElse(null)?.let { toDomain(it) }
+    }
+
     override fun existsByUsername(username: String): Boolean =
         jpaRepo.existsByUsername(username)
 
