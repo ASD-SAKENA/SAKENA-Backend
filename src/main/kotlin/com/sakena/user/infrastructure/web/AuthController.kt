@@ -1,8 +1,10 @@
 package com.sakena.user.infrastructure.web
 
 import com.sakena.user.application.AuthService
+import com.sakena.user.application.ForgotPasswordCommand
 import com.sakena.user.application.LoginCommand
 import com.sakena.user.application.RegisterCommand
+import com.sakena.user.application.ResetPasswordCommand
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.tags.Tag
 import jakarta.validation.Valid
@@ -37,5 +39,20 @@ class AuthController(
         val command = LoginCommand(request.username, request.password)
         val token = authService.login(command)
         return AuthResponse(token, request.username, "USER")
+    }
+
+    @PostMapping("/forgot-password")
+    @ResponseStatus(HttpStatus.OK)
+    @Operation(summary = "Request password reset")
+    fun forgotPassword(@RequestBody @Valid request: ForgotPasswordRequest) {
+        authService.forgotPassword(ForgotPasswordCommand(request.email))
+    }
+
+    @PostMapping("/reset-password")
+    @ResponseStatus(HttpStatus.OK)
+    @Operation(summary = "Reset password using token")
+    fun resetPassword(@RequestBody @Valid request: ResetPasswordRequest): AuthResponse {
+        authService.resetPassword(ResetPasswordCommand(request.token, request.newPassword))
+        return AuthResponse("", "", "")
     }
 }
