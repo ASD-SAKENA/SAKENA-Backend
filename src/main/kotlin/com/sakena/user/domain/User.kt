@@ -53,4 +53,11 @@ data class User(
     fun deactivate() {
         // TODO: deactivate and remove user
     }
+
+    fun withNewPassword(rawPassword: String, passwordEncoder: (String) -> String): User {
+        return this.copy(
+            passwordHash = passwordEncoder(rawPassword),
+            updatedAt = Instant.now()
+        )
+    }
 }
