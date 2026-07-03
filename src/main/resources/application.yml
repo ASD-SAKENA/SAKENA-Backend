@@ -25,6 +25,18 @@ spring:
     enabled: true
     baseline-on-migrate: true
 
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: ${MAIL_USERNAME:sakena.team@gmail.com}
+    password: ${MAIL_PASSWORD:qmxsngzapfukfmql}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+#  qmxs ngza pfuk fmql
 server:
   port: ${SERVER_PORT:8080}
 
@@ -53,3 +65,7 @@ logging:
 jwt:
   secret: ipp3tok924jIS0d2q7PklWf6HwvPoUjIGsFU2a9kvMs=
   expiration-ms: 86400000
+
+app:
+  frontend-url: http://localhost:3000
+  reset-token-expiration-minutes: 60
