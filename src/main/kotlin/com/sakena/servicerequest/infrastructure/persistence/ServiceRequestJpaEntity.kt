@@ -36,6 +36,9 @@ class ServiceRequestJpaEntity(
     @Column(name = "created_at", nullable = false)
     var createdAt: Instant,
 
+    @Column(name = "updated_by", nullable = false)
+    var updatedBy: UUID,
+
     @Column(name = "updated_at", nullable = false)
     var updatedAt: Instant,
 
