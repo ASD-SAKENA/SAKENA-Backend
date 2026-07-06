@@ -26,11 +26,15 @@ class ServiceRequestController(
     @SecurityRequirement(name = "bearerAuth")   // <-- این خط را اضافه کنید
     @Operation(summary = "Create a new service request (resident)")
     fun createRequest(@RequestBody @Valid request: CreateServiceRequestRequest): ServiceRequestResponse {
+        request.validateOrThrow()
+
         val userId = getCurrentUserId()
         val command = CreateServiceRequestCommand(
-            title = request.title,
-            description = request.description,
-            location = request.location
+            title = request.title!!.trim(),
+            description = request.description!!.trim(),
+            location = request.location?.takeIf { it.isNotBlank() }?.trim(),
+            categoryGroup = request.categoryGroup!!,
+            subCategory = request.subCategory!!
         )
         val created = serviceRequestService.create(command, userId)
         return ServiceRequestResponse.fromDomain(created)
