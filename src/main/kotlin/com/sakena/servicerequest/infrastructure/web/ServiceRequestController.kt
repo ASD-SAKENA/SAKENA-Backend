@@ -1,7 +1,10 @@
 package com.sakena.servicerequest.infrastructure.web
 
+import com.sakena.servicerequest.application.AssignServiceRequestCommand
+import com.sakena.servicerequest.application.ApproveServiceRequestCommand
 import com.sakena.servicerequest.application.CreateServiceRequestCommand
 import com.sakena.servicerequest.application.ServiceRequestService
+import com.sakena.servicerequest.domain.ServiceRequestId
 import com.sakena.user.application.ProfileService
 import com.sakena.user.domain.UserId
 import io.swagger.v3.oas.annotations.Operation
@@ -71,6 +74,26 @@ class ServiceRequestController(
                 )
             }
         )
+    }
+
+    @PatchMapping("/{id}/approve")
+    @Operation(summary = "Approve a pending service request")
+    fun approveRequest(@PathVariable id: String): ServiceRequestResponse {
+        val command = ApproveServiceRequestCommand(serviceRequestId = ServiceRequestId.fromString(id), userId = getCurrentUserId())
+        val approved = serviceRequestService.approveRequest(command)
+        return ServiceRequestResponse.fromDomain(approved)
+    }
+
+    @PatchMapping("/{id}/assign")
+    @Operation(summary = "Assign an approved service request to a worker")
+    fun assignRequest(@PathVariable id: String, @RequestParam workerId: String): ServiceRequestResponse {
+        val command = AssignServiceRequestCommand(
+            serviceRequestId = id,
+            workerId = com.sakena.user.domain.UserId.fromString(workerId),
+            userId = getCurrentUserId()
+        )
+        val assigned = serviceRequestService.assignRequest(command)
+        return ServiceRequestResponse.fromDomain(assigned)
     }
 
     private fun getCurrentUserId(): UserId {
