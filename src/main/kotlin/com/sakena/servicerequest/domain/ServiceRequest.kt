@@ -101,11 +101,12 @@ data class ServiceRequest(
         }
     }
 
-    fun assignTo(workerId: UserId): ServiceRequest {
+    fun assignTo(workerId: UserId, userId : UserId): ServiceRequest {
         return this.copy(
             assignedTo = workerId,
-            status = ServiceRequestStatus.APPROVED,
-            updatedAt = Instant.now()
+            status = ServiceRequestStatus.ASSIGNED,
+            updatedAt = Instant.now(),
+            updatedBy = userId
         )
     }
 
