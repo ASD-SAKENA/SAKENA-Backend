@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS service_requests (
     description TEXT NOT NULL,
     location VARCHAR(255),
     created_by UUID NOT NULL,
+    updated_by UUID NOT NULL,
     created_at TIMESTAMP NOT NULL,
     updated_at TIMESTAMP NOT NULL,
     status VARCHAR(50) NOT NULL,
