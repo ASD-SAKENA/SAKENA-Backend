@@ -49,6 +49,30 @@ class ServiceRequestController(
         return requests.map { ServiceRequestResponse.fromDomain(it) }
     }
 
+    @GetMapping("/categories")
+    @Operation(summary = "Get service request categories and subcategories for the frontend")
+    fun getCategories(
+        @RequestParam(required = false, name = "categoryGroup") categoryGroupValue: String?,
+        @RequestParam(required = false, name = "category") categoryValue: String?
+    ): CategoryOptionsResponse {
+        val result = serviceRequestService.getCategories(categoryGroupValue ?: categoryValue)
+
+        return CategoryOptionsResponse(
+            categories = result.categories.map { group ->
+                CategoryGroupResponse(
+                    value = group.value,
+                    label = group.label,
+                    subCategories = group.subCategories.map { subCategory ->
+                        CategoryOptionResponse(
+                            value = subCategory.value,
+                            label = subCategory.label
+                        )
+                    }
+                )
+            }
+        )
+    }
+
     private fun getCurrentUserId(): UserId {
         val username = SecurityContextHolder.getContext().authentication.name
         val user = profileService.getUserByUsername(username)

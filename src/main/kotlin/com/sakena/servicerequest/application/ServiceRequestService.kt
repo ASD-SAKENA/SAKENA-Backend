@@ -44,4 +44,33 @@ class ServiceRequestService(
     fun getRequestById(id: ServiceRequestId): ServiceRequest? {
         return serviceRequestRepository.findById(id)
     }
+
+    fun getCategories(categoryGroupValue: String?): CategoryOptionsResult {
+        val selectedGroup = categoryGroupValue
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+            ?.let { rawValue ->
+                ServiceCategoryGroup.entries.firstOrNull { it.name.equals(rawValue, ignoreCase = true) }
+                    ?: throw DomainValidationException("Category group '$rawValue' is invalid")
+            }
+
+        val groups = selectedGroup?.let { listOf(it) } ?: ServiceCategoryGroup.entries
+
+        val categories = groups.map { group ->
+            CategoryGroupOptionResult(
+                value = group.name,
+                label = group.persianName,
+                subCategories = ServiceSubCategory.entries
+                    .filter { it.group == group }
+                    .map { subCategory ->
+                        SubCategoryOptionResult(
+                            value = subCategory.name,
+                            label = subCategory.persianName
+                        )
+                    }
+            )
+        }
+
+        return CategoryOptionsResult(categories = categories)
+    }
 }
