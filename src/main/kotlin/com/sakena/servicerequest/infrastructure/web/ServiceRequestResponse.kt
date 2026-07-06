@@ -1,7 +1,9 @@
 package com.sakena.servicerequest.infrastructure.web
 
+import com.sakena.servicerequest.domain.ServiceCategoryGroup
 import com.sakena.servicerequest.domain.ServiceRequest
 import com.sakena.servicerequest.domain.ServiceRequestStatus
+import com.sakena.servicerequest.domain.ServiceSubCategory
 import java.time.Instant
 
 data class ServiceRequestResponse(
@@ -9,6 +11,8 @@ data class ServiceRequestResponse(
     val title: String,
     val description: String,
     val location: String?,
+    val categoryGroup: ServiceCategoryGroup,
+    val subCategory: ServiceSubCategory,
     val createdAt: Instant,
     val updatedAt: Instant,
     val status: ServiceRequestStatus,
@@ -22,6 +26,8 @@ data class ServiceRequestResponse(
                 title = request.title,
                 description = request.description,
                 location = request.location,
+                categoryGroup = request.categoryGroup,
+                subCategory = request.subCategory,
                 createdAt = request.createdAt,
                 updatedAt = request.updatedAt,
                 status = request.status,

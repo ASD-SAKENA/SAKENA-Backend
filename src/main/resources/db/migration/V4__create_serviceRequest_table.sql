@@ -7,6 +7,8 @@ CREATE TABLE IF NOT EXISTS service_requests (
     created_at TIMESTAMP NOT NULL,
     updated_at TIMESTAMP NOT NULL,
     status VARCHAR(50) NOT NULL,
+    category_group VARCHAR(50) NOT NULL DEFAULT 'GENERAL',
+    sub_category VARCHAR(50) NOT NULL DEFAULT 'GENERAL',
     assigned_to UUID,
     resolved_at TIMESTAMP
     );
