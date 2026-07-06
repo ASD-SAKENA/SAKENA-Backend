@@ -1,11 +1,18 @@
 package com.sakena.servicerequest.infrastructure.web
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.databind.exc.InvalidFormatException
+import com.sakena.servicerequest.application.CategoryGroupOptionResult
+import com.sakena.servicerequest.application.CategoryOptionsResult
 import com.sakena.servicerequest.application.CreateServiceRequestCommand
 import com.sakena.servicerequest.application.ServiceRequestService
+import com.sakena.servicerequest.application.SubCategoryOptionResult
+import com.sakena.servicerequest.domain.ServiceCategoryGroup
 import com.sakena.servicerequest.domain.ServiceRequest
+import com.sakena.servicerequest.domain.ServiceSubCategory
 import com.sakena.servicerequest.domain.ServiceRequestId
 import com.sakena.servicerequest.domain.ServiceRequestStatus
+import com.sakena.shared.domain.DomainValidationException
 import com.sakena.user.application.ProfileService
 import com.sakena.user.domain.Role
 import com.sakena.user.domain.User
@@ -24,15 +31,13 @@ import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.*
 import org.springframework.test.web.servlet.setup.MockMvcBuilders
-import org.springframework.validation.BindException
 import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean
+import org.springframework.http.converter.HttpMessageNotReadableException
 import org.springframework.web.bind.MethodArgumentNotValidException
-import org.springframework.web.bind.annotation.ControllerAdvice
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestControllerAdvice
 import java.time.Instant
-import java.util.HashMap
 
 @RestControllerAdvice
 class TestControllerAdvice {
@@ -47,6 +52,12 @@ class TestControllerAdvice {
             "status" to HttpStatus.BAD_REQUEST.value(),
             "errors" to errors
         )
+    }
+
+    @ExceptionHandler(DomainValidationException::class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    fun handleDomainValidationException(e: DomainValidationException): Map<String, String> {
+        return mapOf("error" to (e.message ?: "Invalid request"))
     }
 
     @ExceptionHandler(IllegalArgumentException::class)
@@ -137,15 +148,19 @@ class ServiceRequestControllerTest {
             val request = CreateServiceRequestRequest(
                 title = "Broken Elevator",
                 description = "The elevator is not working",
-                location = "Building A, Floor 2"
+                location = "Building A, Floor 2",
+                categoryGroup = ServiceCategoryGroup.FACILITIES,
+                subCategory = ServiceSubCategory.ELEVATOR
             )
 
             val createdRequest = createMockServiceRequest(
-                title = request.title,
-                description = request.description,
-                location = request.location,
+                title = request.title!!,
+                description = request.description!!,
+                location = request.location!!,
                 createdBy = testUserId,
-                status = ServiceRequestStatus.PENDING
+                status = ServiceRequestStatus.PENDING,
+                categoryGroup = ServiceCategoryGroup.FACILITIES,
+                subCategory = ServiceSubCategory.ELEVATOR
             )
 
             every { profileService.getUserByUsername(testUsername) } returns testUser
@@ -166,6 +181,8 @@ class ServiceRequestControllerTest {
                 .andExpect(jsonPath("$.title").value(request.title))
                 .andExpect(jsonPath("$.description").value(request.description))
                 .andExpect(jsonPath("$.location").value(request.location))
+                .andExpect(jsonPath("$.categoryGroup").value("FACILITIES"))
+                .andExpect(jsonPath("$.subCategory").value("ELEVATOR"))
                 .andExpect(jsonPath("$.status").value("PENDING"))
         } finally {
             cleanupSecurityContext()
@@ -180,7 +197,9 @@ class ServiceRequestControllerTest {
             val request = CreateServiceRequestRequest(
                 title = "",
                 description = "The elevator is not working",
-                location = "Building A, Floor 2"
+                location = "Building A, Floor 2",
+                categoryGroup = ServiceCategoryGroup.GENERAL,
+                subCategory = ServiceSubCategory.GENERAL
             )
 
             mockMvc.perform(
@@ -202,7 +221,9 @@ class ServiceRequestControllerTest {
             val request = CreateServiceRequestRequest(
                 title = "Broken Elevator",
                 description = "",
-                location = "Building A, Floor 2"
+                location = "Building A, Floor 2",
+                categoryGroup = ServiceCategoryGroup.GENERAL,
+                subCategory = ServiceSubCategory.GENERAL
             )
 
             mockMvc.perform(
@@ -217,6 +238,146 @@ class ServiceRequestControllerTest {
     }
 
     @Test
+    fun `createRequest should return 400 when location is blank`() {
+        try {
+            setupSecurityContext()
+
+            val request = CreateServiceRequestRequest(
+                title = "Broken Elevator",
+                description = "The elevator is not working",
+                location = "   ",
+                categoryGroup = ServiceCategoryGroup.GENERAL,
+                subCategory = ServiceSubCategory.GENERAL
+            )
+
+            mockMvc.perform(
+                post("/api/v1/service-requests")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request))
+            )
+                .andExpect(status().isBadRequest)
+                .andExpect(jsonPath("$.error").value("Location cannot be blank when provided"))
+        } finally {
+            cleanupSecurityContext()
+        }
+    }
+
+    @Test
+    fun `createRequest should return 500 when category value is invalid`() {
+        try {
+            setupSecurityContext()
+
+            val invalidJson = """
+                {
+                  "title": "Broken Elevator",
+                  "description": "The elevator is not working",
+                  "location": "Building A",
+                  "categoryGroup": "INVALID_GROUP",
+                  "subCategory": "GENERAL"
+                }
+            """.trimIndent()
+
+            mockMvc.perform(
+                post("/api/v1/service-requests")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(invalidJson)
+            )
+                .andExpect(status().isInternalServerError)
+        } finally {
+            cleanupSecurityContext()
+        }
+    }
+
+    @Test
+    fun `createRequest should return 400 when subcategory does not belong to the selected category group`() {
+        try {
+            setupSecurityContext()
+
+            val request = CreateServiceRequestRequest(
+                title = "Broken Elevator",
+                description = "The elevator is not working",
+                location = "Building A",
+                categoryGroup = ServiceCategoryGroup.FACILITIES,
+                subCategory = ServiceSubCategory.GARDEN
+            )
+
+            every { profileService.getUserByUsername(testUsername) } returns testUser
+            every {
+                serviceRequestService.create(
+                    any<CreateServiceRequestCommand>(),
+                    testUserId
+                )
+            } throws DomainValidationException("Sub category 'باغچه' is not valid for category group 'تاسیسات'")
+
+            mockMvc.perform(
+                post("/api/v1/service-requests")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request))
+            )
+                .andExpect(status().isBadRequest)
+                .andExpect(jsonPath("$.error").value("Sub category 'باغچه' is not valid for category group 'تاسیسات'"))
+        } finally {
+            cleanupSecurityContext()
+        }
+    }
+
+    @Test
+    fun `getCategories should return all category groups with their subCategories`() {
+        try {
+            setupSecurityContext()
+
+            every { profileService.getUserByUsername(testUsername) } returns testUser
+            every { serviceRequestService.getCategories(null) } returns buildCategoryOptionsResult()
+
+            mockMvc.perform(get("/api/v1/service-requests/categories"))
+                .andExpect(status().isOk)
+                .andExpect(jsonPath("$.categories.length()").value(1))
+                .andExpect(jsonPath("$.categories[0].value").value(ServiceCategoryGroup.FACILITIES.name))
+                .andExpect(jsonPath("$.categories[0].label").value(ServiceCategoryGroup.FACILITIES.persianName))
+                .andExpect(jsonPath("$.categories[0].subCategories[0].value").value(ServiceSubCategory.ELECTRICAL.name))
+                .andExpect(jsonPath("$.categories[0].subCategories[0].label").value(ServiceSubCategory.ELECTRICAL.persianName))
+        } finally {
+            cleanupSecurityContext()
+        }
+    }
+
+    @Test
+    fun `getCategories should filter subcategories for the selected category group`() {
+        try {
+            setupSecurityContext()
+
+            every { profileService.getUserByUsername(testUsername) } returns testUser
+            every { serviceRequestService.getCategories(ServiceCategoryGroup.FACILITIES.name) } returns buildCategoryOptionsResult()
+
+            mockMvc.perform(get("/api/v1/service-requests/categories").param("categoryGroup", ServiceCategoryGroup.FACILITIES.name))
+                .andExpect(status().isOk)
+                .andExpect(jsonPath("$.categories.length()").value(1))
+                .andExpect(jsonPath("$.categories[0].value").value(ServiceCategoryGroup.FACILITIES.name))
+                .andExpect(jsonPath("$.categories[0].subCategories.length()").value(2))
+                .andExpect(jsonPath("$.categories[0].subCategories[0].value").value(ServiceSubCategory.ELECTRICAL.name))
+                .andExpect(jsonPath("$.categories[0].subCategories[0].label").value(ServiceSubCategory.ELECTRICAL.persianName))
+        } finally {
+            cleanupSecurityContext()
+        }
+    }
+
+    @Test
+    fun `getCategories should return 400 when the category group is invalid`() {
+        try {
+            setupSecurityContext()
+
+            every { profileService.getUserByUsername(testUsername) } returns testUser
+            every { serviceRequestService.getCategories("INVALID_GROUP") } throws DomainValidationException("Category group 'INVALID_GROUP' is invalid")
+
+            mockMvc.perform(get("/api/v1/service-requests/categories").param("categoryGroup", "INVALID_GROUP"))
+                .andExpect(status().isBadRequest)
+                .andExpect(jsonPath("$.error").value("Category group 'INVALID_GROUP' is invalid"))
+        } finally {
+            cleanupSecurityContext()
+        }
+    }
+
+    @Test
     fun `createRequest should allow null location`() {
         try {
             setupSecurityContext()
@@ -224,12 +385,14 @@ class ServiceRequestControllerTest {
             val request = CreateServiceRequestRequest(
                 title = "Broken Elevator",
                 description = "The elevator is not working",
-                location = null
+                location = null,
+                categoryGroup = ServiceCategoryGroup.GENERAL,
+                subCategory = ServiceSubCategory.GENERAL
             )
 
             val createdRequest = createMockServiceRequest(
-                title = request.title,
-                description = request.description,
+                title = request.title!!,
+                description = request.description!!,
                 location = null,
                 createdBy = testUserId,
                 status = ServiceRequestStatus.PENDING
@@ -357,7 +520,9 @@ class ServiceRequestControllerTest {
             val request = CreateServiceRequestRequest(
                 title = "Broken Elevator",
                 description = "The elevator is not working",
-                location = "Building A, Floor 2"
+                location = "Building A, Floor 2",
+                categoryGroup = ServiceCategoryGroup.GENERAL,
+                subCategory = ServiceSubCategory.GENERAL
             )
 
             every { profileService.getUserByUsername(testUsername) } returns null
@@ -373,6 +538,27 @@ class ServiceRequestControllerTest {
         }
     }
 
+    private fun buildCategoryOptionsResult(): CategoryOptionsResult {
+        return CategoryOptionsResult(
+            categories = listOf(
+                CategoryGroupOptionResult(
+                    value = ServiceCategoryGroup.FACILITIES.name,
+                    label = ServiceCategoryGroup.FACILITIES.persianName,
+                    subCategories = listOf(
+                        SubCategoryOptionResult(
+                            value = ServiceSubCategory.ELECTRICAL.name,
+                            label = ServiceSubCategory.ELECTRICAL.persianName
+                        ),
+                        SubCategoryOptionResult(
+                            value = ServiceSubCategory.ELEVATOR.name,
+                            label = ServiceSubCategory.ELEVATOR.persianName
+                        )
+                    )
+                )
+            )
+        )
+    }
+
     private fun createMockServiceRequest(
         title: String,
         description: String,
@@ -380,7 +566,9 @@ class ServiceRequestControllerTest {
         status: ServiceRequestStatus,
         location: String? = "Location",
         assignedTo: UserId? = null,
-        resolvedAt: Instant? = null
+        resolvedAt: Instant? = null,
+        categoryGroup: ServiceCategoryGroup = ServiceCategoryGroup.GENERAL,
+        subCategory: ServiceSubCategory = ServiceSubCategory.GENERAL
     ): ServiceRequest {
         return ServiceRequest.reconstitute(
             id = ServiceRequestId.generate(),
@@ -392,7 +580,9 @@ class ServiceRequestControllerTest {
             updatedAt = Instant.now(),
             status = status,
             assignedTo = assignedTo,
-            resolvedAt = resolvedAt
+            resolvedAt = resolvedAt,
+            categoryGroup = categoryGroup,
+            subCategory = subCategory
         )
     }
 }

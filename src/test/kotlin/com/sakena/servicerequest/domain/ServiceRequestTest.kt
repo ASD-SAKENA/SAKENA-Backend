@@ -1,11 +1,11 @@
 package com.sakena.servicerequest.domain
 
+import com.sakena.shared.domain.DomainValidationException
 import com.sakena.user.domain.UserId
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import java.time.Instant
-import java.util.UUID
 
 class ServiceRequestTest {
 
@@ -22,6 +22,8 @@ class ServiceRequestTest {
             title = "Test Request",
             description = "Test Description",
             location = "Building A, Floor 2",
+            categoryGroup = ServiceCategoryGroup.FACILITIES,
+            subCategory = ServiceSubCategory.ELEVATOR,
             createdBy = testUserId,
             createdAt = now,
             updatedAt = now,
@@ -38,7 +40,9 @@ class ServiceRequestTest {
             title = "Broken Elevator",
             description = "The elevator on floor 3 is not working",
             location = "Building A, Elevator 2",
-            createdBy = testUserId
+            createdBy = testUserId,
+            categoryGroup = ServiceCategoryGroup.FACILITIES,
+            subCategory = ServiceSubCategory.ELEVATOR
         )
 
         assertEquals("Broken Elevator", request.title)
@@ -60,7 +64,9 @@ class ServiceRequestTest {
             title = "  Broken Elevator  ",
             description = "  The elevator is broken  ",
             location = "  Building A  ",
-            createdBy = testUserId
+            createdBy = testUserId,
+            categoryGroup = ServiceCategoryGroup.FACILITIES,
+            subCategory = ServiceSubCategory.ELEVATOR
         )
 
         assertEquals("Broken Elevator", request.title)
@@ -74,7 +80,9 @@ class ServiceRequestTest {
             title = "Broken Elevator",
             description = "The elevator is broken",
             location = null,
-            createdBy = testUserId
+            createdBy = testUserId,
+            categoryGroup = ServiceCategoryGroup.FACILITIES,
+            subCategory = ServiceSubCategory.ELEVATOR
         )
 
         assertNull(request.location)
@@ -82,44 +90,131 @@ class ServiceRequestTest {
 
     @Test
     fun `create should fail if title is blank`() {
-        assertThrows<IllegalArgumentException> {
+        assertThrows<DomainValidationException> {
             ServiceRequest.create(
                 title = "",
                 description = "Some description",
                 location = null,
-                createdBy = testUserId
+                createdBy = testUserId,
+                categoryGroup = ServiceCategoryGroup.FACILITIES,
+                subCategory = ServiceSubCategory.ELEVATOR
             )
         }
 
-        assertThrows<IllegalArgumentException> {
+        assertThrows<DomainValidationException> {
             ServiceRequest.create(
                 title = "   ",
                 description = "Some description",
                 location = null,
-                createdBy = testUserId
+                createdBy = testUserId,
+                categoryGroup = ServiceCategoryGroup.FACILITIES,
+                subCategory = ServiceSubCategory.ELEVATOR
             )
         }
     }
 
     @Test
     fun `create should fail if description is blank`() {
-        assertThrows<IllegalArgumentException> {
+        assertThrows<DomainValidationException> {
             ServiceRequest.create(
                 title = "Broken Elevator",
                 description = "",
                 location = null,
-                createdBy = testUserId
+                createdBy = testUserId,
+                categoryGroup = ServiceCategoryGroup.FACILITIES,
+                subCategory = ServiceSubCategory.ELEVATOR
             )
         }
 
-        assertThrows<IllegalArgumentException> {
+        assertThrows<DomainValidationException> {
             ServiceRequest.create(
                 title = "Broken Elevator",
                 description = "   ",
                 location = null,
-                createdBy = testUserId
+                createdBy = testUserId,
+                categoryGroup = ServiceCategoryGroup.FACILITIES,
+                subCategory = ServiceSubCategory.ELEVATOR
             )
         }
+    }
+
+    @Test
+    fun `create should fail when subcategory does not belong to the selected category group`() {
+        val exception = assertThrows<DomainValidationException> {
+            ServiceRequest.create(
+                title = "Broken Elevator",
+                description = "The elevator is broken",
+                location = null,
+                createdBy = testUserId,
+                categoryGroup = ServiceCategoryGroup.FACILITIES,
+                subCategory = ServiceSubCategory.GARDEN
+            )
+        }
+
+        assertTrue(exception.message?.contains("not valid") == true)
+    }
+
+    @Test
+    fun `create should allow subcategory for the matching category group`() {
+        val request = ServiceRequest.create(
+            title = "Broken Elevator",
+            description = "The elevator is broken",
+            location = null,
+            createdBy = testUserId,
+            categoryGroup = ServiceCategoryGroup.FACILITIES,
+            subCategory = ServiceSubCategory.ELEVATOR
+        )
+
+        assertEquals(ServiceCategoryGroup.FACILITIES, request.categoryGroup)
+        assertEquals(ServiceSubCategory.ELEVATOR, request.subCategory)
+    }
+
+    @Test
+    fun `create should fail when title is blank after trimming`() {
+        val exception = assertThrows<DomainValidationException> {
+            ServiceRequest.create(
+                title = "   ",
+                description = "Valid description",
+                location = null,
+                createdBy = testUserId,
+                categoryGroup = ServiceCategoryGroup.GENERAL,
+                subCategory = ServiceSubCategory.GENERAL
+            )
+        }
+
+        assertEquals("Title is required", exception.message)
+    }
+
+    @Test
+    fun `create should fail when description is blank after trimming`() {
+        val exception = assertThrows<DomainValidationException> {
+            ServiceRequest.create(
+                title = "Valid title",
+                description = "   ",
+                location = null,
+                createdBy = testUserId,
+                categoryGroup = ServiceCategoryGroup.GENERAL,
+                subCategory = ServiceSubCategory.GENERAL
+            )
+        }
+
+        assertEquals("Description is required", exception.message)
+    }
+
+    @Test
+    fun `create should fail when location is blank when provided`() {
+        val exception = assertThrows<DomainValidationException> {
+            ServiceRequest.create(
+                title = "Valid title",
+                description = "Valid description",
+                location = "   ",
+                createdBy = testUserId,
+                categoryGroup = ServiceCategoryGroup.GENERAL,
+                subCategory = ServiceSubCategory.GENERAL
+            )
+        }
+
+        assertEquals("Location cannot be blank when provided", exception.message)
     }
 
     // --- Status Transition Tests ---
@@ -155,12 +250,12 @@ class ServiceRequestTest {
     @Test
     fun `startProgress should fail if status is not APPROVED`() {
         val request = createTestRequest(status = ServiceRequestStatus.PENDING)
-        assertThrows<IllegalArgumentException> {
+        assertThrows<DomainValidationException> {
             request.startProgress()
         }
 
         val request2 = createTestRequest(status = ServiceRequestStatus.IN_PROGRESS)
-        assertThrows<IllegalArgumentException> {
+        assertThrows<DomainValidationException> {
             request2.startProgress()
         }
     }
@@ -186,12 +281,12 @@ class ServiceRequestTest {
     @Test
     fun `complete should fail if status is not IN_PROGRESS`() {
         val request = createTestRequest(status = ServiceRequestStatus.PENDING)
-        assertThrows<IllegalArgumentException> {
+        assertThrows<DomainValidationException> {
             request.complete()
         }
 
         val request2 = createTestRequest(status = ServiceRequestStatus.APPROVED)
-        assertThrows<IllegalArgumentException> {
+        assertThrows<DomainValidationException> {
             request2.complete()
         }
     }
@@ -211,12 +306,12 @@ class ServiceRequestTest {
     @Test
     fun `reject should fail if status is not PENDING`() {
         val request = createTestRequest(status = ServiceRequestStatus.APPROVED)
-        assertThrows<IllegalArgumentException> {
+        assertThrows<DomainValidationException> {
             request.reject()
         }
 
         val request2 = createTestRequest(status = ServiceRequestStatus.IN_PROGRESS)
-        assertThrows<IllegalArgumentException> {
+        assertThrows<DomainValidationException> {
             request2.reject()
         }
     }
@@ -236,6 +331,8 @@ class ServiceRequestTest {
             title = "Test Title",
             description = "Test Description",
             location = "Test Location",
+            categoryGroup = ServiceCategoryGroup.BUILDING,
+            subCategory = ServiceSubCategory.DOOR_WINDOW,
             createdBy = userId,
             createdAt = createdAt,
             updatedAt = updatedAt,
@@ -263,6 +360,8 @@ class ServiceRequestTest {
             title = "Test",
             description = "Test",
             location = null,
+            categoryGroup = ServiceCategoryGroup.GENERAL,
+            subCategory = ServiceSubCategory.GENERAL,
             createdBy = testUserId,
             createdAt = now,
             updatedAt = now,
