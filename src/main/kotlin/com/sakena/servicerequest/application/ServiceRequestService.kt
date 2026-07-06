@@ -1,8 +1,11 @@
 package com.sakena.servicerequest.application
 
+import com.sakena.servicerequest.domain.ServiceCategoryGroup
 import com.sakena.servicerequest.domain.ServiceRequest
 import com.sakena.servicerequest.domain.ServiceRequestId
 import com.sakena.servicerequest.domain.ServiceRequestRepository
+import com.sakena.servicerequest.domain.ServiceSubCategory
+import com.sakena.shared.domain.DomainValidationException
 import com.sakena.user.domain.UserId
 import com.sakena.user.domain.UserRepository
 import org.springframework.stereotype.Service
@@ -27,7 +30,9 @@ class ServiceRequestService(
             title = command.title,
             description = command.description,
             location = command.location,
-            createdBy = currentUserId
+            createdBy = currentUserId,
+            categoryGroup = command.categoryGroup,
+            subCategory = command.subCategory
         )
         return serviceRequestRepository.save(request)
     }

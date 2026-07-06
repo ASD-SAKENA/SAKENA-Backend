@@ -1,6 +1,8 @@
 package com.sakena.servicerequest.infrastructure.persistence
 
+import com.sakena.servicerequest.domain.ServiceCategoryGroup
 import com.sakena.servicerequest.domain.ServiceRequestStatus
+import com.sakena.servicerequest.domain.ServiceSubCategory
 import jakarta.persistence.*
 import java.time.Instant
 import java.util.UUID
@@ -19,6 +21,14 @@ class ServiceRequestJpaEntity(
 
     @Column
     var location: String?,
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "category_group", nullable = false)
+    var categoryGroup: ServiceCategoryGroup,
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "sub_category", nullable = false)
+    var subCategory: ServiceSubCategory,
 
     @Column(name = "created_by", nullable = false)
     var createdBy: UUID,
