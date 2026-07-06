@@ -6,6 +6,7 @@ import com.sakena.servicerequest.domain.ServiceRequestId
 import com.sakena.servicerequest.domain.ServiceRequestRepository
 import com.sakena.servicerequest.domain.ServiceSubCategory
 import com.sakena.shared.domain.DomainValidationException
+import com.sakena.shared.domain.EntityNotFoundException
 import com.sakena.user.domain.UserId
 import com.sakena.user.domain.UserRepository
 import org.springframework.stereotype.Service
@@ -43,6 +44,27 @@ class ServiceRequestService(
 
     fun getRequestById(id: ServiceRequestId): ServiceRequest? {
         return serviceRequestRepository.findById(id)
+    }
+
+    fun approveRequest(command: ApproveServiceRequestCommand): ServiceRequest {
+        val request = serviceRequestRepository.findById(command.serviceRequestId)
+            ?: throw EntityNotFoundException("Service request not found")
+
+        val approved = request.approve(command.userId)
+        val saved = serviceRequestRepository.save(approved)
+        return saved
+    }
+
+    fun assignRequest(command: AssignServiceRequestCommand): ServiceRequest {
+        val request = serviceRequestRepository.findById(ServiceRequestId.fromString(command.serviceRequestId))
+            ?: throw EntityNotFoundException("Service request not found")
+
+        val worker = userRepository.findById(command.workerId)
+            ?: throw IllegalArgumentException("Worker not found with id: ${command.workerId}")
+
+        val assigned = request.assignTo(worker.id, command.userId)
+        val saved = serviceRequestRepository.save(assigned)
+        return saved
     }
 
     fun getCategories(categoryGroupValue: String?): CategoryOptionsResult {

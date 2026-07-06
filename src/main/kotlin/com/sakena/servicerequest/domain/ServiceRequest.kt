@@ -12,6 +12,7 @@ data class ServiceRequest(
     val categoryGroup: ServiceCategoryGroup,
     val subCategory: ServiceSubCategory,
     val createdBy: UserId,
+    val updatedBy: UserId,
     val createdAt: Instant,
     val updatedAt: Instant,
     val status: ServiceRequestStatus,
@@ -43,6 +44,7 @@ data class ServiceRequest(
                 categoryGroup = categoryGroup,
                 subCategory = subCategory,
                 createdBy = createdBy,
+                updatedBy = createdBy,
                 createdAt = now,
                 updatedAt = now,
                 status = ServiceRequestStatus.PENDING
@@ -57,13 +59,14 @@ data class ServiceRequest(
             categoryGroup: ServiceCategoryGroup,
             subCategory: ServiceSubCategory,
             createdBy: UserId,
+            updatedBy: UserId,
             createdAt: Instant,
             updatedAt: Instant,
             status: ServiceRequestStatus,
             assignedTo: UserId?,
             resolvedAt: Instant?
         ) = ServiceRequest(
-            id, title, description, location, categoryGroup, subCategory, createdBy, createdAt, updatedAt, status, assignedTo, resolvedAt
+            id, title, description, location, categoryGroup, subCategory, createdBy, updatedBy ,createdAt, updatedAt, status, assignedTo, resolvedAt
         ).also {
             validate(
                 title = it.title,
@@ -106,8 +109,16 @@ data class ServiceRequest(
         )
     }
 
+    fun approve(userId : UserId): ServiceRequest {
+        return this.copy(
+            status = ServiceRequestStatus.APPROVED,
+            updatedAt = Instant.now(),
+            updatedBy = userId
+        )
+    }
+
     fun startProgress(): ServiceRequest {
-        if (status != ServiceRequestStatus.APPROVED) {
+        if (status != ServiceRequestStatus.ASSIGNED) {
             throw DomainValidationException("Service request can only start progress when it is approved")
         }
         return this.copy(
@@ -116,24 +127,26 @@ data class ServiceRequest(
         )
     }
 
-    fun complete(): ServiceRequest {
+    fun complete(userId : UserId): ServiceRequest {
         if (status != ServiceRequestStatus.IN_PROGRESS) {
             throw DomainValidationException("Service request can only be completed when it is in progress")
         }
         return this.copy(
             status = ServiceRequestStatus.COMPLETED,
             resolvedAt = Instant.now(),
-            updatedAt = Instant.now()
+            updatedAt = Instant.now(),
+            updatedBy = userId
         )
     }
 
-    fun reject(): ServiceRequest {
+    fun reject(userId : UserId): ServiceRequest {
         if (status != ServiceRequestStatus.PENDING) {
             throw DomainValidationException("Service request can only be rejected while it is pending")
         }
         return this.copy(
             status = ServiceRequestStatus.REJECTED,
-            updatedAt = Instant.now()
+            updatedAt = Instant.now(),
+            updatedBy = userId
         )
     }
 }
