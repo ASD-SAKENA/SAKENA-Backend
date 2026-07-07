@@ -3,8 +3,12 @@ package com.sakena.servicerequest.infrastructure.web
 import com.sakena.servicerequest.application.AssignServiceRequestCommand
 import com.sakena.servicerequest.application.ApproveServiceRequestCommand
 import com.sakena.servicerequest.application.CreateServiceRequestCommand
+import com.sakena.servicerequest.application.GetAllServiceRequestsQuery
 import com.sakena.servicerequest.application.ServiceRequestService
+import com.sakena.servicerequest.domain.ServiceCategoryGroup
 import com.sakena.servicerequest.domain.ServiceRequestId
+import com.sakena.servicerequest.domain.ServiceRequestStatus
+import com.sakena.servicerequest.domain.ServiceSubCategory
 import com.sakena.user.application.ProfileService
 import com.sakena.user.domain.UserId
 import io.swagger.v3.oas.annotations.Operation
@@ -14,6 +18,7 @@ import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
 import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.web.bind.annotation.*
+import java.time.Instant
 
 @RestController
 @RequestMapping("/api/v1/service-requests")
@@ -45,10 +50,35 @@ class ServiceRequestController(
 
     @GetMapping
     @Operation(summary = "Get all service requests for the current user")
-    @SecurityRequirement(name = "bearerAuth")   // <-- این خط را اضافه کنید
+    @SecurityRequirement(name = "bearerAuth")
     fun getMyRequests(): List<ServiceRequestResponse> {
         val userId = getCurrentUserId()
         val requests = serviceRequestService.getMyRequests(userId)
+        return requests.map { ServiceRequestResponse.fromDomain(it) }
+    }
+
+    @GetMapping("/admin")
+    @Operation(summary = "Get all service requests with filtering (admin/manager only)")
+    @SecurityRequirement(name = "bearerAuth")
+    fun getAllRequests(
+        @RequestParam(required = false) status: ServiceRequestStatus?,
+        @RequestParam(required = false) categoryGroup: ServiceCategoryGroup?,
+        @RequestParam(required = false) subCategory: ServiceSubCategory?,
+        @RequestParam(required = false) createdFrom: Instant?,
+        @RequestParam(required = false) createdTo: Instant?,
+        @RequestParam(required = false) updatedFrom: Instant?,
+        @RequestParam(required = false) updatedTo: Instant?
+    ): List<ServiceRequestResponse> {
+        val query = GetAllServiceRequestsQuery(
+            status = status,
+            categoryGroup = categoryGroup,
+            subCategory = subCategory,
+            createdFrom = createdFrom,
+            createdTo = createdTo,
+            updatedFrom = updatedFrom,
+            updatedTo = updatedTo
+        )
+        val requests = serviceRequestService.getAllRequests(query)
         return requests.map { ServiceRequestResponse.fromDomain(it) }
     }
 
@@ -95,6 +125,8 @@ class ServiceRequestController(
         val assigned = serviceRequestService.assignRequest(command)
         return ServiceRequestResponse.fromDomain(assigned)
     }
+
+
 
     private fun getCurrentUserId(): UserId {
         val username = SecurityContextHolder.getContext().authentication.name

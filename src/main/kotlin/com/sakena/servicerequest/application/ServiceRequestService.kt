@@ -67,6 +67,18 @@ class ServiceRequestService(
         return saved
     }
 
+    fun getAllRequests(query: GetAllServiceRequestsQuery): List<ServiceRequest> {
+        return serviceRequestRepository.findAllByFilters(
+            status = query.status,
+            categoryGroup = query.categoryGroup,
+            subCategory = query.subCategory,
+            createdFrom = query.createdFrom,
+            createdTo = query.createdTo,
+            updatedFrom = query.updatedFrom,
+            updatedTo = query.updatedTo
+        )
+    }
+
     fun getCategories(categoryGroupValue: String?): CategoryOptionsResult {
         val selectedGroup = categoryGroupValue
             ?.trim()
