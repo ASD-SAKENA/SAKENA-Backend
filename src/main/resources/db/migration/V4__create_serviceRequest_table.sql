@@ -11,6 +11,9 @@ CREATE TABLE IF NOT EXISTS service_requests (
     category_group VARCHAR(50) NOT NULL DEFAULT 'GENERAL',
     sub_category VARCHAR(50) NOT NULL DEFAULT 'GENERAL',
     assigned_to UUID,
+    expected_completion_at TIMESTAMP,
+    completion_report VARCHAR(4000),
+    completion_cost DOUBLE PRECISION,
     resolved_at TIMESTAMP
     );
 
