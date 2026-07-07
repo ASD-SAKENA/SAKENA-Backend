@@ -111,6 +111,9 @@ data class ServiceRequest(
     }
 
     fun approve(userId : UserId): ServiceRequest {
+        if (status != ServiceRequestStatus.PENDING) {
+            throw DomainValidationException("Service request can only approve when it is pending")
+        }
         return this.copy(
             status = ServiceRequestStatus.APPROVED,
             updatedAt = Instant.now(),

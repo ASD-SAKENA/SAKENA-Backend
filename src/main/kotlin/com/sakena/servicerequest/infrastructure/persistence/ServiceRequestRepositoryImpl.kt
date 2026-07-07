@@ -1,10 +1,15 @@
 package com.sakena.servicerequest.infrastructure.persistence
 
+import com.sakena.servicerequest.domain.ServiceCategoryGroup
 import com.sakena.servicerequest.domain.ServiceRequest
 import com.sakena.servicerequest.domain.ServiceRequestId
 import com.sakena.servicerequest.domain.ServiceRequestRepository
+import com.sakena.servicerequest.domain.ServiceRequestStatus
+import com.sakena.servicerequest.domain.ServiceSubCategory
 import com.sakena.user.domain.UserId
+import jakarta.persistence.criteria.Predicate
 import org.springframework.stereotype.Repository
+import java.time.Instant
 import kotlin.collections.map
 
 @Repository
@@ -28,6 +33,32 @@ class ServiceRequestRepositoryImpl(
 
     override fun findAll(): List<ServiceRequest> {
         return jpa.findAll().map { toDomain(it) }
+    }
+
+    override fun findAllByFilters(
+        status: ServiceRequestStatus?,
+        categoryGroup: ServiceCategoryGroup?,
+        subCategory: ServiceSubCategory?,
+        createdFrom: Instant?,
+        createdTo: Instant?,
+        updatedFrom: Instant?,
+        updatedTo: Instant?
+    ): List<ServiceRequest> {
+        val spec = org.springframework.data.jpa.domain.Specification<ServiceRequestJpaEntity> { root, _, cb ->
+            val predicates = mutableListOf<Predicate>()
+
+            status?.let { predicates.add(cb.equal(root.get<ServiceRequestStatus>("status"), it)) }
+            categoryGroup?.let { predicates.add(cb.equal(root.get<ServiceCategoryGroup>("categoryGroup"), it)) }
+            subCategory?.let { predicates.add(cb.equal(root.get<ServiceSubCategory>("subCategory"), it)) }
+            createdFrom?.let { predicates.add(cb.greaterThanOrEqualTo(root.get("createdAt"), it)) }
+            createdTo?.let { predicates.add(cb.lessThanOrEqualTo(root.get("createdAt"), it)) }
+            updatedFrom?.let { predicates.add(cb.greaterThanOrEqualTo(root.get("updatedAt"), it)) }
+            updatedTo?.let { predicates.add(cb.lessThanOrEqualTo(root.get("updatedAt"), it)) }
+
+            cb.and(*predicates.toTypedArray())
+        }
+
+        return jpa.findAll(spec).map { toDomain(it) }
     }
 
     private fun toJpaEntity(domain: ServiceRequest): ServiceRequestJpaEntity {
