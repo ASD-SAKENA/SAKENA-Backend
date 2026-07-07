@@ -50,5 +50,14 @@ class ServiceRequestJpaEntity(
     var assignedTo: UUID?,
 
     @Column(name = "resolved_at")
-    var resolvedAt: Instant?
+    var resolvedAt: Instant?,
+
+    @Column(name = "expected_completion_at")
+    var expectedCompletionAt: Instant? = null,
+
+    @Column(name = "completion_report", length = 4000)
+    var completionReport: String? = null,
+
+    @Column(name = "completion_cost")
+    var completionCost: Double? = null
 )
