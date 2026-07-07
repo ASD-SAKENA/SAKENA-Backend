@@ -2,7 +2,6 @@ package com.sakena.servicerequest.domain
 
 import com.sakena.shared.domain.DomainValidationException
 import com.sakena.user.domain.UserId
-import io.mockk.awaits
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -57,6 +56,9 @@ class ServiceRequestTest {
         assertNotNull(request.updatedAt)
         assertNull(request.assignedTo)
         assertNull(request.resolvedAt)
+        assertNull(request.expectedCompletionAt)
+        assertNull(request.completionReport)
+        assertNull(request.completionCost)
         assertTrue(request.createdAt <= Instant.now())
     }
 
@@ -264,26 +266,40 @@ class ServiceRequestTest {
 
     @Test
     fun `assignTo should change status to ASSIGNED and set assignedTo and updatedBy`() {
-        val request = createTestRequest(status = ServiceRequestStatus.PENDING)
+        val request = createTestRequest(status = ServiceRequestStatus.APPROVED)
         val workerId = UserId.generate()
         val adminId = UserId.generate()
 
-        // approve first
-        val approved = request.approve(adminId)
-        Thread.sleep(2000)
-        val updated = approved.assignTo(workerId, adminId)
+        val updated = request.assignTo(workerId, adminId)
 
         assertEquals(ServiceRequestStatus.ASSIGNED, updated.status)
         assertEquals(workerId, updated.assignedTo)
         assertEquals(adminId, updated.updatedBy)
-        assertTrue(updated.updatedAt > approved.updatedAt)
+        assertTrue(updated.updatedAt > request.updatedAt)
         assertNull(updated.resolvedAt)
     }
 
     @Test
-    fun `startProgress should change status to IN_PROGRESS from ASSIGNED`() {
+    fun `startProgress should change status to IN_PROGRESS and set expectedCompletionAt`() {
         val workerId = UserId.generate()
-        val adminId = UserId.generate()
+        val request = createTestRequest(
+            status = ServiceRequestStatus.ASSIGNED,
+            assignedTo = workerId
+        )
+        val expectedAt = Instant.now().plusSeconds(86400)
+
+        val updated = request.startProgress(expectedCompletionAt = expectedAt)
+
+        assertEquals(ServiceRequestStatus.IN_PROGRESS, updated.status)
+        assertEquals(workerId, updated.assignedTo)
+        assertEquals(expectedAt, updated.expectedCompletionAt)
+        assertTrue(updated.updatedAt > request.updatedAt)
+        assertNull(updated.resolvedAt)
+    }
+
+    @Test
+    fun `startProgress should allow null expectedCompletionAt`() {
+        val workerId = UserId.generate()
         val request = createTestRequest(
             status = ServiceRequestStatus.ASSIGNED,
             assignedTo = workerId
@@ -292,9 +308,7 @@ class ServiceRequestTest {
         val updated = request.startProgress()
 
         assertEquals(ServiceRequestStatus.IN_PROGRESS, updated.status)
-        assertEquals(workerId, updated.assignedTo)
-        assertTrue(updated.updatedAt > request.updatedAt)
-        assertNull(updated.resolvedAt)
+        assertNull(updated.expectedCompletionAt)
     }
 
     @Test
@@ -311,7 +325,7 @@ class ServiceRequestTest {
     }
 
     @Test
-    fun `complete should change status to COMPLETED and set resolvedAt and updatedBy`() {
+    fun `complete should change status to COMPLETED and set report and cost`() {
         val workerId = UserId.generate()
         val request = createTestRequest(
             status = ServiceRequestStatus.IN_PROGRESS,
@@ -320,26 +334,65 @@ class ServiceRequestTest {
 
         Thread.sleep(1) // ensure time difference
         val userId = UserId.generate()
-        val updated = request.complete(userId)
+        val updated = request.complete(
+            userId = userId,
+            completionReport = "Fixed the elevator motor",
+            completionCost = 250.0
+        )
 
         assertEquals(ServiceRequestStatus.COMPLETED, updated.status)
         assertEquals(workerId, updated.assignedTo)
         assertEquals(userId, updated.updatedBy)
         assertNotNull(updated.resolvedAt)
+        assertEquals("Fixed the elevator motor", updated.completionReport)
+        assertEquals(250.0, updated.completionCost)
         assertTrue(updated.resolvedAt!! > request.createdAt)
         assertTrue(updated.updatedAt > request.updatedAt)
+    }
+
+    @Test
+    fun `complete should allow null report and cost`() {
+        val workerId = UserId.generate()
+        val request = createTestRequest(
+            status = ServiceRequestStatus.IN_PROGRESS,
+            assignedTo = workerId
+        )
+
+        val updated = request.complete(userId = UserId.generate())
+
+        assertEquals(ServiceRequestStatus.COMPLETED, updated.status)
+        assertNull(updated.completionReport)
+        assertNull(updated.completionCost)
+    }
+
+    @Test
+    fun `complete should ignore blank report and negative cost`() {
+        val workerId = UserId.generate()
+        val request = createTestRequest(
+            status = ServiceRequestStatus.IN_PROGRESS,
+            assignedTo = workerId
+        )
+
+        val updated = request.complete(
+            userId = UserId.generate(),
+            completionReport = "   ",
+            completionCost = -10.0
+        )
+
+        assertNull(updated.completionReport)
+        assertNull(updated.completionCost)
     }
 
     @Test
     fun `complete should fail if status is not IN_PROGRESS`() {
         val request = createTestRequest(status = ServiceRequestStatus.PENDING)
         assertThrows<DomainValidationException> {
-            request.complete(UserId.generate())
+            request.complete(userId = UserId.generate())
         }
 
         val request2 = createTestRequest(status = ServiceRequestStatus.APPROVED)
         assertThrows<DomainValidationException> {
-            request2.complete(UserId.generate())
+            request2.complete(userId = UserId.generate())
         }
     }
 
@@ -389,6 +442,9 @@ class ServiceRequestTest {
         assertEquals(ServiceRequestStatus.PENDING, request.status)
         assertEquals(residentId, request.createdBy)
         assertEquals(residentId, request.updatedBy)
+        assertNull(request.expectedCompletionAt)
+        assertNull(request.completionReport)
+        assertNull(request.completionCost)
 
         val approved = request.approve(managerId)
         assertEquals(ServiceRequestStatus.APPROVED, approved.status)
@@ -399,13 +455,21 @@ class ServiceRequestTest {
         assertEquals(workerId, assigned.assignedTo)
         assertEquals(managerId, assigned.updatedBy)
 
-        val inProgress = assigned.startProgress()
+        val expectedAt = Instant.now().plusSeconds(7200)
+        val inProgress = assigned.startProgress(expectedCompletionAt = expectedAt)
         assertEquals(ServiceRequestStatus.IN_PROGRESS, inProgress.status)
+        assertEquals(expectedAt, inProgress.expectedCompletionAt)
 
-        val completed = inProgress.complete(workerId)
+        val completed = inProgress.complete(
+            userId = workerId,
+            completionReport = "Replaced the compressor",
+            completionCost = 350.0
+        )
         assertEquals(ServiceRequestStatus.COMPLETED, completed.status)
         assertEquals(workerId, completed.updatedBy)
         assertNotNull(completed.resolvedAt)
+        assertEquals("Replaced the compressor", completed.completionReport)
+        assertEquals(350.0, completed.completionCost)
     }
 
     // --- Reconstitute Tests ---
@@ -417,6 +481,7 @@ class ServiceRequestTest {
         val createdAt = Instant.now().minusSeconds(3600)
         val updatedAt = Instant.now().minusSeconds(1800)
         val resolvedAt = Instant.now()
+        val expectedAt = Instant.now().plusSeconds(86400)
 
         val request = ServiceRequest.reconstitute(
             id = id,
@@ -431,7 +496,10 @@ class ServiceRequestTest {
             updatedAt = updatedAt,
             status = ServiceRequestStatus.COMPLETED,
             assignedTo = workerId,
-            resolvedAt = resolvedAt
+            resolvedAt = resolvedAt,
+            expectedCompletionAt = expectedAt,
+            completionReport = "Fixed the door",
+            completionCost = 120.0
         )
 
         assertEquals(id, request.id)
@@ -445,10 +513,13 @@ class ServiceRequestTest {
         assertEquals(ServiceRequestStatus.COMPLETED, request.status)
         assertEquals(workerId, request.assignedTo)
         assertEquals(resolvedAt, request.resolvedAt)
+        assertEquals(expectedAt, request.expectedCompletionAt)
+        assertEquals("Fixed the door", request.completionReport)
+        assertEquals(120.0, request.completionCost)
     }
 
     @Test
-    fun `reconstitute should handle null assignedTo and resolvedAt`() {
+    fun `reconstitute should handle null optional fields`() {
         val request = ServiceRequest.reconstitute(
             id = ServiceRequestId.generate(),
             title = "Test",
@@ -467,6 +538,9 @@ class ServiceRequestTest {
 
         assertNull(request.assignedTo)
         assertNull(request.resolvedAt)
+        assertNull(request.expectedCompletionAt)
+        assertNull(request.completionReport)
+        assertNull(request.completionCost)
     }
 
     @Test
