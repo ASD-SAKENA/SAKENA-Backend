@@ -1,7 +1,9 @@
 package com.sakena.servicerequest.infrastructure.web
 
 import com.fasterxml.jackson.databind.ObjectMapper
-import com.fasterxml.jackson.databind.exc.InvalidFormatException
+import com.sakena.servicerequest.application.GetAllServiceRequestsQuery
+import com.sakena.servicerequest.application.AssignServiceRequestCommand
+import com.sakena.servicerequest.application.ApproveServiceRequestCommand
 import com.sakena.servicerequest.application.CategoryGroupOptionResult
 import com.sakena.servicerequest.application.CategoryOptionsResult
 import com.sakena.servicerequest.application.CreateServiceRequestCommand
@@ -32,7 +34,6 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.*
 import org.springframework.test.web.servlet.setup.MockMvcBuilders
 import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean
-import org.springframework.http.converter.HttpMessageNotReadableException
 import org.springframework.web.bind.MethodArgumentNotValidException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.ResponseStatus
@@ -418,6 +419,260 @@ class ServiceRequestControllerTest {
         }
     }
 
+    // --- Admin endpoint tests ---
+
+    @Test
+    fun `admin endpoint should return all requests when no filters provided`() {
+        try {
+            setupSecurityContext()
+
+            val requests = listOf(
+                createMockServiceRequest("Request 1", "Desc 1", testUserId, ServiceRequestStatus.PENDING),
+                createMockServiceRequest("Request 2", "Desc 2", testUserId, ServiceRequestStatus.IN_PROGRESS)
+            )
+
+            every { profileService.getUserByUsername(testUsername) } returns testUser
+            every {
+                serviceRequestService.getAllRequests(GetAllServiceRequestsQuery())
+            } returns requests
+
+            mockMvc.perform(get("/api/v1/service-requests/admin"))
+                .andExpect(status().isOk)
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[0].title").value("Request 1"))
+                .andExpect(jsonPath("$[1].title").value("Request 2"))
+        } finally {
+            cleanupSecurityContext()
+        }
+    }
+
+    @Test
+    fun `admin endpoint should filter by status`() {
+        try {
+            setupSecurityContext()
+
+            val requests = listOf(
+                createMockServiceRequest("Pending Request", "Desc", testUserId, ServiceRequestStatus.PENDING)
+            )
+
+            every { profileService.getUserByUsername(testUsername) } returns testUser
+            every {
+                serviceRequestService.getAllRequests(
+                    GetAllServiceRequestsQuery(status = ServiceRequestStatus.PENDING)
+                )
+            } returns requests
+
+            mockMvc.perform(
+                get("/api/v1/service-requests/admin")
+                    .param("status", ServiceRequestStatus.PENDING.name)
+            )
+                .andExpect(status().isOk)
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].title").value("Pending Request"))
+                .andExpect(jsonPath("$[0].status").value("PENDING"))
+        } finally {
+            cleanupSecurityContext()
+        }
+    }
+
+    @Test
+    fun `admin endpoint should filter by categoryGroup`() {
+        try {
+            setupSecurityContext()
+
+            val requests = listOf(
+                createMockServiceRequest(
+                    title = "Facilities Request",
+                    description = "Desc",
+                    createdBy = testUserId,
+                    status = ServiceRequestStatus.PENDING,
+                    categoryGroup = ServiceCategoryGroup.FACILITIES,
+                    subCategory = ServiceSubCategory.ELEVATOR
+                )
+            )
+
+            every { profileService.getUserByUsername(testUsername) } returns testUser
+            every {
+                serviceRequestService.getAllRequests(
+                    GetAllServiceRequestsQuery(categoryGroup = ServiceCategoryGroup.FACILITIES)
+                )
+            } returns requests
+
+            mockMvc.perform(
+                get("/api/v1/service-requests/admin")
+                    .param("categoryGroup", ServiceCategoryGroup.FACILITIES.name)
+            )
+                .andExpect(status().isOk)
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].categoryGroup").value("FACILITIES"))
+        } finally {
+            cleanupSecurityContext()
+        }
+    }
+
+    @Test
+    fun `admin endpoint should filter by subCategory`() {
+        try {
+            setupSecurityContext()
+
+            val requests = listOf(
+                createMockServiceRequest(
+                    title = "Elevator Request",
+                    description = "Desc",
+                    createdBy = testUserId,
+                    status = ServiceRequestStatus.PENDING,
+                    categoryGroup = ServiceCategoryGroup.FACILITIES,
+                    subCategory = ServiceSubCategory.ELEVATOR
+                )
+            )
+
+            every { profileService.getUserByUsername(testUsername) } returns testUser
+            every {
+                serviceRequestService.getAllRequests(
+                    GetAllServiceRequestsQuery(subCategory = ServiceSubCategory.ELEVATOR)
+                )
+            } returns requests
+
+            mockMvc.perform(
+                get("/api/v1/service-requests/admin")
+                    .param("subCategory", ServiceSubCategory.ELEVATOR.name)
+            )
+                .andExpect(status().isOk)
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].subCategory").value("ELEVATOR"))
+        } finally {
+            cleanupSecurityContext()
+        }
+    }
+
+    @Test
+    fun `admin endpoint should filter by createdFrom and createdTo`() {
+        try {
+            setupSecurityContext()
+
+            val from = Instant.parse("2024-01-01T00:00:00Z")
+            val to = Instant.parse("2024-12-31T23:59:59Z")
+            val requests = listOf(
+                createMockServiceRequest("Date Filtered", "Desc", testUserId, ServiceRequestStatus.PENDING)
+            )
+
+            every { profileService.getUserByUsername(testUsername) } returns testUser
+            every {
+                serviceRequestService.getAllRequests(
+                    GetAllServiceRequestsQuery(createdFrom = from, createdTo = to)
+                )
+            } returns requests
+
+            mockMvc.perform(
+                get("/api/v1/service-requests/admin")
+                    .param("createdFrom", from.toString())
+                    .param("createdTo", to.toString())
+            )
+                .andExpect(status().isOk)
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].title").value("Date Filtered"))
+        } finally {
+            cleanupSecurityContext()
+        }
+    }
+
+    @Test
+    fun `admin endpoint should filter by updatedFrom and updatedTo`() {
+        try {
+            setupSecurityContext()
+
+            val from = Instant.parse("2024-01-01T00:00:00Z")
+            val to = Instant.parse("2024-12-31T23:59:59Z")
+            val requests = listOf(
+                createMockServiceRequest("Updated Date Filter", "Desc", testUserId, ServiceRequestStatus.PENDING)
+            )
+
+            every { profileService.getUserByUsername(testUsername) } returns testUser
+            every {
+                serviceRequestService.getAllRequests(
+                    GetAllServiceRequestsQuery(updatedFrom = from, updatedTo = to)
+                )
+            } returns requests
+
+            mockMvc.perform(
+                get("/api/v1/service-requests/admin")
+                    .param("updatedFrom", from.toString())
+                    .param("updatedTo", to.toString())
+            )
+                .andExpect(status().isOk)
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].title").value("Updated Date Filter"))
+        } finally {
+            cleanupSecurityContext()
+        }
+    }
+
+    @Test
+    fun `admin endpoint should combine multiple filters`() {
+        try {
+            setupSecurityContext()
+
+            val requests = listOf(
+                createMockServiceRequest(
+                    title = "Combined Filter",
+                    description = "Desc",
+                    createdBy = testUserId,
+                    status = ServiceRequestStatus.PENDING,
+                    categoryGroup = ServiceCategoryGroup.FACILITIES,
+                    subCategory = ServiceSubCategory.ELEVATOR
+                )
+            )
+
+            every { profileService.getUserByUsername(testUsername) } returns testUser
+            every {
+                serviceRequestService.getAllRequests(
+                    GetAllServiceRequestsQuery(
+                        status = ServiceRequestStatus.PENDING,
+                        categoryGroup = ServiceCategoryGroup.FACILITIES,
+                        subCategory = ServiceSubCategory.ELEVATOR
+                    )
+                )
+            } returns requests
+
+            mockMvc.perform(
+                get("/api/v1/service-requests/admin")
+                    .param("status", ServiceRequestStatus.PENDING.name)
+                    .param("categoryGroup", ServiceCategoryGroup.FACILITIES.name)
+                    .param("subCategory", ServiceSubCategory.ELEVATOR.name)
+            )
+                .andExpect(status().isOk)
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].title").value("Combined Filter"))
+        } finally {
+            cleanupSecurityContext()
+        }
+    }
+
+    @Test
+    fun `admin endpoint should return empty list when no requests match`() {
+        try {
+            setupSecurityContext()
+
+            every { profileService.getUserByUsername(testUsername) } returns testUser
+            every {
+                serviceRequestService.getAllRequests(
+                    GetAllServiceRequestsQuery(status = ServiceRequestStatus.APPROVED)
+                )
+            } returns emptyList()
+
+            mockMvc.perform(
+                get("/api/v1/service-requests/admin")
+                    .param("status", ServiceRequestStatus.APPROVED.name)
+            )
+                .andExpect(status().isOk)
+                .andExpect(jsonPath("$.length()").value(0))
+        } finally {
+            cleanupSecurityContext()
+        }
+    }
+
+    // --- My Requests tests ---
+
     @Test
     fun `getMyRequests should return list of user's requests`() {
         try {
@@ -472,7 +727,7 @@ class ServiceRequestControllerTest {
                 title = "Assigned Request",
                 description = "Desc",
                 createdBy = testUserId,
-                status = ServiceRequestStatus.APPROVED,
+                status = ServiceRequestStatus.ASSIGNED,
                 assignedTo = workerId
             )
 
@@ -570,14 +825,16 @@ class ServiceRequestControllerTest {
         categoryGroup: ServiceCategoryGroup = ServiceCategoryGroup.GENERAL,
         subCategory: ServiceSubCategory = ServiceSubCategory.GENERAL
     ): ServiceRequest {
+        val now = Instant.now()
         return ServiceRequest.reconstitute(
             id = ServiceRequestId.generate(),
             title = title,
             description = description,
             location = location,
             createdBy = createdBy,
-            createdAt = Instant.now().minusSeconds(3600),
-            updatedAt = Instant.now(),
+            updatedBy = createdBy,
+            createdAt = now.minusSeconds(3600),
+            updatedAt = now,
             status = status,
             assignedTo = assignedTo,
             resolvedAt = resolvedAt,
