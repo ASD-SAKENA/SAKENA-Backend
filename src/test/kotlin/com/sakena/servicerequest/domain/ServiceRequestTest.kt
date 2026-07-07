@@ -2,6 +2,7 @@ package com.sakena.servicerequest.domain
 
 import com.sakena.shared.domain.DomainValidationException
 import com.sakena.user.domain.UserId
+import io.mockk.awaits
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -25,6 +26,7 @@ class ServiceRequestTest {
             categoryGroup = ServiceCategoryGroup.FACILITIES,
             subCategory = ServiceSubCategory.ELEVATOR,
             createdBy = testUserId,
+            updatedBy = testUserId,
             createdAt = now,
             updatedAt = now,
             status = status,
@@ -72,6 +74,21 @@ class ServiceRequestTest {
         assertEquals("Broken Elevator", request.title)
         assertEquals("The elevator is broken", request.description)
         assertEquals("Building A", request.location)
+    }
+
+    @Test
+    fun `create should keep createdBy and set updatedBy to the creator`() {
+        val request = ServiceRequest.create(
+            title = "Broken Elevator",
+            description = "The elevator is broken",
+            location = null,
+            createdBy = testUserId,
+            categoryGroup = ServiceCategoryGroup.FACILITIES,
+            subCategory = ServiceSubCategory.ELEVATOR
+        )
+
+        assertEquals(testUserId, request.createdBy)
+        assertEquals(testUserId, request.updatedBy)
     }
 
     @Test
@@ -219,23 +236,56 @@ class ServiceRequestTest {
 
     // --- Status Transition Tests ---
     @Test
-    fun `assignTo should change status to APPROVED and set assignedTo`() {
+    fun `approve should change status from PENDING to APPROVED`() {
         val request = createTestRequest(status = ServiceRequestStatus.PENDING)
-        val workerId = UserId.generate()
+        val adminId = UserId.generate()
 
-        val updated = request.assignTo(workerId)
+        val updated = request.approve(adminId)
 
         assertEquals(ServiceRequestStatus.APPROVED, updated.status)
-        assertEquals(workerId, updated.assignedTo)
+        assertEquals(adminId, updated.updatedBy)
         assertTrue(updated.updatedAt > request.updatedAt)
+        assertNull(updated.assignedTo)
         assertNull(updated.resolvedAt)
     }
 
     @Test
-    fun `startProgress should change status to IN_PROGRESS from APPROVED`() {
+    fun `approve should fail if status is not PENDING`() {
+        val request = createTestRequest(status = ServiceRequestStatus.APPROVED)
+        assertThrows<DomainValidationException> {
+            request.approve(UserId.generate())
+        }
+
+        val request2 = createTestRequest(status = ServiceRequestStatus.IN_PROGRESS)
+        assertThrows<DomainValidationException> {
+            request2.approve(UserId.generate())
+        }
+    }
+
+    @Test
+    fun `assignTo should change status to ASSIGNED and set assignedTo and updatedBy`() {
+        val request = createTestRequest(status = ServiceRequestStatus.PENDING)
         val workerId = UserId.generate()
+        val adminId = UserId.generate()
+
+        // approve first
+        val approved = request.approve(adminId)
+        Thread.sleep(2000)
+        val updated = approved.assignTo(workerId, adminId)
+
+        assertEquals(ServiceRequestStatus.ASSIGNED, updated.status)
+        assertEquals(workerId, updated.assignedTo)
+        assertEquals(adminId, updated.updatedBy)
+        assertTrue(updated.updatedAt > approved.updatedAt)
+        assertNull(updated.resolvedAt)
+    }
+
+    @Test
+    fun `startProgress should change status to IN_PROGRESS from ASSIGNED`() {
+        val workerId = UserId.generate()
+        val adminId = UserId.generate()
         val request = createTestRequest(
-            status = ServiceRequestStatus.APPROVED,
+            status = ServiceRequestStatus.ASSIGNED,
             assignedTo = workerId
         )
 
@@ -248,7 +298,7 @@ class ServiceRequestTest {
     }
 
     @Test
-    fun `startProgress should fail if status is not APPROVED`() {
+    fun `startProgress should fail if status is not ASSIGNED`() {
         val request = createTestRequest(status = ServiceRequestStatus.PENDING)
         assertThrows<DomainValidationException> {
             request.startProgress()
@@ -261,7 +311,7 @@ class ServiceRequestTest {
     }
 
     @Test
-    fun `complete should change status to COMPLETED and set resolvedAt`() {
+    fun `complete should change status to COMPLETED and set resolvedAt and updatedBy`() {
         val workerId = UserId.generate()
         val request = createTestRequest(
             status = ServiceRequestStatus.IN_PROGRESS,
@@ -269,10 +319,12 @@ class ServiceRequestTest {
         )
 
         Thread.sleep(1) // ensure time difference
-        val updated = request.complete()
+        val userId = UserId.generate()
+        val updated = request.complete(userId)
 
         assertEquals(ServiceRequestStatus.COMPLETED, updated.status)
         assertEquals(workerId, updated.assignedTo)
+        assertEquals(userId, updated.updatedBy)
         assertNotNull(updated.resolvedAt)
         assertTrue(updated.resolvedAt!! > request.createdAt)
         assertTrue(updated.updatedAt > request.updatedAt)
@@ -282,22 +334,24 @@ class ServiceRequestTest {
     fun `complete should fail if status is not IN_PROGRESS`() {
         val request = createTestRequest(status = ServiceRequestStatus.PENDING)
         assertThrows<DomainValidationException> {
-            request.complete()
+            request.complete(UserId.generate())
         }
 
         val request2 = createTestRequest(status = ServiceRequestStatus.APPROVED)
         assertThrows<DomainValidationException> {
-            request2.complete()
+            request2.complete(UserId.generate())
         }
     }
 
     @Test
-    fun `reject should change status to REJECTED from PENDING`() {
+    fun `reject should change status to REJECTED from PENDING and set updatedBy`() {
         val request = createTestRequest(status = ServiceRequestStatus.PENDING)
+        val adminId = UserId.generate()
 
-        val updated = request.reject()
+        val updated = request.reject(adminId)
 
         assertEquals(ServiceRequestStatus.REJECTED, updated.status)
+        assertEquals(adminId, updated.updatedBy)
         assertTrue(updated.updatedAt > request.updatedAt)
         assertNull(updated.assignedTo)
         assertNull(updated.resolvedAt)
@@ -307,13 +361,51 @@ class ServiceRequestTest {
     fun `reject should fail if status is not PENDING`() {
         val request = createTestRequest(status = ServiceRequestStatus.APPROVED)
         assertThrows<DomainValidationException> {
-            request.reject()
+            request.reject(UserId.generate())
         }
 
         val request2 = createTestRequest(status = ServiceRequestStatus.IN_PROGRESS)
         assertThrows<DomainValidationException> {
-            request2.reject()
+            request2.reject(UserId.generate())
         }
+    }
+
+    // --- Full lifecycle test ---
+    @Test
+    fun `full lifecycle from creation to completion`() {
+        val residentId = UserId.generate()
+        val managerId = UserId.generate()
+        val workerId = UserId.generate()
+
+        val request = ServiceRequest.create(
+            title = "Fix AC",
+            description = "AC unit not cooling",
+            location = "Room 101",
+            createdBy = residentId,
+            categoryGroup = ServiceCategoryGroup.FACILITIES,
+            subCategory = ServiceSubCategory.HVAC
+        )
+
+        assertEquals(ServiceRequestStatus.PENDING, request.status)
+        assertEquals(residentId, request.createdBy)
+        assertEquals(residentId, request.updatedBy)
+
+        val approved = request.approve(managerId)
+        assertEquals(ServiceRequestStatus.APPROVED, approved.status)
+        assertEquals(managerId, approved.updatedBy)
+
+        val assigned = approved.assignTo(workerId, managerId)
+        assertEquals(ServiceRequestStatus.ASSIGNED, assigned.status)
+        assertEquals(workerId, assigned.assignedTo)
+        assertEquals(managerId, assigned.updatedBy)
+
+        val inProgress = assigned.startProgress()
+        assertEquals(ServiceRequestStatus.IN_PROGRESS, inProgress.status)
+
+        val completed = inProgress.complete(workerId)
+        assertEquals(ServiceRequestStatus.COMPLETED, completed.status)
+        assertEquals(workerId, completed.updatedBy)
+        assertNotNull(completed.resolvedAt)
     }
 
     // --- Reconstitute Tests ---
@@ -334,6 +426,7 @@ class ServiceRequestTest {
             categoryGroup = ServiceCategoryGroup.BUILDING,
             subCategory = ServiceSubCategory.DOOR_WINDOW,
             createdBy = userId,
+            updatedBy = userId,
             createdAt = createdAt,
             updatedAt = updatedAt,
             status = ServiceRequestStatus.COMPLETED,
@@ -346,6 +439,7 @@ class ServiceRequestTest {
         assertEquals("Test Description", request.description)
         assertEquals("Test Location", request.location)
         assertEquals(userId, request.createdBy)
+        assertEquals(userId, request.updatedBy)
         assertEquals(createdAt, request.createdAt)
         assertEquals(updatedAt, request.updatedAt)
         assertEquals(ServiceRequestStatus.COMPLETED, request.status)
@@ -363,6 +457,7 @@ class ServiceRequestTest {
             categoryGroup = ServiceCategoryGroup.GENERAL,
             subCategory = ServiceSubCategory.GENERAL,
             createdBy = testUserId,
+            updatedBy = testUserId,
             createdAt = now,
             updatedAt = now,
             status = ServiceRequestStatus.PENDING,
@@ -372,5 +467,26 @@ class ServiceRequestTest {
 
         assertNull(request.assignedTo)
         assertNull(request.resolvedAt)
+    }
+
+    @Test
+    fun `reconstitute should fail when title is blank`() {
+        assertThrows<DomainValidationException> {
+            ServiceRequest.reconstitute(
+                id = ServiceRequestId.generate(),
+                title = "",
+                description = "Valid description",
+                location = null,
+                categoryGroup = ServiceCategoryGroup.GENERAL,
+                subCategory = ServiceSubCategory.GENERAL,
+                createdBy = testUserId,
+                updatedBy = testUserId,
+                createdAt = now,
+                updatedAt = now,
+                status = ServiceRequestStatus.PENDING,
+                assignedTo = null,
+                resolvedAt = null
+            )
+        }
     }
 }
