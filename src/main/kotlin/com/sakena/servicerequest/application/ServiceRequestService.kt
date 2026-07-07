@@ -2,6 +2,7 @@ package com.sakena.servicerequest.application
 
 import com.sakena.servicerequest.domain.ServiceCategoryGroup
 import com.sakena.servicerequest.domain.ServiceRequest
+import com.sakena.servicerequest.domain.ServiceRequestFilters
 import com.sakena.servicerequest.domain.ServiceRequestId
 import com.sakena.servicerequest.domain.ServiceRequestRepository
 import com.sakena.servicerequest.domain.ServiceSubCategory
@@ -20,12 +21,8 @@ class ServiceRequestService(
 ) {
 
     fun create(command: CreateServiceRequestCommand, currentUserId: UserId): ServiceRequest {
-        // Ensure the user exists
         val user = userRepository.findById(currentUserId)
             ?: throw IllegalArgumentException("User not found with id: $currentUserId")
-
-        // Optionally check role: only residents can create? We'll enforce in controller or here.
-        // For now, we allow any authenticated user.
 
         val request = ServiceRequest.create(
             title = command.title,
@@ -38,8 +35,12 @@ class ServiceRequestService(
         return serviceRequestRepository.save(request)
     }
 
-    fun getMyRequests(userId: UserId): List<ServiceRequest> {
-        return serviceRequestRepository.findAllByCreatedBy(userId)
+    /**
+     * Fetch service requests matching the given filters.
+     * Pass an empty [ServiceRequestFilters]() to get all requests.
+     */
+    fun getRequests(filters: ServiceRequestFilters): List<ServiceRequest> {
+        return serviceRequestRepository.findAllByFilters(filters)
     }
 
     fun getRequestById(id: ServiceRequestId): ServiceRequest? {
@@ -51,8 +52,7 @@ class ServiceRequestService(
             ?: throw EntityNotFoundException("Service request not found")
 
         val approved = request.approve(command.userId)
-        val saved = serviceRequestRepository.save(approved)
-        return saved
+        return serviceRequestRepository.save(approved)
     }
 
     fun assignRequest(command: AssignServiceRequestCommand): ServiceRequest {
@@ -63,20 +63,35 @@ class ServiceRequestService(
             ?: throw IllegalArgumentException("Worker not found with id: ${command.workerId}")
 
         val assigned = request.assignTo(worker.id, command.userId)
-        val saved = serviceRequestRepository.save(assigned)
-        return saved
+        return serviceRequestRepository.save(assigned)
     }
 
-    fun getAllRequests(query: GetAllServiceRequestsQuery): List<ServiceRequest> {
-        return serviceRequestRepository.findAllByFilters(
-            status = query.status,
-            categoryGroup = query.categoryGroup,
-            subCategory = query.subCategory,
-            createdFrom = query.createdFrom,
-            createdTo = query.createdTo,
-            updatedFrom = query.updatedFrom,
-            updatedTo = query.updatedTo
+    fun startProgress(command: StartProgressCommand): ServiceRequest {
+        val request = serviceRequestRepository.findById(command.serviceRequestId)
+            ?: throw EntityNotFoundException("Service request not found")
+
+        if (request.assignedTo != command.userId) {
+            throw DomainValidationException("Only the assigned staff member can start progress on this request")
+        }
+
+        val inProgress = request.startProgress(command.expectedCompletionAt)
+        return serviceRequestRepository.save(inProgress)
+    }
+
+    fun completeRequest(command: CompleteServiceRequestCommand): ServiceRequest {
+        val request = serviceRequestRepository.findById(command.serviceRequestId)
+            ?: throw EntityNotFoundException("Service request not found")
+
+        if (request.assignedTo != command.userId) {
+            throw DomainValidationException("Only the assigned staff member can complete this request")
+        }
+
+        val completed = request.complete(
+            userId = command.userId,
+            completionReport = command.completionReport,
+            completionCost = command.completionCost
         )
+        return serviceRequestRepository.save(completed)
     }
 
     fun getCategories(categoryGroupValue: String?): CategoryOptionsResult {

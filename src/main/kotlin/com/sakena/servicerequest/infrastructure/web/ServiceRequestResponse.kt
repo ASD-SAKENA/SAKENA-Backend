@@ -18,8 +18,11 @@ data class ServiceRequestResponse(
     val createdAt: Instant,
     val updatedAt: Instant,
     val status: ServiceRequestStatus,
-    val assignedTo: String?, // user ID as string
-    val resolvedAt: Instant?
+    val assignedTo: String?,
+    val resolvedAt: Instant?,
+    val expectedCompletionAt: Instant?,
+    val completionReport: String?,
+    val completionCost: Double?
 ) {
     companion object {
         fun fromDomain(request: ServiceRequest): ServiceRequestResponse {
@@ -36,7 +39,10 @@ data class ServiceRequestResponse(
                 updatedAt = request.updatedAt,
                 status = request.status,
                 assignedTo = request.assignedTo?.value?.toString(),
-                resolvedAt = request.resolvedAt
+                resolvedAt = request.resolvedAt,
+                expectedCompletionAt = request.expectedCompletionAt,
+                completionReport = request.completionReport,
+                completionCost = request.completionCost
             )
         }
     }
