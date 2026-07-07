@@ -110,7 +110,7 @@ data class ServiceRequest(
     }
 
     fun assignTo(workerId: UserId, userId: UserId): ServiceRequest {
-        if (status != ServiceRequestStatus.APPROVED || status != ServiceRequestStatus.ASSIGNED) {
+        if (status != ServiceRequestStatus.APPROVED && status != ServiceRequestStatus.ASSIGNED) {
             throw DomainValidationException("Service request can only be assigned when it is approved")
         }
         return this.copy(
