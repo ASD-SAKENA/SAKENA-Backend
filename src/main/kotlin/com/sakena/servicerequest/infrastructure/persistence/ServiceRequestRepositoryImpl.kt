@@ -2,6 +2,7 @@ package com.sakena.servicerequest.infrastructure.persistence
 
 import com.sakena.servicerequest.domain.ServiceCategoryGroup
 import com.sakena.servicerequest.domain.ServiceRequest
+import com.sakena.servicerequest.domain.ServiceRequestFilters
 import com.sakena.servicerequest.domain.ServiceRequestId
 import com.sakena.servicerequest.domain.ServiceRequestRepository
 import com.sakena.servicerequest.domain.ServiceRequestStatus
@@ -10,7 +11,7 @@ import com.sakena.user.domain.UserId
 import jakarta.persistence.criteria.Predicate
 import org.springframework.stereotype.Repository
 import java.time.Instant
-import kotlin.collections.map
+import java.util.UUID
 
 @Repository
 class ServiceRequestRepositoryImpl(
@@ -27,33 +28,24 @@ class ServiceRequestRepositoryImpl(
         return jpa.findById(id.value).orElse(null)?.let { toDomain(it) }
     }
 
-    override fun findAllByCreatedBy(userId: UserId): List<ServiceRequest> {
-        return jpa.findAllByCreatedBy(userId.value).map { toDomain(it) }
-    }
-
     override fun findAll(): List<ServiceRequest> {
         return jpa.findAll().map { toDomain(it) }
     }
 
-    override fun findAllByFilters(
-        status: ServiceRequestStatus?,
-        categoryGroup: ServiceCategoryGroup?,
-        subCategory: ServiceSubCategory?,
-        createdFrom: Instant?,
-        createdTo: Instant?,
-        updatedFrom: Instant?,
-        updatedTo: Instant?
-    ): List<ServiceRequest> {
+    override fun findAllByFilters(filters: ServiceRequestFilters): List<ServiceRequest> {
         val spec = org.springframework.data.jpa.domain.Specification<ServiceRequestJpaEntity> { root, _, cb ->
             val predicates = mutableListOf<Predicate>()
 
-            status?.let { predicates.add(cb.equal(root.get<ServiceRequestStatus>("status"), it)) }
-            categoryGroup?.let { predicates.add(cb.equal(root.get<ServiceCategoryGroup>("categoryGroup"), it)) }
-            subCategory?.let { predicates.add(cb.equal(root.get<ServiceSubCategory>("subCategory"), it)) }
-            createdFrom?.let { predicates.add(cb.greaterThanOrEqualTo(root.get("createdAt"), it)) }
-            createdTo?.let { predicates.add(cb.lessThanOrEqualTo(root.get("createdAt"), it)) }
-            updatedFrom?.let { predicates.add(cb.greaterThanOrEqualTo(root.get("updatedAt"), it)) }
-            updatedTo?.let { predicates.add(cb.lessThanOrEqualTo(root.get("updatedAt"), it)) }
+            filters.createdBy?.let { predicates.add(cb.equal(root.get<UUID>("createdBy"), it.value)) }
+            filters.updatedBy?.let { predicates.add(cb.equal(root.get<UUID>("updatedBy"), it.value)) }
+            filters.assignedTo?.let { predicates.add(cb.equal(root.get<UUID>("assignedTo"), it.value)) }
+            filters.status?.let { predicates.add(cb.equal(root.get<ServiceRequestStatus>("status"), it)) }
+            filters.categoryGroup?.let { predicates.add(cb.equal(root.get<ServiceCategoryGroup>("categoryGroup"), it)) }
+            filters.subCategory?.let { predicates.add(cb.equal(root.get<ServiceSubCategory>("subCategory"), it)) }
+            filters.createdFrom?.let { predicates.add(cb.greaterThanOrEqualTo(root.get("createdAt"), it)) }
+            filters.createdTo?.let { predicates.add(cb.lessThanOrEqualTo(root.get("createdAt"), it)) }
+            filters.updatedFrom?.let { predicates.add(cb.greaterThanOrEqualTo(root.get("updatedAt"), it)) }
+            filters.updatedTo?.let { predicates.add(cb.lessThanOrEqualTo(root.get("updatedAt"), it)) }
 
             cb.and(*predicates.toTypedArray())
         }
@@ -75,7 +67,10 @@ class ServiceRequestRepositoryImpl(
             updatedAt = domain.updatedAt,
             status = domain.status,
             assignedTo = domain.assignedTo?.value,
-            resolvedAt = domain.resolvedAt
+            resolvedAt = domain.resolvedAt,
+            expectedCompletionAt = domain.expectedCompletionAt,
+            completionReport = domain.completionReport,
+            completionCost = domain.completionCost
         )
     }
 
@@ -93,7 +88,10 @@ class ServiceRequestRepositoryImpl(
             updatedAt = entity.updatedAt,
             status = entity.status,
             assignedTo = entity.assignedTo?.let { UserId(it) },
-            resolvedAt = entity.resolvedAt
+            resolvedAt = entity.resolvedAt,
+            expectedCompletionAt = entity.expectedCompletionAt,
+            completionReport = entity.completionReport,
+            completionCost = entity.completionCost
         )
     }
 }
