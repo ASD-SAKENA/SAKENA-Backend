@@ -67,5 +67,5 @@ jwt:
   expiration-ms: 86400000
 
 app:
-  frontend-url: http://localhost:3000
-  reset-token-expiration-minutes: 60
+  frontend-url: ${FRONTEND_URL:http://localhost:3000}
+  reset-token-expiration-minutes: ${APP_RESET_TOKEN_EXPIRATION_MINUTES:60}
