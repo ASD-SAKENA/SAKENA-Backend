@@ -49,6 +49,10 @@ class AuthService(
         return userRepository.save(user)
     }
 
+    @Transactional(readOnly = true)
+    fun findByUsername(username: String): User? =
+        userRepository.findByUsername(username)
+
     fun login(command: LoginCommand): String {
         val user = userRepository.findByUsername(command.username)
             ?: throw InvalidCredentialsException()
