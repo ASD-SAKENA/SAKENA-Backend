@@ -1,0 +1,63 @@
+services:
+  sakena_db:
+    image: postgres:14
+    container_name: sakena_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-sakena}
+      POSTGRES_USER: ${DB_USERNAME:-sakena}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+    volumes:
+      - sakena-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-sakena} -d ${DB_NAME:-sakena}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - infra_network
+
+  sakena_backend:
+    image: ghcr.io/asd-sakena/sakena-backend:latest
+    container_name: sakena_backend
+    restart: unless-stopped
+    depends_on:
+      sakena_db:
+        condition: service_healthy
+    env_file:
+      - path: ./.env
+        required: true
+    environment:
+      DB_URL: jdbc:postgresql://sakena_db:5432/${DB_NAME:-sakena}
+      SERVER_PORT: 8080
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -qO- http://127.0.0.1:8080/actuator/health | grep -q UP || exit 1",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - infra_network
+
+volumes:
+  sakena-db-data:
+
+networks:
+  infra_network:
+    external: true

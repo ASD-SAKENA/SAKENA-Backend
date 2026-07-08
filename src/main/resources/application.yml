@@ -63,8 +63,8 @@ logging:
     com.sakena: ${LOG_LEVEL_APP:DEBUG}
 
 jwt:
-  secret: ipp3tok924jIS0d2q7PklWf6HwvPoUjIGsFU2a9kvMs=
-  expiration-ms: 86400000
+  secret: ${JWT_SECRET:ipp3tok924jIS0d2q7PklWf6HwvPoUjIGsFU2a9kvMs=}
+  expiration-ms: ${JWT_EXPIRATION_MS:86400000}
 
 app:
   frontend-url: ${FRONTEND_URL:http://localhost:3000}
