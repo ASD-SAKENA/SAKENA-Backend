@@ -17,5 +17,4 @@ CREATE TABLE IF NOT EXISTS service_requests (
     resolved_at TIMESTAMP
     );
 
--- اگر می‌خواهید ایندکس روی created_by داشته باشید (برای جستجوی سریع‌تر)
 CREATE INDEX idx_service_requests_created_by ON service_requests(created_by);
