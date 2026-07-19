@@ -1,6 +1,7 @@
 package com.sakena.user.infrastructure.security
 
 import com.sakena.user.application.JwtTokenProvider
+import com.sakena.user.domain.UserRepository
 import jakarta.servlet.FilterChain
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
@@ -12,7 +13,8 @@ import org.springframework.web.filter.OncePerRequestFilter
 
 @Component
 class JwtAuthenticationFilter(
-    private val jwtTokenProvider: JwtTokenProvider
+    private val jwtTokenProvider: JwtTokenProvider,
+    private val userRepository: UserRepository
 ) : OncePerRequestFilter() {
 
     public override fun doFilterInternal(
@@ -23,9 +25,13 @@ class JwtAuthenticationFilter(
         val token = extractToken(request)
         if (token != null && jwtTokenProvider.validateToken(token)) {
             val username = jwtTokenProvider.extractUsername(token)
-            val authorities = listOf(SimpleGrantedAuthority("ROLE_USER"))
-            val auth = UsernamePasswordAuthenticationToken(username, null, authorities)
-            SecurityContextHolder.getContext().authentication = auth
+            // Deactivated accounts are blocked immediately, even with a still-valid token.
+            val user = userRepository.findByUsername(username)
+            if (user != null && user.active) {
+                val authorities = listOf(SimpleGrantedAuthority("ROLE_USER"))
+                val auth = UsernamePasswordAuthenticationToken(username, null, authorities)
+                SecurityContextHolder.getContext().authentication = auth
+            }
         }
         filterChain.doFilter(request, response)
     }

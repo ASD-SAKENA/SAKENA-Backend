@@ -50,9 +50,9 @@ data class User(
     fun verifyPassword(rawPassword: String, passwordMatcher: (String, String) -> Boolean): Boolean =
         passwordMatcher(rawPassword, passwordHash)
 
-    fun deactivate() {
-        // TODO: deactivate and remove user
-    }
+    fun deactivate(): User = copy(active = false, updatedAt = Instant.now())
+
+    fun activate(): User = copy(active = true, updatedAt = Instant.now())
 
     fun withNewPassword(rawPassword: String, passwordEncoder: (String) -> String): User {
         return this.copy(
