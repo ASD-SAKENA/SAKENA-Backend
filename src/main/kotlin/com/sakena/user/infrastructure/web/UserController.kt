@@ -37,4 +37,14 @@ class UserController(
         UserSummaryResponse.from(
             userAdminService.changeActiveStatus(UserId.fromString(id), request.active)
         )
+
+    @PatchMapping("/{id}/specialty")
+    @Operation(summary = "Set or clear a user's specialty")
+    fun changeSpecialty(
+        @PathVariable id: String,
+        @Valid @RequestBody request: UpdateUserSpecialtyRequest
+    ): UserSummaryResponse =
+        UserSummaryResponse.from(
+            userAdminService.changeSpecialty(UserId.fromString(id), request.specialty)
+        )
 }

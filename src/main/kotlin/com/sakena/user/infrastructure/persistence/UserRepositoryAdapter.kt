@@ -48,7 +48,8 @@ class UserRepositoryAdapter(
             role = user.role,
             createdAt = user.createdAt,
             updatedAt = user.updatedAt,
-            active = user.active
+            active = user.active,
+            specialty = user.specialty
         )
     }
 
@@ -61,7 +62,8 @@ class UserRepositoryAdapter(
             role = entity.role,
             createdAt = entity.createdAt,
             updatedAt = entity.updatedAt,
-            active = entity.active
+            active = entity.active,
+            specialty = entity.specialty
         )
     }
 }

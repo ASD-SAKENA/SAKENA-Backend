@@ -133,4 +133,41 @@ class UserTest {
         assertEquals("new_hash", updated.passwordHash)
         assertTrue(updated.updatedAt > user.updatedAt)
     }
+
+    // --- Specialty tests ---
+    @Test
+    fun `withSpecialty should set a trimmed specialty and update updatedAt`() {
+        val user = createTestUser()
+        Thread.sleep(1)
+        val updated = user.withSpecialty("  Electrician  ")
+        assertEquals("Electrician", updated.specialty)
+        assertTrue(updated.updatedAt > user.updatedAt)
+    }
+
+    @Test
+    fun `withSpecialty should clear specialty when given null`() {
+        val user = createTestUser().withSpecialty("Plumber")
+        val cleared = user.withSpecialty(null)
+        assertNull(cleared.specialty)
+    }
+
+    @Test
+    fun `withSpecialty should treat a blank value as clearing the specialty`() {
+        val user = createTestUser().withSpecialty("Plumber")
+        val cleared = user.withSpecialty("   ")
+        assertNull(cleared.specialty)
+    }
+
+    @Test
+    fun `withSpecialty should fail if specialty is longer than 100 characters`() {
+        val user = createTestUser()
+        assertThrows<IllegalArgumentException> {
+            user.withSpecialty("x".repeat(101))
+        }
+    }
+
+    @Test
+    fun `specialty defaults to null when not provided`() {
+        assertNull(createTestUser().specialty)
+    }
 }
