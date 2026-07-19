@@ -17,6 +17,10 @@ class UserRepositoryAdapter(
         return toDomain(saved)
     }
 
+    override fun findAll(): List<User> {
+        return jpaRepo.findAll().map { toDomain(it) }
+    }
+
     override fun findByUsername(username: String): User? {
         return jpaRepo.findByUsername(username)?.let { toDomain(it) }
     }
