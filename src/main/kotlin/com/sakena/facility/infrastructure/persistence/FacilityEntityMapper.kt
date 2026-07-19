@@ -11,6 +11,7 @@ internal object FacilityEntityMapper {
             id = facility.id.value,
             name = facility.name,
             icon = facility.icon,
+            capacity = facility.capacity,
             createdAt = facility.createdAt,
             updatedAt = facility.updatedAt,
         )
@@ -20,6 +21,7 @@ internal object FacilityEntityMapper {
             id = FacilityId(entity.id),
             name = entity.name,
             icon = entity.icon,
+            capacity = entity.capacity,
             createdAt = entity.createdAt,
             updatedAt = entity.updatedAt,
         )

@@ -12,6 +12,7 @@ class Facility private constructor(
     val id: FacilityId,
     name: String,
     icon: String?,
+    capacity: Int,
     val createdAt: Instant,
     updatedAt: Instant,
 ) {
@@ -21,12 +22,17 @@ class Facility private constructor(
     var icon: String? = icon
         private set
 
+    /** How many concurrent bookings a time slot allows before it locks. */
+    var capacity: Int = capacity
+        private set
+
     var updatedAt: Instant = updatedAt
         private set
 
-    fun update(newName: String, newIcon: String?) {
+    fun update(newName: String, newIcon: String?, newCapacity: Int) {
         this.name = validateName(newName)
         this.icon = validateIcon(newIcon)
+        this.capacity = validateCapacity(newCapacity)
         touch()
     }
 
@@ -37,13 +43,16 @@ class Facility private constructor(
     companion object {
         const val MAX_NAME_LENGTH = 150
         const val MAX_ICON_LENGTH = 50
+        const val DEFAULT_CAPACITY = 10
+        const val MAX_CAPACITY = 1_000
 
-        fun create(name: String, icon: String?): Facility {
+        fun create(name: String, icon: String?, capacity: Int = DEFAULT_CAPACITY): Facility {
             val now = Instant.now()
             return Facility(
                 id = FacilityId.new(),
                 name = validateName(name),
                 icon = validateIcon(icon),
+                capacity = validateCapacity(capacity),
                 createdAt = now,
                 updatedAt = now,
             )
@@ -54,9 +63,10 @@ class Facility private constructor(
             id: FacilityId,
             name: String,
             icon: String?,
+            capacity: Int,
             createdAt: Instant,
             updatedAt: Instant,
-        ): Facility = Facility(id, name, icon, createdAt, updatedAt)
+        ): Facility = Facility(id, name, icon, capacity, createdAt, updatedAt)
 
         private fun validateName(name: String): String {
             val trimmed = name.trim()
@@ -73,6 +83,14 @@ class Facility private constructor(
                 throw DomainValidationException("Facility icon must be at most $MAX_ICON_LENGTH characters")
             }
             return trimmed
+        }
+
+        private fun validateCapacity(capacity: Int): Int {
+            if (capacity < 1) throw DomainValidationException("Facility capacity must be at least 1")
+            if (capacity > MAX_CAPACITY) {
+                throw DomainValidationException("Facility capacity must be at most $MAX_CAPACITY")
+            }
+            return capacity
         }
     }
 }

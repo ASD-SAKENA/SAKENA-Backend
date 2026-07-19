@@ -25,6 +25,9 @@ class FacilityEntity(
     @Column(name = "icon", length = 50)
     var icon: String?,
 
+    @Column(name = "capacity", nullable = false)
+    var capacity: Int,
+
     @Column(name = "created_at", nullable = false, updatable = false)
     var createdAt: Instant,
 
