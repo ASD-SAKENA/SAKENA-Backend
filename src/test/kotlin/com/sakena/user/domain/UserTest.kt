@@ -105,6 +105,25 @@ class UserTest {
         assertFalse(user.verifyPassword("wrong", matcher))
     }
 
+    // --- Active status tests ---
+    @Test
+    fun `deactivate should set active to false and update updatedAt`() {
+        val user = createTestUser(active = true)
+        Thread.sleep(1)
+        val deactivated = user.deactivate()
+        assertFalse(deactivated.active)
+        assertTrue(deactivated.updatedAt > user.updatedAt)
+    }
+
+    @Test
+    fun `activate should set active to true and update updatedAt`() {
+        val user = createTestUser(active = false)
+        Thread.sleep(1)
+        val activated = user.activate()
+        assertTrue(activated.active)
+        assertTrue(activated.updatedAt > user.updatedAt)
+    }
+
     @Test
     fun `withNewPassword should update passwordHash and updatedAt`() {
         val user = createTestUser(passwordHash = "old_hash")

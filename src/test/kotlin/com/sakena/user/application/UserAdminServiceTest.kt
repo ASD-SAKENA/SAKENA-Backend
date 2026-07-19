@@ -1,12 +1,15 @@
 package com.sakena.user.application
 
+import com.sakena.shared.domain.EntityNotFoundException
 import com.sakena.user.domain.Role
 import com.sakena.user.domain.User
 import com.sakena.user.domain.UserId
 import com.sakena.user.domain.UserRepository
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.slot
 import io.mockk.verify
+import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -93,5 +96,46 @@ class UserAdminServiceTest {
 
         assertEquals(1, result.size)
         assertFalse(result.first().active)
+    }
+
+    // ===== CHANGE ACTIVE STATUS TESTS =====
+
+    @Test
+    fun `changeActiveStatus should deactivate an active user`() {
+        val user = createUser(active = true)
+        every { userRepository.findById(user.id) } returns user
+        val savedUserSlot = slot<User>()
+        every { userRepository.save(capture(savedUserSlot)) } answers { savedUserSlot.captured }
+
+        val result = userAdminService.changeActiveStatus(user.id, active = false)
+
+        assertFalse(result.active)
+        assertFalse(savedUserSlot.captured.active)
+        verify(exactly = 1) { userRepository.save(any()) }
+    }
+
+    @Test
+    fun `changeActiveStatus should reactivate an inactive user`() {
+        val user = createUser(active = false)
+        every { userRepository.findById(user.id) } returns user
+        val savedUserSlot = slot<User>()
+        every { userRepository.save(capture(savedUserSlot)) } answers { savedUserSlot.captured }
+
+        val result = userAdminService.changeActiveStatus(user.id, active = true)
+
+        assertTrue(result.active)
+        assertTrue(savedUserSlot.captured.active)
+        verify(exactly = 1) { userRepository.save(any()) }
+    }
+
+    @Test
+    fun `changeActiveStatus should throw EntityNotFoundException when user does not exist`() {
+        val userId = UserId.generate()
+        every { userRepository.findById(userId) } returns null
+
+        assertThrows<EntityNotFoundException> {
+            userAdminService.changeActiveStatus(userId, active = false)
+        }
+        verify(exactly = 0) { userRepository.save(any()) }
     }
 }
