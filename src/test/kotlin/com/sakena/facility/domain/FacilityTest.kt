@@ -32,12 +32,21 @@ class FacilityTest {
     }
 
     @Test
-    fun `update replaces name and icon`() {
+    fun `update replaces name, icon and capacity`() {
         val facility = Facility.create("Pool", "pool")
 
-        facility.update("Gym", "fitness_center")
+        facility.update("Gym", "fitness_center", 15)
 
         assertEquals("Gym", facility.name)
         assertEquals("fitness_center", facility.icon)
+        assertEquals(15, facility.capacity)
+    }
+
+    @Test
+    fun `create defaults capacity and rejects a non-positive one`() {
+        assertEquals(Facility.DEFAULT_CAPACITY, Facility.create("Pool", null).capacity)
+        assertFailsWith<DomainValidationException> {
+            Facility.create("Pool", null, capacity = 0)
+        }
     }
 }

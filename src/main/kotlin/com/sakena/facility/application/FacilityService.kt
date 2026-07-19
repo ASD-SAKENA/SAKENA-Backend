@@ -21,13 +21,13 @@ class FacilityService(
 ) {
 
     fun create(command: CreateFacilityCommand): Facility {
-        val facility = Facility.create(command.name, command.icon)
+        val facility = Facility.create(command.name, command.icon, command.capacity)
         return facilityRepository.save(facility)
     }
 
     fun update(id: FacilityId, command: UpdateFacilityCommand): Facility {
         val facility = requireFacility(id)
-        facility.update(command.name, command.icon)
+        facility.update(command.name, command.icon, command.capacity)
         return facilityRepository.save(facility)
     }
 

@@ -37,9 +37,10 @@ class FacilityServiceTest {
         every { repository.findById(existing.id) } returns existing
         every { repository.save(any()) } answers { firstArg() }
 
-        val result = service.update(existing.id, UpdateFacilityCommand("Gym", "fitness_center"))
+        val result = service.update(existing.id, UpdateFacilityCommand("Gym", "fitness_center", 15))
 
         assertEquals("Gym", result.name)
+        assertEquals(15, result.capacity)
     }
 
     @Test
@@ -48,7 +49,7 @@ class FacilityServiceTest {
         every { repository.findById(id) } returns null
 
         assertFailsWith<FacilityNotFoundException> {
-            service.update(id, UpdateFacilityCommand("Gym", null))
+            service.update(id, UpdateFacilityCommand("Gym", null, 10))
         }
     }
 
