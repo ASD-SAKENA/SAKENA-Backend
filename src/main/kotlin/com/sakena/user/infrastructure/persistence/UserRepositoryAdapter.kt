@@ -17,6 +17,10 @@ class UserRepositoryAdapter(
         return toDomain(saved)
     }
 
+    override fun findAll(): List<User> {
+        return jpaRepo.findAll().map { toDomain(it) }
+    }
+
     override fun findByUsername(username: String): User? {
         return jpaRepo.findByUsername(username)?.let { toDomain(it) }
     }
@@ -44,7 +48,8 @@ class UserRepositoryAdapter(
             role = user.role,
             createdAt = user.createdAt,
             updatedAt = user.updatedAt,
-            active = user.active
+            active = user.active,
+            specialty = user.specialty
         )
     }
 
@@ -57,7 +62,8 @@ class UserRepositoryAdapter(
             role = entity.role,
             createdAt = entity.createdAt,
             updatedAt = entity.updatedAt,
-            active = entity.active
+            active = entity.active,
+            specialty = entity.specialty
         )
     }
 }

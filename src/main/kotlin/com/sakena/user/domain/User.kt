@@ -10,9 +10,21 @@ data class User(
     val role: Role,
     val createdAt: Instant,
     val updatedAt: Instant,
-    val active: Boolean = true
+    val active: Boolean = true,
+    val specialty: String? = null
 ) {
+    init {
+        specialty?.let {
+            require(it.isNotBlank()) { "Specialty cannot be blank" }
+            require(it.length <= MAX_SPECIALTY_LENGTH) {
+                "Specialty must be at most $MAX_SPECIALTY_LENGTH characters"
+            }
+        }
+    }
+
     companion object {
+        const val MAX_SPECIALTY_LENGTH = 100
+
         fun register(
             username: String,
             email: String,
@@ -43,16 +55,22 @@ data class User(
             role: Role,
             createdAt: Instant,
             updatedAt: Instant,
-            active: Boolean
-        ) = User(id, username, email, passwordHash, role, createdAt, updatedAt, active)
+            active: Boolean,
+            specialty: String? = null
+        ) = User(id, username, email, passwordHash, role, createdAt, updatedAt, active, specialty)
     }
 
     fun verifyPassword(rawPassword: String, passwordMatcher: (String, String) -> Boolean): Boolean =
         passwordMatcher(rawPassword, passwordHash)
 
-    fun deactivate() {
-        // TODO: deactivate and remove user
-    }
+    fun deactivate(): User = copy(active = false, updatedAt = Instant.now())
+
+    fun activate(): User = copy(active = true, updatedAt = Instant.now())
+
+    fun withSpecialty(specialty: String?): User = copy(
+        specialty = specialty?.trim()?.takeIf { it.isNotEmpty() },
+        updatedAt = Instant.now()
+    )
 
     fun withNewPassword(rawPassword: String, passwordEncoder: (String) -> String): User {
         return this.copy(

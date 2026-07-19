@@ -105,6 +105,25 @@ class UserTest {
         assertFalse(user.verifyPassword("wrong", matcher))
     }
 
+    // --- Active status tests ---
+    @Test
+    fun `deactivate should set active to false and update updatedAt`() {
+        val user = createTestUser(active = true)
+        Thread.sleep(1)
+        val deactivated = user.deactivate()
+        assertFalse(deactivated.active)
+        assertTrue(deactivated.updatedAt > user.updatedAt)
+    }
+
+    @Test
+    fun `activate should set active to true and update updatedAt`() {
+        val user = createTestUser(active = false)
+        Thread.sleep(1)
+        val activated = user.activate()
+        assertTrue(activated.active)
+        assertTrue(activated.updatedAt > user.updatedAt)
+    }
+
     @Test
     fun `withNewPassword should update passwordHash and updatedAt`() {
         val user = createTestUser(passwordHash = "old_hash")
@@ -113,5 +132,42 @@ class UserTest {
         val updated = user.withNewPassword("newPassword123", { "new_hash" })
         assertEquals("new_hash", updated.passwordHash)
         assertTrue(updated.updatedAt > user.updatedAt)
+    }
+
+    // --- Specialty tests ---
+    @Test
+    fun `withSpecialty should set a trimmed specialty and update updatedAt`() {
+        val user = createTestUser()
+        Thread.sleep(1)
+        val updated = user.withSpecialty("  Electrician  ")
+        assertEquals("Electrician", updated.specialty)
+        assertTrue(updated.updatedAt > user.updatedAt)
+    }
+
+    @Test
+    fun `withSpecialty should clear specialty when given null`() {
+        val user = createTestUser().withSpecialty("Plumber")
+        val cleared = user.withSpecialty(null)
+        assertNull(cleared.specialty)
+    }
+
+    @Test
+    fun `withSpecialty should treat a blank value as clearing the specialty`() {
+        val user = createTestUser().withSpecialty("Plumber")
+        val cleared = user.withSpecialty("   ")
+        assertNull(cleared.specialty)
+    }
+
+    @Test
+    fun `withSpecialty should fail if specialty is longer than 100 characters`() {
+        val user = createTestUser()
+        assertThrows<IllegalArgumentException> {
+            user.withSpecialty("x".repeat(101))
+        }
+    }
+
+    @Test
+    fun `specialty defaults to null when not provided`() {
+        assertNull(createTestUser().specialty)
     }
 }
