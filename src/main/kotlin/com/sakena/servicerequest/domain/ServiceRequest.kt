@@ -161,6 +161,23 @@ data class ServiceRequest(
         )
     }
 
+    fun settle(userId: UserId): ServiceRequest {
+        if (status != ServiceRequestStatus.COMPLETED) {
+            throw DomainValidationException("Service request can only be settled when it is completed")
+        }
+        if (completionCost == null || completionCost <= 0.0) {
+            throw DomainValidationException("Service request has no completion cost to settle")
+        }
+        if (assignedTo == null) {
+            throw DomainValidationException("Service request has no assigned worker to pay")
+        }
+        return this.copy(
+            status = ServiceRequestStatus.SETTLED,
+            updatedAt = Instant.now(),
+            updatedBy = userId
+        )
+    }
+
     fun reject(userId: UserId): ServiceRequest {
         if (status != ServiceRequestStatus.PENDING) {
             throw DomainValidationException("Service request can only be rejected while it is pending")
