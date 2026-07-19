@@ -138,4 +138,44 @@ class UserAdminServiceTest {
         }
         verify(exactly = 0) { userRepository.save(any()) }
     }
+
+    // ===== CHANGE SPECIALTY TESTS =====
+
+    @Test
+    fun `changeSpecialty should set the specialty and save the user`() {
+        val user = createUser(role = Role.STAFF)
+        every { userRepository.findById(user.id) } returns user
+        val savedUserSlot = slot<User>()
+        every { userRepository.save(capture(savedUserSlot)) } answers { savedUserSlot.captured }
+
+        val result = userAdminService.changeSpecialty(user.id, "Electrician")
+
+        assertEquals("Electrician", result.specialty)
+        assertEquals("Electrician", savedUserSlot.captured.specialty)
+        verify(exactly = 1) { userRepository.save(any()) }
+    }
+
+    @Test
+    fun `changeSpecialty should clear the specialty when given null`() {
+        val user = createUser(role = Role.STAFF).withSpecialty("Plumber")
+        every { userRepository.findById(user.id) } returns user
+        val savedUserSlot = slot<User>()
+        every { userRepository.save(capture(savedUserSlot)) } answers { savedUserSlot.captured }
+
+        val result = userAdminService.changeSpecialty(user.id, null)
+
+        assertNull(result.specialty)
+        assertNull(savedUserSlot.captured.specialty)
+    }
+
+    @Test
+    fun `changeSpecialty should throw EntityNotFoundException when user does not exist`() {
+        val userId = UserId.generate()
+        every { userRepository.findById(userId) } returns null
+
+        assertThrows<EntityNotFoundException> {
+            userAdminService.changeSpecialty(userId, "Electrician")
+        }
+        verify(exactly = 0) { userRepository.save(any()) }
+    }
 }

@@ -26,4 +26,10 @@ class UserAdminService(
         val updated = if (active) user.activate() else user.deactivate()
         return userRepository.save(updated)
     }
+
+    fun changeSpecialty(userId: UserId, specialty: String?): User {
+        val user = userRepository.findById(userId)
+            ?: throw EntityNotFoundException("User not found: ${userId.value}")
+        return userRepository.save(user.withSpecialty(specialty))
+    }
 }

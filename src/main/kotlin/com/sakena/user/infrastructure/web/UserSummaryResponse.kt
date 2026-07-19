@@ -8,7 +8,8 @@ data class UserSummaryResponse(
     val username: String,
     val email: String,
     val role: Role,
-    val active: Boolean
+    val active: Boolean,
+    val specialty: String?
 ) {
     companion object {
         fun from(user: User) = UserSummaryResponse(
@@ -16,7 +17,8 @@ data class UserSummaryResponse(
             username = user.username,
             email = user.email,
             role = user.role,
-            active = user.active
+            active = user.active,
+            specialty = user.specialty
         )
     }
 }
