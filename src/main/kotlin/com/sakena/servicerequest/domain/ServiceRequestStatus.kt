@@ -6,5 +6,6 @@ enum class ServiceRequestStatus {
     ASSIGNED, // Manager assigned to worker
     IN_PROGRESS,  // Assigned to worker
     COMPLETED,    // Resolved
+    SETTLED,      // Worker wage paid out from the building account
     REJECTED      // Manager rejected
 }
