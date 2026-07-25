@@ -7,6 +7,7 @@ import com.sakena.servicerequest.domain.ServiceSubCategory
 import com.sakena.shared.domain.DomainValidationException
 import com.sakena.user.domain.UserId
 import com.sakena.wallet.domain.WalletRepository
+import com.sakena.wallet.domain.WalletTransactionRepository
 import com.sakena.wallet.domain.model.Wallet
 import io.mockk.every
 import io.mockk.mockk
@@ -20,8 +21,13 @@ import kotlin.test.assertFailsWith
 class WalletServiceTest {
 
     private val walletRepository = mockk<WalletRepository>(relaxed = true)
+    private val transactionRepository = mockk<WalletTransactionRepository>(relaxed = true)
     private val serviceRequestRepository = mockk<ServiceRequestRepository>(relaxed = true)
-    private val service = WalletService(walletRepository, serviceRequestRepository)
+    private val service = WalletService(
+        walletRepository,
+        transactionRepository,
+        serviceRequestRepository,
+    )
 
     private val manager = UserId.generate()
     private val worker = UserId.generate()
@@ -60,6 +66,52 @@ class WalletServiceTest {
         val workerWallet = savedWallets.first { it.ownerUserId == worker }
         assertEquals(BigDecimal("250000.0"), workerWallet.balance)
         assertEquals("SETTLED", savedRequest.captured.status.name)
+    }
+
+    @Test
+    fun `settle writes a ledger line on both wallets`() {
+        val request = completedRequest()
+        val building = Wallet.createBuilding()
+        every { serviceRequestRepository.findById(request.id) } returns request
+        every { walletRepository.findBuildingWallet() } returns building
+        every { walletRepository.findByOwner(worker) } returns null
+        every { walletRepository.save(any()) } answers { firstArg() }
+        val ledger = mutableListOf<com.sakena.wallet.domain.model.WalletTransaction>()
+        every { transactionRepository.save(capture(ledger)) } answers { ledger.last() }
+
+        service.settleServiceRequest(request.id, manager)
+
+        assertEquals(2, ledger.size)
+        assertEquals(
+            com.sakena.wallet.domain.model.TransactionDirection.DEBIT,
+            ledger.first().direction,
+        )
+        assertEquals(
+            com.sakena.wallet.domain.model.TransactionCategory.WAGE_SETTLEMENT,
+            ledger.first().category,
+        )
+    }
+
+    @Test
+    fun `recording a building expense debits the account and logs it`() {
+        val building = Wallet.createBuilding()
+        every { walletRepository.findBuildingWallet() } returns building
+        every { walletRepository.save(any()) } answers { firstArg() }
+        val ledger = slot<com.sakena.wallet.domain.model.WalletTransaction>()
+        every { transactionRepository.save(capture(ledger)) } answers { ledger.captured }
+
+        service.recordBuildingTransaction(
+            com.sakena.wallet.application.command.RecordBuildingTransactionCommand(
+                direction = com.sakena.wallet.domain.model.TransactionDirection.DEBIT,
+                category = com.sakena.wallet.domain.model.TransactionCategory.OPERATING_EXPENSE,
+                amount = BigDecimal("400000"),
+                description = "Boiler room service",
+            ),
+        )
+
+        assertEquals(BigDecimal("-400000"), building.balance)
+        assertEquals("Boiler room service", ledger.captured.description)
+        assertEquals(building.balance, ledger.captured.balanceAfter)
     }
 
     @Test

@@ -4,15 +4,19 @@ import com.sakena.servicerequest.domain.ServiceRequestId
 import com.sakena.user.application.ProfileService
 import com.sakena.user.domain.UserId
 import com.sakena.wallet.application.WalletService
+import com.sakena.wallet.infrastructure.web.dto.RecordBuildingTransactionRequest
 import com.sakena.wallet.infrastructure.web.dto.WalletResponse
+import com.sakena.wallet.infrastructure.web.dto.WalletTransactionResponse
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.security.SecurityRequirement
 import io.swagger.v3.oas.annotations.tags.Tag
+import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
 import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
@@ -23,7 +27,7 @@ import org.springframework.web.bind.annotation.RestController
  */
 @RestController
 @RequestMapping("/api/v1/wallets")
-@Tag(name = "Wallets", description = "Worker wallets and wage settlement")
+@Tag(name = "Wallets", description = "Building account, worker wallets and wage settlement")
 @SecurityRequirement(name = "bearerAuth")
 class WalletController(
     private val walletService: WalletService,
@@ -34,6 +38,29 @@ class WalletController(
     @GetMapping("/me")
     fun myWallet(): WalletResponse =
         WalletResponse.from(walletService.getMyWallet(getCurrentUserId()))
+
+    @Operation(summary = "Current user's wallet ledger, newest first")
+    @GetMapping("/me/transactions")
+    fun myTransactions(): List<WalletTransactionResponse> =
+        walletService.getMyLedger(getCurrentUserId()).map(WalletTransactionResponse::from)
+
+    @Operation(summary = "Shared building account balance (manager)")
+    @GetMapping("/building")
+    fun buildingWallet(): WalletResponse =
+        WalletResponse.from(walletService.getBuildingWallet())
+
+    @Operation(summary = "Building account ledger — income and expenses, newest first (manager)")
+    @GetMapping("/building/transactions")
+    fun buildingTransactions(): List<WalletTransactionResponse> =
+        walletService.getBuildingLedger().map(WalletTransactionResponse::from)
+
+    @Operation(summary = "Record income or an expense on the building account (manager)")
+    @PostMapping("/building/transactions")
+    @ResponseStatus(HttpStatus.CREATED)
+    fun recordBuildingTransaction(
+        @Valid @RequestBody request: RecordBuildingTransactionRequest,
+    ): WalletResponse =
+        WalletResponse.from(walletService.recordBuildingTransaction(request.toCommand()))
 
     @Operation(summary = "Settle a completed service request's wage (manager)")
     @PostMapping("/settle/{serviceRequestId}")
