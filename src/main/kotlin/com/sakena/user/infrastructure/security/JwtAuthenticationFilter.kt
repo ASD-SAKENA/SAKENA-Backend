@@ -28,7 +28,9 @@ class JwtAuthenticationFilter(
             // Deactivated accounts are blocked immediately, even with a still-valid token.
             val user = userRepository.findByUsername(username)
             if (user != null && user.active) {
-                val authorities = listOf(SimpleGrantedAuthority("ROLE_USER"))
+                // The role comes from the stored user, never from the token, so a
+                // role change (or demotion) takes effect on the very next request.
+                val authorities = listOf(SimpleGrantedAuthority("ROLE_${user.role.name}"))
                 val auth = UsernamePasswordAuthenticationToken(username, null, authorities)
                 SecurityContextHolder.getContext().authentication = auth
             }

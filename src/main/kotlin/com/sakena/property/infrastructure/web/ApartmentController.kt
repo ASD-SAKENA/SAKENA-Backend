@@ -11,6 +11,7 @@ import io.swagger.v3.oas.annotations.tags.Tag
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
+import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
@@ -41,6 +42,7 @@ class ApartmentController(
     fun getById(@PathVariable id: String): ApartmentResponse =
         ApartmentResponse.from(apartmentService.getById(ApartmentId.from(id)))
 
+    @PreAuthorize("hasRole('MANAGER')")
     @Operation(summary = "Create a new apartment")
     @PostMapping
     fun create(
@@ -52,6 +54,7 @@ class ApartmentController(
         return ResponseEntity.created(location).body(ApartmentResponse.from(apartment))
     }
 
+    @PreAuthorize("hasRole('MANAGER')")
     @Operation(summary = "Update an apartment")
     @PutMapping("/{id}")
     fun update(
@@ -60,6 +63,7 @@ class ApartmentController(
     ): ApartmentResponse =
         ApartmentResponse.from(apartmentService.update(ApartmentId.from(id), request.toCommand()))
 
+    @PreAuthorize("hasRole('MANAGER')")
     @Operation(summary = "Delete an apartment")
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)

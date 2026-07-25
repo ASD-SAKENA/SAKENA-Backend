@@ -36,13 +36,17 @@ class JwtAuthenticationFilterTest {
         SecurityContextHolder.clearContext()
     }
 
-    private fun createUser(username: String = "john", active: Boolean = true): User {
+    private fun createUser(
+        username: String = "john",
+        active: Boolean = true,
+        role: Role = Role.RESIDENT
+    ): User {
         return User.reconstitute(
             id = UserId.generate(),
             username = username,
             email = "$username@example.com",
             passwordHash = "hashed",
-            role = Role.RESIDENT,
+            role = role,
             createdAt = Instant.now(),
             updatedAt = Instant.now(),
             active = active
@@ -65,8 +69,32 @@ class JwtAuthenticationFilterTest {
         val authentication = SecurityContextHolder.getContext().authentication
         assertNotNull(authentication)
         assertEquals(username, authentication.principal)
-        assertTrue(authentication.authorities.contains(SimpleGrantedAuthority("ROLE_USER")))
+        assertTrue(authentication.authorities.contains(SimpleGrantedAuthority("ROLE_RESIDENT")))
         verify(exactly = 1) { chain.doFilter(request, response) }
+    }
+
+    @Test
+    fun `doFilterInternal grants the authority of the stored role`() {
+        val token = "valid.jwt.token"
+        every { request.getHeader("Authorization") } returns "Bearer $token"
+        every { jwtTokenProvider.validateToken(token) } returns true
+        every { chain.doFilter(request, response) } just Runs
+
+        for (role in Role.entries) {
+            SecurityContextHolder.clearContext()
+            val username = "user-${role.name.lowercase()}"
+            every { jwtTokenProvider.extractUsername(token) } returns username
+            every { userRepository.findByUsername(username) } returns
+                createUser(username = username, role = role)
+
+            filter.doFilterInternal(request, response, chain)
+
+            val authorities = SecurityContextHolder.getContext().authentication.authorities
+            assertTrue(
+                authorities.contains(SimpleGrantedAuthority("ROLE_${role.name}")),
+                "expected ROLE_${role.name} for a ${role.name} user"
+            )
+        }
     }
 
     @Test
