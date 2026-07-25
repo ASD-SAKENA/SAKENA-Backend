@@ -31,5 +31,8 @@ class UserJpaEntity(
     var updatedAt: Instant,
 
     @Column(nullable = false)
-    var active: Boolean = true
+    var active: Boolean = true,
+
+    @Column(length = 100)
+    var specialty: String? = null
 )
