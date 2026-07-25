@@ -10,6 +10,7 @@ import io.swagger.v3.oas.annotations.tags.Tag
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
+import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
@@ -39,6 +40,7 @@ class BuildingController(
     fun getById(@PathVariable id: String): BuildingResponse =
         BuildingResponse.from(buildingService.getById(BuildingId.from(id)))
 
+    @PreAuthorize("hasRole('MANAGER')")
     @Operation(summary = "Create a new building")
     @PostMapping
     fun create(
@@ -50,6 +52,7 @@ class BuildingController(
         return ResponseEntity.created(location).body(BuildingResponse.from(building))
     }
 
+    @PreAuthorize("hasRole('MANAGER')")
     @Operation(summary = "Update a building")
     @PutMapping("/{id}")
     fun update(
@@ -58,6 +61,7 @@ class BuildingController(
     ): BuildingResponse =
         BuildingResponse.from(buildingService.update(BuildingId.from(id), request.toCommand()))
 
+    @PreAuthorize("hasRole('MANAGER')")
     @Operation(summary = "Delete a building")
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
