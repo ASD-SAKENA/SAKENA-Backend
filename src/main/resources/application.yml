@@ -25,6 +25,11 @@ spring:
     enabled: true
     baseline-on-migrate: true
 
+  servlet:
+    multipart:
+      max-file-size: 15MB
+      max-request-size: 16MB
+
   mail:
     host: smtp.gmail.com
     port: 587
@@ -65,6 +70,14 @@ logging:
 jwt:
   secret: ${JWT_SECRET:ipp3tok924jIS0d2q7PklWf6HwvPoUjIGsFU2a9kvMs=}
   expiration-ms: ${JWT_EXPIRATION_MS:86400000}
+
+# MinIO object storage backing chat attachments (images and voice notes).
+storage:
+  endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
+  access-key: ${MINIO_ACCESS_KEY:sakena}
+  secret-key: ${MINIO_SECRET_KEY:sakena-secret}
+  bucket: ${MINIO_BUCKET:sakena-chat}
+  presigned-url-expiry-seconds: ${MINIO_URL_EXPIRY_SECONDS:900}
 
 app:
   frontend-url: ${FRONTEND_URL:http://localhost:3000}
