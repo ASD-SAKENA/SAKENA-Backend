@@ -66,6 +66,7 @@ class SecurityConfig(
                     .requestMatchers(HttpMethod.POST, "/api/v1/invitations/accept").authenticated()
 
                     // ─── Manager-only surface ───
+                    .requestMatchers("/api/v1/dashboard/manager").hasRole(manager)
                     .requestMatchers("/api/v1/users/**").hasRole(manager)
                     .requestMatchers("/api/v1/invitations/**").hasRole(manager)
                     .requestMatchers("/api/v1/charge-periods/**").hasRole(manager)
