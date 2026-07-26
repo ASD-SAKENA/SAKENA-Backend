@@ -28,7 +28,8 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 @EnableWebSecurity
 @EnableMethodSecurity
 class SecurityConfig(
-    private val jwtAuthenticationFilter: JwtAuthenticationFilter
+    private val jwtAuthenticationFilter: JwtAuthenticationFilter,
+    private val authRateLimitFilter: AuthRateLimitFilter,
 ) {
 
     private val manager = Role.MANAGER.name
@@ -105,6 +106,8 @@ class SecurityConfig(
                     .anyRequest().authenticated()
             }
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter::class.java)
+            // Throttling runs first, so a flood never reaches password hashing.
+            .addFilterBefore(authRateLimitFilter, JwtAuthenticationFilter::class.java)
 
         return http.build()
     }

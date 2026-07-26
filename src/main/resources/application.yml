@@ -82,3 +82,8 @@ storage:
 app:
   frontend-url: ${FRONTEND_URL:http://localhost:3000}
   reset-token-expiration-minutes: ${APP_RESET_TOKEN_EXPIRATION_MINUTES:60}
+  timezone: ${APP_TIMEZONE:Asia/Tehran}
+  rate-limit:
+    auth:
+      attempts: ${APP_AUTH_RATE_LIMIT_ATTEMPTS:10}
+      window-seconds: ${APP_AUTH_RATE_LIMIT_WINDOW_SECONDS:60}
