@@ -47,7 +47,9 @@ class SecurityConfig(
                         "/swagger-ui.html",
                         "/swagger-ui/**",
                         "/v3/api-docs/**",
-                        "/actuator/health"
+                        "/actuator/health",
+                        // The join screen reads the invitation before the invitee signs in.
+                        "/api/v1/invitations/preview"
                     ).permitAll()
 
                     // ─── Carve-outs that sit under a manager-only prefix ───
@@ -60,8 +62,12 @@ class SecurityConfig(
                         "/api/v1/service-requests/*/complete"
                     ).hasAnyRole(staff, manager)
 
+                    // Accepting an invitation only needs a signed-in user, not a manager.
+                    .requestMatchers(HttpMethod.POST, "/api/v1/invitations/accept").authenticated()
+
                     // ─── Manager-only surface ───
                     .requestMatchers("/api/v1/users/**").hasRole(manager)
+                    .requestMatchers("/api/v1/invitations/**").hasRole(manager)
                     .requestMatchers("/api/v1/charge-periods/**").hasRole(manager)
                     .requestMatchers(HttpMethod.POST, "/api/v1/invoices/*/payments").hasRole(manager)
                     .requestMatchers("/api/v1/wallets/building/**").hasRole(manager)
