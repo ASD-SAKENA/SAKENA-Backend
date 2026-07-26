@@ -36,6 +36,25 @@ class FacilityBookingRepositoryAdapter(
     override fun countOverlapping(facilityId: FacilityId, startsAt: Instant, endsAt: Instant): Long =
         jpaRepository.countOverlapping(facilityId.value, startsAt, endsAt)
 
+    override fun countByResidentBetween(
+        facilityId: FacilityId,
+        residentId: UserId,
+        from: Instant,
+        to: Instant,
+    ): Long =
+        jpaRepository
+            .countByFacilityIdAndBookedByAndStartsAtGreaterThanEqualAndStartsAtLessThan(
+                facilityId.value,
+                residentId.value,
+                from,
+                to,
+            )
+
+    override fun findUpcomingByResident(residentId: UserId, from: Instant): List<FacilityBooking> =
+        jpaRepository
+            .findAllByBookedByAndStartsAtGreaterThanEqualOrderByStartsAt(residentId.value, from)
+            .map(::toDomain)
+
     override fun deleteById(id: BookingId) =
         jpaRepository.deleteById(id.value)
 

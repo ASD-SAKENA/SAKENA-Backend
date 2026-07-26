@@ -13,6 +13,7 @@ class Facility private constructor(
     name: String,
     icon: String?,
     capacity: Int,
+    rules: BookingRules,
     val createdAt: Instant,
     updatedAt: Instant,
 ) {
@@ -26,13 +27,23 @@ class Facility private constructor(
     var capacity: Int = capacity
         private set
 
+    /** Opening hours, booking length, advance window, quota and price. */
+    var rules: BookingRules = rules
+        private set
+
     var updatedAt: Instant = updatedAt
         private set
 
-    fun update(newName: String, newIcon: String?, newCapacity: Int) {
+    fun update(
+        newName: String,
+        newIcon: String?,
+        newCapacity: Int,
+        newRules: BookingRules,
+    ) {
         this.name = validateName(newName)
         this.icon = validateIcon(newIcon)
         this.capacity = validateCapacity(newCapacity)
+        this.rules = newRules
         touch()
     }
 
@@ -46,13 +57,19 @@ class Facility private constructor(
         const val DEFAULT_CAPACITY = 10
         const val MAX_CAPACITY = 1_000
 
-        fun create(name: String, icon: String?, capacity: Int = DEFAULT_CAPACITY): Facility {
+        fun create(
+            name: String,
+            icon: String?,
+            capacity: Int = DEFAULT_CAPACITY,
+            rules: BookingRules = BookingRules.DEFAULT,
+        ): Facility {
             val now = Instant.now()
             return Facility(
                 id = FacilityId.new(),
                 name = validateName(name),
                 icon = validateIcon(icon),
                 capacity = validateCapacity(capacity),
+                rules = rules,
                 createdAt = now,
                 updatedAt = now,
             )
@@ -64,9 +81,10 @@ class Facility private constructor(
             name: String,
             icon: String?,
             capacity: Int,
+            rules: BookingRules,
             createdAt: Instant,
             updatedAt: Instant,
-        ): Facility = Facility(id, name, icon, capacity, createdAt, updatedAt)
+        ): Facility = Facility(id, name, icon, capacity, rules, createdAt, updatedAt)
 
         private fun validateName(name: String): String {
             val trimmed = name.trim()
