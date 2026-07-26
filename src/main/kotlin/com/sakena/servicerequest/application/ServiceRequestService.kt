@@ -55,6 +55,14 @@ class ServiceRequestService(
         return serviceRequestRepository.save(approved)
     }
 
+    fun rejectRequest(command: RejectServiceRequestCommand): ServiceRequest {
+        val request = serviceRequestRepository.findById(command.serviceRequestId)
+            ?: throw EntityNotFoundException("Service request not found")
+
+        val rejected = request.reject(command.userId)
+        return serviceRequestRepository.save(rejected)
+    }
+
     fun assignRequest(command: AssignServiceRequestCommand): ServiceRequest {
         val request = serviceRequestRepository.findById(ServiceRequestId.fromString(command.serviceRequestId))
             ?: throw EntityNotFoundException("Service request not found")

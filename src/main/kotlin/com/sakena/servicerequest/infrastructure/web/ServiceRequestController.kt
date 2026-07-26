@@ -1,6 +1,7 @@
 package com.sakena.servicerequest.infrastructure.web
 
 import com.sakena.servicerequest.application.AssignServiceRequestCommand
+import com.sakena.servicerequest.application.RejectServiceRequestCommand
 import com.sakena.servicerequest.application.ApproveServiceRequestCommand
 import com.sakena.servicerequest.application.CompleteServiceRequestCommand
 import com.sakena.servicerequest.application.CreateServiceRequestCommand
@@ -167,6 +168,17 @@ class ServiceRequestController(
         )
         val approved = serviceRequestService.approveRequest(command)
         return ServiceRequestResponse.fromDomain(approved)
+    }
+
+    @PatchMapping("/{id}/reject")
+    @Operation(summary = "Reject a pending service request")
+    fun rejectRequest(@PathVariable id: String): ServiceRequestResponse {
+        val command = RejectServiceRequestCommand(
+            serviceRequestId = ServiceRequestId.fromString(id),
+            userId = getCurrentUserId()
+        )
+        val rejected = serviceRequestService.rejectRequest(command)
+        return ServiceRequestResponse.fromDomain(rejected)
     }
 
     @PatchMapping("/{id}/assign")
