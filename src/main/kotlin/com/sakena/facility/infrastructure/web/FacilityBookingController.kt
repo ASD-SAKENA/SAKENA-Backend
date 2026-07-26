@@ -3,10 +3,11 @@ package com.sakena.facility.infrastructure.web
 import com.sakena.facility.application.FacilityBookingService
 import com.sakena.facility.domain.model.BookingId
 import com.sakena.facility.domain.model.FacilityId
+import com.sakena.facility.infrastructure.web.dto.BookingQuoteResponse
 import com.sakena.facility.infrastructure.web.dto.BookingResponse
 import com.sakena.facility.infrastructure.web.dto.CreateBookingRequest
 import com.sakena.user.application.ProfileService
-import com.sakena.user.domain.UserId
+import com.sakena.user.domain.User
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.security.SecurityRequirement
 import io.swagger.v3.oas.annotations.tags.Tag
@@ -57,12 +58,23 @@ class FacilityBookingController(
         val booking = bookingService.book(
             FacilityId.from(facilityId),
             request.toCommand(),
-            getCurrentUserId(),
+            currentUser().id,
         )
         return BookingResponse.from(booking)
     }
 
-    @Operation(summary = "Cancel one of your own bookings")
+    @Operation(summary = "What a slot would cost, before booking it")
+    @GetMapping("/quote")
+    fun quote(
+        @PathVariable facilityId: String,
+        @RequestParam startsAt: Instant,
+        @RequestParam endsAt: Instant,
+    ): BookingQuoteResponse =
+        BookingQuoteResponse(
+            bookingService.quote(FacilityId.from(facilityId), startsAt, endsAt),
+        )
+
+    @Operation(summary = "Cancel a booking (your own, or any of them as manager)")
     @DeleteMapping("/{bookingId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     fun cancel(
@@ -72,14 +84,13 @@ class FacilityBookingController(
         bookingService.cancel(
             FacilityId.from(facilityId),
             BookingId.from(bookingId),
-            getCurrentUserId(),
+            currentUser(),
         )
     }
 
-    private fun getCurrentUserId(): UserId {
+    private fun currentUser(): User {
         val username = SecurityContextHolder.getContext().authentication.name
-        val user = profileService.getUserByUsername(username)
-            ?: throw RuntimeException("User not found")
-        return user.id
+        return profileService.getUserByUsername(username)
+            ?: throw IllegalStateException("Authenticated user '$username' no longer exists")
     }
 }

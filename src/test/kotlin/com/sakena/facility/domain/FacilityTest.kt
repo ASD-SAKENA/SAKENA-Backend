@@ -1,8 +1,10 @@
 package com.sakena.facility.domain
 
+import com.sakena.facility.domain.model.BookingRules
 import com.sakena.facility.domain.model.Facility
 import com.sakena.shared.domain.DomainValidationException
 import org.junit.jupiter.api.Test
+import java.math.BigDecimal
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
@@ -32,14 +34,16 @@ class FacilityTest {
     }
 
     @Test
-    fun `update replaces name, icon and capacity`() {
+    fun `update replaces name, icon, capacity and booking rules`() {
         val facility = Facility.create("Pool", "pool")
+        val newRules = BookingRules.DEFAULT.copy(hourlyPrice = BigDecimal("120000"))
 
-        facility.update("Gym", "fitness_center", 15)
+        facility.update("Gym", "fitness_center", 15, newRules)
 
         assertEquals("Gym", facility.name)
         assertEquals("fitness_center", facility.icon)
         assertEquals(15, facility.capacity)
+        assertEquals(newRules, facility.rules)
     }
 
     @Test

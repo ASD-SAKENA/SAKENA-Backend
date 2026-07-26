@@ -32,4 +32,16 @@ interface FacilityBookingJpaRepository : JpaRepository<FacilityBookingEntity, UU
         @Param("startsAt") startsAt: Instant,
         @Param("endsAt") endsAt: Instant,
     ): Long
+
+    fun countByFacilityIdAndBookedByAndStartsAtGreaterThanEqualAndStartsAtLessThan(
+        facilityId: UUID,
+        bookedBy: UUID,
+        from: Instant,
+        to: Instant,
+    ): Long
+
+    fun findAllByBookedByAndStartsAtGreaterThanEqualOrderByStartsAt(
+        bookedBy: UUID,
+        from: Instant,
+    ): List<FacilityBookingEntity>
 }
