@@ -106,7 +106,7 @@ class InvitationService(
         if (!invitation.isAddressedTo(user.email, user.username)) {
             throw DomainConflictException("This invitation was issued for a different person")
         }
-        invitation.accept(user.id)
+        invitation.accept(user.id, user.role)
 
         invitation.apartmentId?.let { apartmentId ->
             // The invitation itself is the authorization for this move-in — it

@@ -120,7 +120,7 @@ class BuildingInvitationTest {
         val invitation = invite()
         val invitee = UserId.generate()
 
-        invitation.accept(invitee)
+        invitation.accept(invitee, Role.RESIDENT)
 
         assertEquals(InvitationStatus.ACCEPTED, invitation.status)
         assertEquals(invitee, invitation.acceptedBy)
@@ -130,9 +130,9 @@ class BuildingInvitationTest {
     @Test
     fun `an invitation cannot be accepted twice`() {
         val invitation = invite()
-        invitation.accept(UserId.generate())
+        invitation.accept(UserId.generate(), Role.RESIDENT)
 
-        assertFailsWith<DomainConflictException> { invitation.accept(UserId.generate()) }
+        assertFailsWith<DomainConflictException> { invitation.accept(UserId.generate(), Role.RESIDENT) }
     }
 
     @Test
@@ -142,7 +142,7 @@ class BuildingInvitationTest {
 
         assertFalse(invitation.isUsableAt(afterExpiry))
         assertFailsWith<DomainConflictException> {
-            invitation.accept(UserId.generate(), now = afterExpiry)
+            invitation.accept(UserId.generate(), Role.RESIDENT, now = afterExpiry)
         }
         assertEquals(InvitationStatus.EXPIRED, invitation.status)
     }
@@ -160,8 +160,33 @@ class BuildingInvitationTest {
     @Test
     fun `an accepted invitation cannot be revoked`() {
         val invitation = invite()
-        invitation.accept(UserId.generate())
+        invitation.accept(UserId.generate(), Role.RESIDENT)
 
         assertFailsWith<DomainConflictException> { invitation.revoke() }
+    }
+
+    @Test
+    fun `only a resident may accept an invitation that assigns a unit`() {
+        val nonResidents = Role.entries - Role.RESIDENT
+
+        nonResidents.forEach { role ->
+            val invitation = invite(apartmentId = ApartmentId.new(), tenancy = TenancyType.TENANT)
+
+            assertFailsWith<DomainConflictException>("$role must not occupy a unit") {
+                invitation.accept(UserId.generate(), role)
+            }
+            assertEquals(InvitationStatus.PENDING, invitation.status)
+        }
+    }
+
+    @Test
+    fun `any role may accept an invitation that assigns no unit`() {
+        Role.entries.forEach { role ->
+            val invitation = invite()
+
+            invitation.accept(UserId.generate(), role)
+
+            assertEquals(InvitationStatus.ACCEPTED, invitation.status)
+        }
     }
 }
