@@ -53,12 +53,15 @@ class InvitationServiceTest {
     private fun user(
         username: String = "9121234567",
         email: String = "neighbour@example.com",
+        role: Role = Role.RESIDENT,
     ) = User.register(
         username = username,
         email = email,
         rawPassword = "password123",
         passwordEncoder = { it },
-        role = Role.RESIDENT,
+        role = role,
+        // The aggregate ties a manager to the building they administer.
+        managedBuildingId = building.id.takeIf { role == Role.MANAGER },
     )
 
     private fun apartment() = Apartment.create(
@@ -209,6 +212,56 @@ class InvitationServiceTest {
         val accepted = service.accept(invitation.token, stranger)
 
         assertTrue(accepted.status == InvitationStatus.ACCEPTED)
+    }
+
+    @Test
+    fun `a manager cannot accept a resident invitation`() {
+        val unit = apartment()
+        val invitation = pendingInvitation(
+            channel = InvitationChannel.LINK,
+            recipient = null,
+            apartmentId = unit.id,
+        )
+        val manager = user(role = Role.MANAGER)
+        every { invitationRepository.findByToken(invitation.token) } returns invitation
+
+        assertFailsWith<DomainConflictException> {
+            service.accept(invitation.token, manager)
+        }
+        // Neither the unit nor the invitation may be consumed by the failed join.
+        verify(exactly = 0) { residencyService.start(any(), any(), any()) }
+        verify(exactly = 0) { invitationRepository.save(any()) }
+    }
+
+    @Test
+    fun `staff cannot accept an invitation that assigns a unit`() {
+        val unit = apartment()
+        val invitation = pendingInvitation(
+            channel = InvitationChannel.LINK,
+            recipient = null,
+            apartmentId = unit.id,
+        )
+        val staff = user(role = Role.STAFF)
+        every { invitationRepository.findByToken(invitation.token) } returns invitation
+
+        assertFailsWith<DomainConflictException> {
+            service.accept(invitation.token, staff)
+        }
+        verify(exactly = 0) { residencyService.start(any(), any(), any()) }
+        verify(exactly = 0) { invitationRepository.save(any()) }
+    }
+
+    @Test
+    fun `staff may accept an invitation that assigns no unit`() {
+        val invitation = pendingInvitation(channel = InvitationChannel.LINK, recipient = null)
+        val staff = user(role = Role.STAFF)
+        every { invitationRepository.findByToken(invitation.token) } returns invitation
+        givenSavePassesThrough()
+
+        val accepted = service.accept(invitation.token, staff)
+
+        assertEquals(InvitationStatus.ACCEPTED, accepted.status)
+        verify(exactly = 0) { residencyService.start(any(), any(), any()) }
     }
 
     @Test

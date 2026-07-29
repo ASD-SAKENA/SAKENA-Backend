@@ -89,7 +89,7 @@ class BuildingInvitation private constructor(
     fun isUsableAt(now: Instant): Boolean =
         status == InvitationStatus.PENDING && now.isBefore(expiresAt)
 
-    fun accept(userId: UserId, now: Instant = Instant.now()) {
+    fun accept(userId: UserId, userRole: Role, now: Instant = Instant.now()) {
         if (status != InvitationStatus.PENDING) {
             throw DomainConflictException("This invitation is no longer pending")
         }
@@ -97,10 +97,24 @@ class BuildingInvitation private constructor(
             status = InvitationStatus.EXPIRED
             throw DomainConflictException("This invitation has expired")
         }
+        if (!isAcceptableBy(userRole)) {
+            throw DomainConflictException(
+                "A ${userRole.name.lowercase()} account cannot move into a unit; " +
+                    "join with a resident account instead",
+            )
+        }
         status = InvitationStatus.ACCEPTED
         acceptedBy = userId
         acceptedAt = now
     }
+
+    /**
+     * Only a resident can occupy a unit. Letting another role accept would
+     * leave the unit assigned to an account that can never reach the resident
+     * side of the app — occupied on paper, unreachable in practice.
+     */
+    fun isAcceptableBy(userRole: Role): Boolean =
+        apartmentId == null || userRole == Role.RESIDENT
 
     fun revoke() {
         if (status == InvitationStatus.ACCEPTED) {
