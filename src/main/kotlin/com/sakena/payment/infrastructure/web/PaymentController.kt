@@ -12,6 +12,7 @@ import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
 import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
@@ -37,11 +38,14 @@ class PaymentController(
     fun history(): List<PaymentResponse> =
         paymentService.getHistory(getCurrentUserId()).map(PaymentResponse::from)
 
-    @Operation(summary = "Record a payment made by the current user")
-    @PostMapping
+    @Operation(summary = "Record a confirmed payment for a resident (manager)")
+    @PostMapping("/{payerId}")
     @ResponseStatus(HttpStatus.CREATED)
-    fun record(@Valid @RequestBody request: RecordPaymentRequest): PaymentResponse {
-        val payment = paymentService.record(request.toCommand(), getCurrentUserId())
+    fun record(
+        @PathVariable payerId: String,
+        @Valid @RequestBody request: RecordPaymentRequest,
+    ): PaymentResponse {
+        val payment = paymentService.record(request.toCommand(), UserId.fromString(payerId))
         return PaymentResponse.from(payment)
     }
 
