@@ -5,6 +5,7 @@ import com.sakena.payment.application.PaymentService
 import com.sakena.payment.domain.model.Payment
 import com.sakena.payment.domain.model.PaymentStatus
 import com.sakena.payment.infrastructure.web.dto.RecordPaymentRequest
+import com.sakena.payment.infrastructure.web.dto.RejectPaymentRequest
 import com.sakena.shared.web.GlobalExceptionHandler
 import com.sakena.user.application.ProfileService
 import com.sakena.user.domain.Role
@@ -20,6 +21,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
@@ -43,26 +45,10 @@ class PaymentControllerTest {
     fun clearSecurityContext() = SecurityContextHolder.clearContext()
 
     @Test
-    fun `record maps payment evidence to a pending claim`() {
-        val residentId = UserId.generate()
-        val payment = Payment.submit(
-            residentId,
-            "Monthly charge",
-            BigDecimal("500000"),
-            "TX-123",
-            null,
-        )
-        every {
-            paymentService.record(
-                match {
-                    it.title == "Monthly charge" &&
-                        it.amount == BigDecimal("500000") &&
-                        it.transactionReference == "TX-123"
-                },
-                residentId,
-            )
-        } returns payment
-
+    fun `resident submits evidence using their authenticated identity`() {
+        val resident = authenticate(Role.RESIDENT)
+        val payment = pendingPayment(resident.id, "TX-123")
+        every { paymentService.submit(any(), resident.id) } returns payment
         val body = objectMapper.writeValueAsString(
             RecordPaymentRequest(
                 title = "Monthly charge",
@@ -72,49 +58,129 @@ class PaymentControllerTest {
         )
 
         mockMvc.perform(
-            post("/api/v1/payments/${residentId.value}")
+            post("/api/v1/payments")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body),
         )
             .andExpect(status().isCreated)
-            .andExpect(jsonPath("$.title").value("Monthly charge"))
-            .andExpect(jsonPath("$.amount").value(500000))
             .andExpect(jsonPath("$.transactionReference").value("TX-123"))
             .andExpect(jsonPath("$.status").value(PaymentStatus.PENDING.name))
 
-        verify(exactly = 1) { paymentService.record(any(), residentId) }
-        verify(exactly = 0) { profileService.getUserByUsername(any()) }
+        verify(exactly = 1) {
+            paymentService.submit(match { it.transactionReference == "TX-123" }, resident.id)
+        }
     }
 
     @Test
-    fun `resident reads only the payment history associated with their identity`() {
-        val resident = user("resident", Role.RESIDENT)
-        val payment = Payment.submit(
-            resident.id,
-            "Previous charge",
-            BigDecimal("250000"),
-            "TX-CONFIRMED",
-            null,
-        ).also { it.confirm(UserId.generate()) }
-        SecurityContextHolder.getContext().authentication =
-            UsernamePasswordAuthenticationToken(resident.username, null)
-        every { profileService.getUserByUsername(resident.username) } returns resident
+    fun `resident reads all of their submissions`() {
+        val resident = authenticate(Role.RESIDENT)
+        val payment = pendingPayment(resident.id, "TX-PENDING")
+        every { paymentService.getSubmissions(resident.id) } returns listOf(payment)
+
+        mockMvc.perform(get("/api/v1/payments/submissions"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$[0].status").value(PaymentStatus.PENDING.name))
+    }
+
+    @Test
+    fun `resident reads only their confirmed history`() {
+        val resident = authenticate(Role.RESIDENT)
+        val payment = pendingPayment(resident.id, "TX-CONFIRMED").also {
+            it.confirm(UserId.generate())
+        }
         every { paymentService.getHistory(resident.id) } returns listOf(payment)
 
         mockMvc.perform(get("/api/v1/payments"))
             .andExpect(status().isOk)
-            .andExpect(jsonPath("$[0].title").value("Previous charge"))
-            .andExpect(jsonPath("$[0].amount").value(250000))
-
-        verify(exactly = 1) { paymentService.getHistory(resident.id) }
+            .andExpect(jsonPath("$[0].status").value(PaymentStatus.CONFIRMED.name))
     }
 
-    private fun user(username: String, role: Role): User {
+    @Test
+    fun `manager reads the pending review queue`() {
+        val manager = authenticate(Role.MANAGER)
+        val payment = pendingPayment(UserId.generate(), "TX-PENDING")
+        every { paymentService.getPending(manager.id) } returns listOf(payment)
+
+        mockMvc.perform(get("/api/v1/payments/pending"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$[0].transactionReference").value("TX-PENDING"))
+    }
+
+    @Test
+    fun `manager confirms a pending payment`() {
+        val manager = authenticate(Role.MANAGER)
+        val payment = pendingPayment(UserId.generate(), "TX-CONFIRM").also {
+            it.confirm(manager.id)
+        }
+        every { paymentService.confirm(payment.id, manager.id) } returns payment
+
+        mockMvc.perform(patch("/api/v1/payments/${payment.id}/confirm"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.status").value(PaymentStatus.CONFIRMED.name))
+            .andExpect(jsonPath("$.reviewedBy").value(manager.id.value.toString()))
+    }
+
+    @Test
+    fun `manager rejects a pending payment with a reason`() {
+        val manager = authenticate(Role.MANAGER)
+        val payment = pendingPayment(UserId.generate(), "TX-REJECT").also {
+            it.reject(manager.id, "Reference not found")
+        }
+        every {
+            paymentService.reject(payment.id, manager.id, "Reference not found")
+        } returns payment
+        val body = objectMapper.writeValueAsString(RejectPaymentRequest("Reference not found"))
+
+        mockMvc.perform(
+            patch("/api/v1/payments/${payment.id}/reject")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.status").value(PaymentStatus.REJECTED.name))
+            .andExpect(jsonPath("$.rejectionReason").value("Reference not found"))
+    }
+
+    @Test
+    fun `blank rejection reason returns validation error`() {
+        val manager = authenticate(Role.MANAGER)
+        val body = objectMapper.writeValueAsString(RejectPaymentRequest(""))
+
+        mockMvc.perform(
+            patch("/api/v1/payments/${com.sakena.payment.domain.model.PaymentId.new()}/reject")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body),
+        )
+            .andExpect(status().isBadRequest)
+            .andExpect(jsonPath("$.fieldErrors[0].field").value("reason"))
+
+        verify(exactly = 0) { paymentService.reject(any(), manager.id, any()) }
+    }
+
+    private fun pendingPayment(payerId: UserId, reference: String): Payment =
+        Payment.submit(
+            payerId = payerId,
+            title = "Monthly charge",
+            amount = BigDecimal("500000"),
+            transactionReference = reference,
+            receiptObjectKey = null,
+        )
+
+    private fun authenticate(role: Role): User {
+        val user = user(role)
+        SecurityContextHolder.getContext().authentication =
+            UsernamePasswordAuthenticationToken(user.username, null)
+        every { profileService.getUserByUsername(user.username) } returns user
+        return user
+    }
+
+    private fun user(role: Role): User {
+        val id = UserId.generate()
         val now = Instant.now()
         return User.reconstitute(
-            id = UserId.generate(),
-            username = username,
-            email = "$username@example.com",
+            id = id,
+            username = "user-${id.value}",
+            email = "${id.value}@example.com",
             passwordHash = "hash",
             role = role,
             createdAt = now,

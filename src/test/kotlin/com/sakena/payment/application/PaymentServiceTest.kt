@@ -1,9 +1,10 @@
 package com.sakena.payment.application
 
-import com.sakena.payment.application.command.RecordPaymentCommand
+import com.sakena.payment.application.command.SubmitPaymentCommand
 import com.sakena.payment.domain.PaymentRepository
 import com.sakena.payment.domain.model.Payment
 import com.sakena.payment.domain.model.PaymentStatus
+import com.sakena.shared.domain.DomainConflictException
 import com.sakena.shared.domain.DomainValidationException
 import com.sakena.shared.domain.EntityNotFoundException
 import com.sakena.user.domain.Role
@@ -27,74 +28,148 @@ class PaymentServiceTest {
     private val service = PaymentService(repository, userRepository)
 
     @Test
-    fun `record persists a payment for the payer`() {
-        val payer = UserId.generate()
-        every { userRepository.findById(payer) } returns user(payer, Role.RESIDENT)
+    fun `submit persists a pending claim for the authenticated resident`() {
+        val resident = user(Role.RESIDENT)
+        every { userRepository.findById(resident.id) } returns resident
+        every { repository.existsByTransactionReference("TX-123") } returns false
         val saved = slot<Payment>()
         every { repository.save(capture(saved)) } answers { saved.captured }
 
-        val result = service.record(command(), payer)
+        val result = service.submit(command(), resident.id)
 
-        assertEquals("Monthly charge", result.title)
-        assertEquals(payer, result.payerId)
+        assertEquals(resident.id, result.payerId)
         assertEquals("TX-123", result.transactionReference)
         assertEquals(PaymentStatus.PENDING, result.status)
         verify(exactly = 1) { repository.save(any()) }
     }
 
     @Test
-    fun `record rejects a payment for an unknown payer`() {
-        val payer = UserId.generate()
-        every { userRepository.findById(payer) } returns null
+    fun `submit rejects a duplicate transaction reference`() {
+        val resident = user(Role.RESIDENT)
+        every { userRepository.findById(resident.id) } returns resident
+        every { repository.existsByTransactionReference("TX-123") } returns true
 
-        assertFailsWith<EntityNotFoundException> {
-            service.record(command(), payer)
+        assertFailsWith<DomainConflictException> {
+            service.submit(command(), resident.id)
         }
 
         verify(exactly = 0) { repository.save(any()) }
     }
 
     @Test
-    fun `record rejects a payment for a non-resident account`() {
-        val payer = UserId.generate()
-        every { userRepository.findById(payer) } returns user(payer, Role.STAFF)
+    fun `submit rejects an unknown or non-resident account`() {
+        val unknown = UserId.generate()
+        every { userRepository.findById(unknown) } returns null
+        assertFailsWith<EntityNotFoundException> { service.submit(command(), unknown) }
+
+        val staff = user(Role.STAFF)
+        every { userRepository.findById(staff.id) } returns staff
+        assertFailsWith<DomainValidationException> { service.submit(command(), staff.id) }
+
+        verify(exactly = 0) { repository.save(any()) }
+    }
+
+    @Test
+    fun `getSubmissions returns every status for only that resident`() {
+        val residentId = UserId.generate()
+        val submissions = listOf(pendingPayment(residentId, "TX-PENDING"))
+        every { repository.findAllSubmissionsByPayerNewestFirst(residentId) } returns submissions
+
+        assertEquals(submissions, service.getSubmissions(residentId))
+    }
+
+    @Test
+    fun `getHistory returns only confirmed payments from the repository`() {
+        val residentId = UserId.generate()
+        val confirmed = pendingPayment(residentId, "TX-CONFIRMED").also {
+            it.confirm(UserId.generate())
+        }
+        every { repository.findAllByPayerNewestFirst(residentId) } returns listOf(confirmed)
+
+        assertEquals(listOf(confirmed), service.getHistory(residentId))
+    }
+
+    @Test
+    fun `getPending returns the manager review queue newest first`() {
+        val manager = user(Role.MANAGER)
+        val pending = listOf(pendingPayment(UserId.generate(), "TX-PENDING"))
+        every { userRepository.findById(manager.id) } returns manager
+        every { repository.findAllPendingNewestFirst() } returns pending
+
+        assertEquals(pending, service.getPending(manager.id))
+    }
+
+    @Test
+    fun `confirm reviews and saves a pending payment as manager`() {
+        val manager = user(Role.MANAGER)
+        val payment = pendingPayment(UserId.generate(), "TX-CONFIRM")
+        every { userRepository.findById(manager.id) } returns manager
+        every { repository.findById(payment.id) } returns payment
+        every { repository.save(payment) } returns payment
+
+        val result = service.confirm(payment.id, manager.id)
+
+        assertEquals(PaymentStatus.CONFIRMED, result.status)
+        assertEquals(manager.id, result.reviewedBy)
+        verify(exactly = 1) { repository.save(payment) }
+    }
+
+    @Test
+    fun `reject reviews and saves a pending payment with a reason`() {
+        val manager = user(Role.MANAGER)
+        val payment = pendingPayment(UserId.generate(), "TX-REJECT")
+        every { userRepository.findById(manager.id) } returns manager
+        every { repository.findById(payment.id) } returns payment
+        every { repository.save(payment) } returns payment
+
+        val result = service.reject(payment.id, manager.id, "Reference not found")
+
+        assertEquals(PaymentStatus.REJECTED, result.status)
+        assertEquals("Reference not found", result.rejectionReason)
+    }
+
+    @Test
+    fun `review rejects a non-manager account`() {
+        val staff = user(Role.STAFF)
+        every { userRepository.findById(staff.id) } returns staff
 
         assertFailsWith<DomainValidationException> {
-            service.record(command(), payer)
+            service.confirm(pendingPayment(UserId.generate(), "TX-1").id, staff.id)
         }
 
         verify(exactly = 0) { repository.save(any()) }
     }
 
     @Test
-    fun `getHistory returns the payer's payments newest first from the port`() {
-        val payer = UserId.generate()
-        val newest = confirmedPayment(payer, "Tir charge", "TX-NEW")
-        val oldest = confirmedPayment(payer, "Khordad charge", "TX-OLD")
-        every { repository.findAllByPayerNewestFirst(payer) } returns listOf(newest, oldest)
+    fun `review rejects an unknown payment`() {
+        val manager = user(Role.MANAGER)
+        val paymentId = com.sakena.payment.domain.model.PaymentId.new()
+        every { userRepository.findById(manager.id) } returns manager
+        every { repository.findById(paymentId) } returns null
 
-        val result = service.getHistory(payer)
-
-        assertEquals(listOf(newest, oldest), result)
+        assertFailsWith<EntityNotFoundException> {
+            service.confirm(paymentId, manager.id)
+        }
     }
 
-    private fun command() = RecordPaymentCommand(
+    private fun command() = SubmitPaymentCommand(
         title = "Monthly charge",
         amount = BigDecimal("850000"),
         transactionReference = "TX-123",
         receiptObjectKey = null,
     )
 
-    private fun confirmedPayment(payer: UserId, title: String, reference: String): Payment =
+    private fun pendingPayment(payerId: UserId, reference: String): Payment =
         Payment.submit(
-            payerId = payer,
-            title = title,
+            payerId = payerId,
+            title = "Monthly charge",
             amount = BigDecimal("850000"),
             transactionReference = reference,
             receiptObjectKey = null,
-        ).also { it.confirm(UserId.generate()) }
+        )
 
-    private fun user(id: UserId, role: Role): User {
+    private fun user(role: Role): User {
+        val id = UserId.generate()
         val now = Instant.now()
         return User.reconstitute(
             id = id,
