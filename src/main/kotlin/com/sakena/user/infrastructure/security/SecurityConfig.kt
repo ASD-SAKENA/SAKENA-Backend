@@ -72,6 +72,7 @@ class SecurityConfig(
                     .requestMatchers("/api/v1/invitations/**").hasRole(manager)
                     .requestMatchers("/api/v1/charge-periods/**").hasRole(manager)
                     .requestMatchers(HttpMethod.POST, "/api/v1/invoices/*/payments").hasRole(manager)
+                    .requestMatchers(HttpMethod.POST, "/api/v1/payments/*").hasRole(manager)
                     .requestMatchers("/api/v1/wallets/building/**").hasRole(manager)
                     .requestMatchers("/api/v1/wallets/settle/**").hasRole(manager)
                     .requestMatchers("/api/v1/service-requests/admin").hasRole(manager)
