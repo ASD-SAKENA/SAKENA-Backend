@@ -2,8 +2,10 @@ package com.sakena.payment.infrastructure.persistence
 
 import com.sakena.payment.domain.PaymentRepository
 import com.sakena.payment.domain.model.Payment
+import com.sakena.payment.domain.model.PaymentId
 import com.sakena.payment.domain.model.PaymentStatus
 import com.sakena.user.domain.UserId
+import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Component
 
 /**
@@ -21,10 +23,24 @@ class PaymentRepositoryAdapter(
         return PaymentEntityMapper.toDomain(saved)
     }
 
+    override fun findById(id: PaymentId): Payment? =
+        jpaRepository.findByIdOrNull(id.value)?.let(PaymentEntityMapper::toDomain)
+
+    override fun existsByTransactionReference(transactionReference: String): Boolean =
+        jpaRepository.existsByTransactionReference(transactionReference)
+
     override fun findAllByPayerNewestFirst(payerId: UserId): List<Payment> =
         jpaRepository.findAllByPayerIdAndStatusOrderByPaidAtDesc(
             payerId.value,
             PaymentStatus.CONFIRMED,
         )
+            .map(PaymentEntityMapper::toDomain)
+
+    override fun findAllSubmissionsByPayerNewestFirst(payerId: UserId): List<Payment> =
+        jpaRepository.findAllByPayerIdOrderByPaidAtDesc(payerId.value)
+            .map(PaymentEntityMapper::toDomain)
+
+    override fun findAllPendingNewestFirst(): List<Payment> =
+        jpaRepository.findAllByStatusOrderByPaidAtDesc(PaymentStatus.PENDING)
             .map(PaymentEntityMapper::toDomain)
 }

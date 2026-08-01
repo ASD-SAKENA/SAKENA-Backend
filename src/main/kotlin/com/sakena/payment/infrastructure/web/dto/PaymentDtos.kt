@@ -1,6 +1,6 @@
 package com.sakena.payment.infrastructure.web.dto
 
-import com.sakena.payment.application.command.RecordPaymentCommand
+import com.sakena.payment.application.command.SubmitPaymentCommand
 import com.sakena.payment.domain.model.Payment
 import com.sakena.payment.domain.model.PaymentStatus
 import jakarta.validation.constraints.DecimalMin
@@ -27,13 +27,19 @@ data class RecordPaymentRequest(
     @field:Size(max = 500, message = "receiptObjectKey must be at most 500 characters")
     val receiptObjectKey: String? = null,
 ) {
-    fun toCommand() = RecordPaymentCommand(
+    fun toCommand() = SubmitPaymentCommand(
         title = title,
         amount = amount,
         transactionReference = transactionReference,
         receiptObjectKey = receiptObjectKey,
     )
 }
+
+data class RejectPaymentRequest(
+    @field:NotBlank(message = "reason must not be blank")
+    @field:Size(max = 500, message = "reason must be at most 500 characters")
+    val reason: String,
+)
 
 data class PaymentResponse(
     val id: UUID,
