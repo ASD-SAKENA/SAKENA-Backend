@@ -29,7 +29,13 @@ class PaymentService(
         if (payer.role != Role.RESIDENT) {
             throw DomainValidationException("Payments can only be recorded for residents")
         }
-        val payment = Payment.create(payerId, command.title, command.amount)
+        val payment = Payment.submit(
+            payerId = payerId,
+            title = command.title,
+            amount = command.amount,
+            transactionReference = command.transactionReference,
+            receiptObjectKey = command.receiptObjectKey,
+        )
         return paymentRepository.save(payment)
     }
 

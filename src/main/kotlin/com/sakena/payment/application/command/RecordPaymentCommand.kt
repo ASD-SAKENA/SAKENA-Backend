@@ -5,4 +5,6 @@ import java.math.BigDecimal
 data class RecordPaymentCommand(
     val title: String,
     val amount: BigDecimal,
+    val transactionReference: String,
+    val receiptObjectKey: String?,
 )

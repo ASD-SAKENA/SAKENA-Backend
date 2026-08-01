@@ -3,6 +3,7 @@ package com.sakena.payment.infrastructure.web
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.sakena.payment.application.PaymentService
 import com.sakena.payment.domain.model.Payment
+import com.sakena.payment.domain.model.PaymentStatus
 import com.sakena.payment.infrastructure.web.dto.RecordPaymentRequest
 import com.sakena.shared.web.GlobalExceptionHandler
 import com.sakena.user.application.ProfileService
@@ -42,18 +43,32 @@ class PaymentControllerTest {
     fun clearSecurityContext() = SecurityContextHolder.clearContext()
 
     @Test
-    fun `manager records a confirmed payment for the specified resident`() {
+    fun `record maps payment evidence to a pending claim`() {
         val residentId = UserId.generate()
-        val payment = Payment.create(residentId, "Monthly charge", BigDecimal("500000"))
+        val payment = Payment.submit(
+            residentId,
+            "Monthly charge",
+            BigDecimal("500000"),
+            "TX-123",
+            null,
+        )
         every {
             paymentService.record(
-                match { it.title == "Monthly charge" && it.amount == BigDecimal("500000") },
+                match {
+                    it.title == "Monthly charge" &&
+                        it.amount == BigDecimal("500000") &&
+                        it.transactionReference == "TX-123"
+                },
                 residentId,
             )
         } returns payment
 
         val body = objectMapper.writeValueAsString(
-            RecordPaymentRequest(title = "Monthly charge", amount = BigDecimal("500000")),
+            RecordPaymentRequest(
+                title = "Monthly charge",
+                amount = BigDecimal("500000"),
+                transactionReference = "TX-123",
+            ),
         )
 
         mockMvc.perform(
@@ -64,6 +79,8 @@ class PaymentControllerTest {
             .andExpect(status().isCreated)
             .andExpect(jsonPath("$.title").value("Monthly charge"))
             .andExpect(jsonPath("$.amount").value(500000))
+            .andExpect(jsonPath("$.transactionReference").value("TX-123"))
+            .andExpect(jsonPath("$.status").value(PaymentStatus.PENDING.name))
 
         verify(exactly = 1) { paymentService.record(any(), residentId) }
         verify(exactly = 0) { profileService.getUserByUsername(any()) }
@@ -72,7 +89,13 @@ class PaymentControllerTest {
     @Test
     fun `resident reads only the payment history associated with their identity`() {
         val resident = user("resident", Role.RESIDENT)
-        val payment = Payment.create(resident.id, "Previous charge", BigDecimal("250000"))
+        val payment = Payment.submit(
+            resident.id,
+            "Previous charge",
+            BigDecimal("250000"),
+            "TX-CONFIRMED",
+            null,
+        ).also { it.confirm(UserId.generate()) }
         SecurityContextHolder.getContext().authentication =
             UsernamePasswordAuthenticationToken(resident.username, null)
         every { profileService.getUserByUsername(resident.username) } returns resident

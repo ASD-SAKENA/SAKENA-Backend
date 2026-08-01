@@ -2,6 +2,7 @@ package com.sakena.payment.infrastructure.persistence
 
 import com.sakena.payment.domain.PaymentRepository
 import com.sakena.payment.domain.model.Payment
+import com.sakena.payment.domain.model.PaymentStatus
 import com.sakena.user.domain.UserId
 import org.springframework.stereotype.Component
 
@@ -21,6 +22,9 @@ class PaymentRepositoryAdapter(
     }
 
     override fun findAllByPayerNewestFirst(payerId: UserId): List<Payment> =
-        jpaRepository.findAllByPayerIdOrderByPaidAtDesc(payerId.value)
+        jpaRepository.findAllByPayerIdAndStatusOrderByPaidAtDesc(
+            payerId.value,
+            PaymentStatus.CONFIRMED,
+        )
             .map(PaymentEntityMapper::toDomain)
 }
