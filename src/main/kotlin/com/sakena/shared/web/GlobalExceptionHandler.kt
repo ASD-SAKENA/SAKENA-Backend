@@ -2,6 +2,7 @@ package com.sakena.shared.web
 
 import com.sakena.shared.domain.DomainConflictException
 import com.sakena.shared.domain.DomainForbiddenException
+import com.sakena.shared.domain.DomainUnauthorizedException
 import com.sakena.shared.domain.DomainValidationException
 import com.sakena.shared.domain.EntityNotFoundException
 import jakarta.servlet.http.HttpServletRequest
@@ -32,6 +33,10 @@ class GlobalExceptionHandler {
     @ExceptionHandler(DomainConflictException::class)
     fun handleConflict(ex: DomainConflictException, request: HttpServletRequest) =
         build(HttpStatus.CONFLICT, ex.message ?: "Conflict", request)
+
+    @ExceptionHandler(DomainUnauthorizedException::class)
+    fun handleUnauthorized(ex: DomainUnauthorizedException, request: HttpServletRequest) =
+        build(HttpStatus.UNAUTHORIZED, ex.message ?: "Unauthorized", request)
 
     @ExceptionHandler(DomainForbiddenException::class)
     fun handleForbidden(ex: DomainForbiddenException, request: HttpServletRequest) =
