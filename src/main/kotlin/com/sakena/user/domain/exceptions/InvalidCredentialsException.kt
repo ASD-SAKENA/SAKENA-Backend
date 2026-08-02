@@ -1,5 +1,5 @@
 package com.sakena.user.domain.exceptions
 
-import com.sakena.shared.domain.DomainException
+import com.sakena.shared.domain.DomainUnauthorizedException
 
-class InvalidCredentialsException : DomainException("Invalid username or password")
+class InvalidCredentialsException : DomainUnauthorizedException("Invalid username or password")
