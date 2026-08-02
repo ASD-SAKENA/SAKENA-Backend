@@ -247,4 +247,22 @@ class AuthServiceTest {
             authService.resetPassword(ResetPasswordCommand("used", "newPass"))
         }
     }
+
+    @Test
+    fun `resetPassword should throw TokenInvalidException if token user is missing`() {
+        val userId = UserId.generate()
+        val tokenEntity = PasswordResetToken(
+            id = PasswordResetTokenId.generate(),
+            userId = userId,
+            token = "orphaned",
+            expiresAt = Instant.now().plusSeconds(60),
+            used = false
+        )
+        every { resetTokenRepository.findByToken("orphaned") } returns tokenEntity
+        every { userRepository.findById(userId) } returns null
+
+        assertThrows<TokenInvalidException> {
+            authService.resetPassword(ResetPasswordCommand("orphaned", "newPass"))
+        }
+    }
 }

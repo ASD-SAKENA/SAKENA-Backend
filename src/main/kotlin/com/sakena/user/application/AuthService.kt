@@ -1,6 +1,5 @@
 package com.sakena.user.application
 
-import com.sakena.shared.domain.DomainException
 import com.sakena.user.domain.PasswordResetToken
 import com.sakena.user.domain.PasswordResetTokenRepository
 import com.sakena.user.domain.Role
@@ -96,7 +95,7 @@ class AuthService(
         }
 
         val user = userRepository.findById(tokenEntity.userId)
-            ?: throw DomainException("User not found")
+            ?: throw TokenInvalidException()
 
         // Update password
         val updatedUser = user.withNewPassword(
