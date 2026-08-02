@@ -15,3 +15,6 @@ open class DomainValidationException(message: String) : DomainException(message)
 
 /** The operation conflicts with the current state of the resource. Maps to HTTP 409. */
 open class DomainConflictException(message: String) : DomainException(message)
+
+/** The caller is authenticated but may not perform this operation. Maps to HTTP 403. */
+open class DomainForbiddenException(message: String) : DomainException(message)

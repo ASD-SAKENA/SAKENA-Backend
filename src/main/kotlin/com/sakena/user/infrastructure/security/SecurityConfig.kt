@@ -33,6 +33,7 @@ class SecurityConfig(
 ) {
 
     private val manager = Role.MANAGER.name
+    private val resident = Role.RESIDENT.name
     private val staff = Role.STAFF.name
 
     @Bean
@@ -66,12 +67,29 @@ class SecurityConfig(
                     // Accepting an invitation only needs a signed-in user, not a manager.
                     .requestMatchers(HttpMethod.POST, "/api/v1/invitations/accept").authenticated()
 
+                    // Residents submit claims and read only their own payment views.
+                    .requestMatchers(HttpMethod.POST, "/api/v1/payments").hasRole(resident)
+                    .requestMatchers(
+                        HttpMethod.GET,
+                        "/api/v1/payments",
+                        "/api/v1/payments/submissions"
+                    ).hasRole(resident)
+                    // The application service additionally checks resident ownership.
+                    .requestMatchers(HttpMethod.GET, "/api/v1/payments/*/receipt")
+                    .hasAnyRole(resident, manager)
+
                     // ─── Manager-only surface ───
                     .requestMatchers("/api/v1/dashboard/manager").hasRole(manager)
                     .requestMatchers("/api/v1/users/**").hasRole(manager)
                     .requestMatchers("/api/v1/invitations/**").hasRole(manager)
                     .requestMatchers("/api/v1/charge-periods/**").hasRole(manager)
                     .requestMatchers(HttpMethod.POST, "/api/v1/invoices/*/payments").hasRole(manager)
+                    .requestMatchers(HttpMethod.GET, "/api/v1/payments/pending").hasRole(manager)
+                    .requestMatchers(
+                        HttpMethod.PATCH,
+                        "/api/v1/payments/*/confirm",
+                        "/api/v1/payments/*/reject"
+                    ).hasRole(manager)
                     .requestMatchers("/api/v1/wallets/building/**").hasRole(manager)
                     .requestMatchers("/api/v1/wallets/settle/**").hasRole(manager)
                     .requestMatchers("/api/v1/service-requests/admin").hasRole(manager)
