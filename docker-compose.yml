@@ -55,9 +55,11 @@ services:
       APP_RESET_TOKEN_EXPIRATION_MINUTES: ${APP_RESET_TOKEN_EXPIRATION_MINUTES:-60}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
       MINIO_ENDPOINT: http://minio:9000
+      MINIO_PUBLIC_ENDPOINT: ${MINIO_PUBLIC_ENDPOINT:-http://localhost:9000}
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-sakena}
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-sakena-secret}
       MINIO_BUCKET: ${MINIO_BUCKET:-sakena-chat}
+      MINIO_REGION: ${MINIO_REGION:-us-east-1}
     ports:
       - "${SERVER_PORT:-8080}:8080"
     healthcheck:
