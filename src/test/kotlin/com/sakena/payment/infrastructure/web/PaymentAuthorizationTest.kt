@@ -20,11 +20,12 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest
 import org.springframework.context.annotation.Import
 import org.springframework.http.MediaType
+import org.springframework.mock.web.MockMultipartFile
 import org.springframework.security.test.context.support.WithMockUser
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch
-import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import java.math.BigDecimal
 import java.time.Instant
@@ -64,9 +65,8 @@ class PaymentAuthorizationTest {
         every { paymentService.submit(any(), resident.id) } returns payment
 
         mockMvc.perform(
-            post("/api/v1/payments")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(request())),
+            multipart("/api/v1/payments")
+                .file(jsonPart()),
         ).andExpect(status().isCreated)
     }
 
@@ -74,9 +74,8 @@ class PaymentAuthorizationTest {
     @WithMockUser(username = "manager", roles = ["MANAGER"])
     fun `manager may not submit a resident payment claim`() {
         mockMvc.perform(
-            post("/api/v1/payments")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(request())),
+            multipart("/api/v1/payments")
+                .file(jsonPart()),
         ).andExpect(status().isForbidden)
     }
 
@@ -99,6 +98,28 @@ class PaymentAuthorizationTest {
     }
 
     @Test
+    @WithMockUser(username = "manager", roles = ["MANAGER"])
+    fun `manager may request a payment receipt link`() {
+        val manager = user("manager", Role.MANAGER)
+        val payment = pendingPayment(UserId.generate())
+        every { profileService.getUserByUsername("manager") } returns manager
+        every { paymentService.getReceipt(payment.id, manager.id) } returns
+            com.sakena.payment.domain.PaymentReceiptAccess("https://signed.example/receipt", 900)
+
+        mockMvc.perform(get("/api/v1/payments/${payment.id}/receipt"))
+            .andExpect(status().isOk)
+    }
+
+    @Test
+    @WithMockUser(username = "staff", roles = ["STAFF"])
+    fun `staff may not request a payment receipt link`() {
+        val payment = pendingPayment(UserId.generate())
+
+        mockMvc.perform(get("/api/v1/payments/${payment.id}/receipt"))
+            .andExpect(status().isForbidden)
+    }
+
+    @Test
     @WithMockUser(username = "resident", roles = ["RESIDENT"])
     fun `resident may not confirm a payment`() {
         mockMvc.perform(patch("/api/v1/payments/${pendingPayment(UserId.generate()).id}/confirm"))
@@ -109,6 +130,13 @@ class PaymentAuthorizationTest {
         title = "Monthly charge",
         amount = BigDecimal("500000"),
         transactionReference = "TX-AUTH-123",
+    )
+
+    private fun jsonPart() = MockMultipartFile(
+        "payment",
+        "payment.json",
+        MediaType.APPLICATION_JSON_VALUE,
+        objectMapper.writeValueAsBytes(request()),
     )
 
     private fun pendingPayment(payerId: UserId): Payment = Payment.submit(

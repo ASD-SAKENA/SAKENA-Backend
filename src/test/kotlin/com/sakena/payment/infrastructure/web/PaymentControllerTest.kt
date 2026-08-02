@@ -2,6 +2,7 @@ package com.sakena.payment.infrastructure.web
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.sakena.payment.application.PaymentService
+import com.sakena.payment.domain.PaymentReceiptAccess
 import com.sakena.payment.domain.model.Payment
 import com.sakena.payment.domain.model.PaymentStatus
 import com.sakena.payment.infrastructure.web.dto.RecordPaymentRequest
@@ -17,12 +18,13 @@ import io.mockk.verify
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import org.springframework.http.MediaType
+import org.springframework.mock.web.MockMultipartFile
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken
 import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch
-import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.test.web.servlet.setup.MockMvcBuilders
@@ -47,27 +49,45 @@ class PaymentControllerTest {
     @Test
     fun `resident submits evidence using their authenticated identity`() {
         val resident = authenticate(Role.RESIDENT)
-        val payment = pendingPayment(resident.id, "TX-123")
+        val payment = pendingPayment(
+            resident.id,
+            "TX-123",
+            "payment-receipts/${resident.id}/receipt.png",
+        )
         every { paymentService.submit(any(), resident.id) } returns payment
-        val body = objectMapper.writeValueAsString(
+        val paymentPart = jsonPart(
             RecordPaymentRequest(
                 title = "Monthly charge",
                 amount = BigDecimal("500000"),
                 transactionReference = "TX-123",
             ),
         )
+        val receiptPart = MockMultipartFile(
+            "receipt",
+            "receipt.png",
+            MediaType.IMAGE_PNG_VALUE,
+            "receipt image".toByteArray(),
+        )
 
         mockMvc.perform(
-            post("/api/v1/payments")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(body),
+            multipart("/api/v1/payments")
+                .file(paymentPart)
+                .file(receiptPart),
         )
             .andExpect(status().isCreated)
             .andExpect(jsonPath("$.transactionReference").value("TX-123"))
+            .andExpect(jsonPath("$.hasReceipt").value(true))
+            .andExpect(jsonPath("$.receiptObjectKey").doesNotExist())
             .andExpect(jsonPath("$.status").value(PaymentStatus.PENDING.name))
 
         verify(exactly = 1) {
-            paymentService.submit(match { it.transactionReference == "TX-123" }, resident.id)
+            paymentService.submit(
+                match {
+                    it.transactionReference == "TX-123" &&
+                        it.receipt?.contentType == MediaType.IMAGE_PNG_VALUE
+                },
+                resident.id,
+            )
         }
     }
 
@@ -104,6 +124,20 @@ class PaymentControllerTest {
         mockMvc.perform(get("/api/v1/payments/pending"))
             .andExpect(status().isOk)
             .andExpect(jsonPath("$[0].transactionReference").value("TX-PENDING"))
+    }
+
+    @Test
+    fun `authorized user requests a temporary receipt link`() {
+        val manager = authenticate(Role.MANAGER)
+        val payment = pendingPayment(UserId.generate(), "TX-RECEIPT")
+        every {
+            paymentService.getReceipt(payment.id, manager.id)
+        } returns PaymentReceiptAccess("https://signed.example/receipt", 900)
+
+        mockMvc.perform(get("/api/v1/payments/${payment.id}/receipt"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.url").value("https://signed.example/receipt"))
+            .andExpect(jsonPath("$.expiresInSeconds").value(900))
     }
 
     @Test
@@ -157,14 +191,25 @@ class PaymentControllerTest {
         verify(exactly = 0) { paymentService.reject(any(), manager.id, any()) }
     }
 
-    private fun pendingPayment(payerId: UserId, reference: String): Payment =
+    private fun pendingPayment(
+        payerId: UserId,
+        reference: String,
+        receiptObjectKey: String? = null,
+    ): Payment =
         Payment.submit(
             payerId = payerId,
             title = "Monthly charge",
             amount = BigDecimal("500000"),
             transactionReference = reference,
-            receiptObjectKey = null,
+            receiptObjectKey = receiptObjectKey,
         )
+
+    private fun jsonPart(request: RecordPaymentRequest) = MockMultipartFile(
+        "payment",
+        "payment.json",
+        MediaType.APPLICATION_JSON_VALUE,
+        objectMapper.writeValueAsBytes(request),
+    )
 
     private fun authenticate(role: Role): User {
         val user = user(role)

@@ -47,6 +47,28 @@ class PaymentTest {
     }
 
     @Test
+    fun `attach receipt stores a normalized object key on a pending payment`() {
+        val payment = submit()
+
+        payment.attachReceipt("  payment-receipts/receipt.png  ")
+
+        assertEquals("payment-receipts/receipt.png", payment.receiptObjectKey)
+    }
+
+    @Test
+    fun `receipt cannot be replaced or attached after review`() {
+        val paymentWithReceipt = submit(receiptObjectKey = "payment-receipts/original.png")
+        assertFailsWith<DomainConflictException> {
+            paymentWithReceipt.attachReceipt("payment-receipts/replacement.png")
+        }
+
+        val confirmedPayment = submit().also { it.confirm(manager) }
+        assertFailsWith<DomainConflictException> {
+            confirmedPayment.attachReceipt("payment-receipts/late.png")
+        }
+    }
+
+    @Test
     fun `reject records the manager and normalized reason`() {
         val payment = submit()
 

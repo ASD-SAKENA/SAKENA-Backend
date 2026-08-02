@@ -74,6 +74,9 @@ class SecurityConfig(
                         "/api/v1/payments",
                         "/api/v1/payments/submissions"
                     ).hasRole(resident)
+                    // The application service additionally checks resident ownership.
+                    .requestMatchers(HttpMethod.GET, "/api/v1/payments/*/receipt")
+                    .hasAnyRole(resident, manager)
 
                     // ─── Manager-only surface ───
                     .requestMatchers("/api/v1/dashboard/manager").hasRole(manager)
