@@ -11,6 +11,7 @@ import io.minio.PutObjectArgs
 import io.minio.RemoveObjectArgs
 import io.minio.http.Method
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Component
 import java.io.InputStream
 import java.util.UUID
@@ -20,6 +21,8 @@ import java.util.concurrent.TimeUnit
 @Component
 class MinioPaymentReceiptStorage(
     private val minioClient: MinioClient,
+    @Qualifier("publicMinioClient")
+    private val publicMinioClient: MinioClient,
     private val properties: ObjectStorageProperties,
 ) : PaymentReceiptStorage {
 
@@ -50,7 +53,7 @@ class MinioPaymentReceiptStorage(
 
     override fun presignedUrl(objectKey: String): PaymentReceiptAccess =
         try {
-            val url = minioClient.getPresignedObjectUrl(
+            val url = publicMinioClient.getPresignedObjectUrl(
                 GetPresignedObjectUrlArgs.builder()
                     .method(Method.GET)
                     .bucket(properties.bucket)

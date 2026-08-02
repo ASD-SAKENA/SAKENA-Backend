@@ -13,6 +13,7 @@ import io.minio.RemoveObjectArgs
 import io.minio.http.Method
 import jakarta.annotation.PostConstruct
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Component
 import java.io.InputStream
 import java.util.UUID
@@ -26,6 +27,8 @@ import java.util.concurrent.TimeUnit
 @Component
 class MinioChatAttachmentStorage(
     private val minioClient: MinioClient,
+    @Qualifier("publicMinioClient")
+    private val publicMinioClient: MinioClient,
     private val properties: ObjectStorageProperties,
 ) : ChatAttachmentStorage {
 
@@ -74,7 +77,7 @@ class MinioChatAttachmentStorage(
 
     override fun presignedUrl(storageKey: String): String =
         try {
-            minioClient.getPresignedObjectUrl(
+            publicMinioClient.getPresignedObjectUrl(
                 GetPresignedObjectUrlArgs.builder()
                     .method(Method.GET)
                     .bucket(properties.bucket)
