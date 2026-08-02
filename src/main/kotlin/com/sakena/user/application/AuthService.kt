@@ -36,7 +36,7 @@ class AuthService(
             throw UserAlreadyExistsException("email", command.email)
         }
 
-        val role = command.role?.let { Role.valueOf(it.uppercase()) } ?: Role.RESIDENT
+        val role = command.role?.let(Role::from) ?: Role.RESIDENT
 
         val user = User.register(
             username = command.username,

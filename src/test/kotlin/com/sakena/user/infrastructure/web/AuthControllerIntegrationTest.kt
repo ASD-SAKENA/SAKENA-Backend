@@ -153,6 +153,48 @@ class AuthControllerIntegrationTest(
             .andExpect(jsonPath("$.fieldErrors").isEmpty)
     }
 
+    @Test
+    fun `register with an unsupported role returns 400 with a clear reason`() {
+        val suffix = UUID.randomUUID().toString()
+        val request = RegisterRequest(
+            username = "invalid-role-$suffix",
+            email = "invalid-role-$suffix@example.com",
+            password = VALID_PASSWORD,
+            role = "OWNER",
+        )
+
+        mockMvc.perform(
+            post(REGISTER_PATH)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)),
+        )
+            .andExpect(status().isBadRequest)
+            .andExpect(jsonPath("$.status").value(400))
+            .andExpect(jsonPath("$.error").value("Bad Request"))
+            .andExpect(jsonPath("$.message").value("Invalid role 'OWNER'"))
+            .andExpect(jsonPath("$.path").value(REGISTER_PATH))
+            .andExpect(jsonPath("$.timestamp").isNotEmpty)
+            .andExpect(jsonPath("$.fieldErrors").isEmpty)
+    }
+
+    @Test
+    fun `login with malformed JSON returns 400 without exposing parser details`() {
+        val malformedBody = """{"username":"resident","password":"""
+
+        mockMvc.perform(
+            post(LOGIN_PATH)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(malformedBody),
+        )
+            .andExpect(status().isBadRequest)
+            .andExpect(jsonPath("$.status").value(400))
+            .andExpect(jsonPath("$.error").value("Bad Request"))
+            .andExpect(jsonPath("$.message").value("Malformed request body"))
+            .andExpect(jsonPath("$.path").value(LOGIN_PATH))
+            .andExpect(jsonPath("$.timestamp").isNotEmpty)
+            .andExpect(jsonPath("$.fieldErrors").isEmpty)
+    }
+
     private companion object {
         const val VALID_PASSWORD = "valid-password"
         const val LOGIN_PATH = "/api/v1/auth/login"
