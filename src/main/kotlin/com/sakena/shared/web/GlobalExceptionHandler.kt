@@ -9,6 +9,7 @@ import jakarta.servlet.http.HttpServletRequest
 import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
+import org.springframework.http.converter.HttpMessageNotReadableException
 import org.springframework.web.bind.MethodArgumentNotValidException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
@@ -41,6 +42,10 @@ class GlobalExceptionHandler {
     @ExceptionHandler(DomainForbiddenException::class)
     fun handleForbidden(ex: DomainForbiddenException, request: HttpServletRequest) =
         build(HttpStatus.FORBIDDEN, ex.message ?: "Forbidden", request)
+
+    @ExceptionHandler(HttpMessageNotReadableException::class)
+    fun handleMalformedRequest(request: HttpServletRequest) =
+        build(HttpStatus.BAD_REQUEST, "Malformed request body", request)
 
     @ExceptionHandler(MethodArgumentNotValidException::class)
     fun handleBeanValidation(ex: MethodArgumentNotValidException, request: HttpServletRequest): ResponseEntity<ApiError> {

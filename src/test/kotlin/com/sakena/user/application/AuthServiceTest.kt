@@ -3,6 +3,7 @@ package com.sakena.user.application
 import com.sakena.user.domain.*
 import com.sakena.user.domain.exceptions.InactiveAccountException
 import com.sakena.user.domain.exceptions.InvalidCredentialsException
+import com.sakena.user.domain.exceptions.InvalidRoleException
 import com.sakena.user.domain.exceptions.TokenInvalidException
 import com.sakena.user.domain.exceptions.UserAlreadyExistsException
 import io.mockk.*
@@ -105,6 +106,18 @@ class AuthServiceTest {
         every { userRepository.existsByUsername(command.username) } returns false
         every { userRepository.existsByEmail(command.email) } returns true
         assertThrows<UserAlreadyExistsException> { authService.register(command) }
+        verify(exactly = 0) { userRepository.save(any()) }
+    }
+
+    @Test
+    fun `register should throw InvalidRoleException if role is unsupported`() {
+        val command = RegisterCommand("john", "john@example.com", "password123", "OWNER")
+        every { userRepository.existsByUsername(command.username) } returns false
+        every { userRepository.existsByEmail(command.email) } returns false
+
+        assertThrows<InvalidRoleException> { authService.register(command) }
+
+        verify(exactly = 0) { passwordEncoder.encode(any()) }
         verify(exactly = 0) { userRepository.save(any()) }
     }
 
