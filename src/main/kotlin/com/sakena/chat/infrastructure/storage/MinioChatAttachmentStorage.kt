@@ -2,6 +2,7 @@ package com.sakena.chat.infrastructure.storage
 
 import com.sakena.chat.domain.ChatAttachmentStorage
 import com.sakena.property.domain.model.BuildingId
+import com.sakena.shared.config.ObjectStorageProperties
 import com.sakena.shared.domain.DomainException
 import io.minio.BucketExistsArgs
 import io.minio.GetPresignedObjectUrlArgs
@@ -25,7 +26,7 @@ import java.util.concurrent.TimeUnit
 @Component
 class MinioChatAttachmentStorage(
     private val minioClient: MinioClient,
-    private val properties: MinioProperties,
+    private val properties: ObjectStorageProperties,
 ) : ChatAttachmentStorage {
 
     private val log = LoggerFactory.getLogger(javaClass)

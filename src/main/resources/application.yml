@@ -71,7 +71,7 @@ jwt:
   secret: ${JWT_SECRET:ipp3tok924jIS0d2q7PklWf6HwvPoUjIGsFU2a9kvMs=}
   expiration-ms: ${JWT_EXPIRATION_MS:86400000}
 
-# MinIO object storage backing chat attachments (images and voice notes).
+# MinIO object storage backing private chat attachments and payment receipts.
 storage:
   endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
   access-key: ${MINIO_ACCESS_KEY:sakena}

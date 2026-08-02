@@ -22,7 +22,7 @@ class Payment private constructor(
     val title: String,
     val amount: BigDecimal,
     val transactionReference: String,
-    val receiptObjectKey: String?,
+    receiptObjectKey: String?,
     status: PaymentStatus,
     val paidAt: Instant,
     reviewedBy: UserId?,
@@ -30,6 +30,9 @@ class Payment private constructor(
     rejectionReason: String?,
 ) {
     var status: PaymentStatus = status
+        private set
+
+    var receiptObjectKey: String? = receiptObjectKey
         private set
 
     var reviewedBy: UserId? = reviewedBy
@@ -40,6 +43,15 @@ class Payment private constructor(
 
     var rejectionReason: String? = rejectionReason
         private set
+
+    fun attachReceipt(objectKey: String) {
+        requirePending()
+        if (receiptObjectKey != null) {
+            throw DomainConflictException("A receipt is already attached to this payment")
+        }
+        receiptObjectKey = validateReceiptObjectKey(objectKey)
+            ?: throw DomainValidationException("Receipt object key must not be blank")
+    }
 
     fun confirm(managerId: UserId) {
         requirePending()

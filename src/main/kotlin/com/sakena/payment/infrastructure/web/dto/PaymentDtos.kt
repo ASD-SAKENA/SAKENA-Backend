@@ -1,6 +1,8 @@
 package com.sakena.payment.infrastructure.web.dto
 
+import com.sakena.payment.application.command.PaymentReceiptUpload
 import com.sakena.payment.application.command.SubmitPaymentCommand
+import com.sakena.payment.domain.PaymentReceiptAccess
 import com.sakena.payment.domain.model.Payment
 import com.sakena.payment.domain.model.PaymentStatus
 import jakarta.validation.constraints.DecimalMin
@@ -23,15 +25,12 @@ data class RecordPaymentRequest(
     @field:NotBlank(message = "transactionReference must not be blank")
     @field:Size(max = 100, message = "transactionReference must be at most 100 characters")
     val transactionReference: String,
-
-    @field:Size(max = 500, message = "receiptObjectKey must be at most 500 characters")
-    val receiptObjectKey: String? = null,
 ) {
-    fun toCommand() = SubmitPaymentCommand(
+    fun toCommand(receipt: PaymentReceiptUpload?) = SubmitPaymentCommand(
         title = title,
         amount = amount,
         transactionReference = transactionReference,
-        receiptObjectKey = receiptObjectKey,
+        receipt = receipt,
     )
 }
 
@@ -46,7 +45,7 @@ data class PaymentResponse(
     val title: String,
     val amount: BigDecimal,
     val transactionReference: String,
-    val receiptObjectKey: String?,
+    val hasReceipt: Boolean,
     val status: PaymentStatus,
     val paidAt: Instant,
     val reviewedBy: UUID?,
@@ -59,12 +58,24 @@ data class PaymentResponse(
             title = payment.title,
             amount = payment.amount,
             transactionReference = payment.transactionReference,
-            receiptObjectKey = payment.receiptObjectKey,
+            hasReceipt = payment.receiptObjectKey != null,
             status = payment.status,
             paidAt = payment.paidAt,
             reviewedBy = payment.reviewedBy?.value,
             reviewedAt = payment.reviewedAt,
             rejectionReason = payment.rejectionReason,
+        )
+    }
+}
+
+data class PaymentReceiptResponse(
+    val url: String,
+    val expiresInSeconds: Int,
+) {
+    companion object {
+        fun from(access: PaymentReceiptAccess) = PaymentReceiptResponse(
+            url = access.url,
+            expiresInSeconds = access.expiresInSeconds,
         )
     }
 }
