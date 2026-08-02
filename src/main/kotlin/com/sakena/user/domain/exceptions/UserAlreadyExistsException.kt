@@ -1,6 +1,6 @@
 package com.sakena.user.domain.exceptions
 
-import com.sakena.shared.domain.DomainException
+import com.sakena.shared.domain.DomainConflictException
 
 class UserAlreadyExistsException(field: String, value: String)
-    : DomainException("User with $field '$value' already exists")
+    : DomainConflictException("User with $field '$value' already exists")
