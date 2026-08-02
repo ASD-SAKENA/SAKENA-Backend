@@ -1,6 +1,7 @@
 package com.sakena.user.application
 
 import com.sakena.user.domain.*
+import com.sakena.user.domain.exceptions.InactiveAccountException
 import com.sakena.user.domain.exceptions.InvalidCredentialsException
 import com.sakena.user.domain.exceptions.TokenInvalidException
 import com.sakena.user.domain.exceptions.UserAlreadyExistsException
@@ -141,11 +142,11 @@ class AuthServiceTest {
     }
 
     @Test
-    fun `login should throw DomainException when user is inactive`() {
+    fun `login should throw InactiveAccountException when user is inactive`() {
         val user = createUser(active = false)
         every { userRepository.findByUsername("john") } returns user
         every { passwordEncoder.matches("pass", user.passwordHash) } returns true
-        assertThrows<com.sakena.shared.domain.DomainException> {
+        assertThrows<InactiveAccountException> {
             authService.login(LoginCommand("john", "pass"))
         }
     }

@@ -6,6 +6,7 @@ import com.sakena.user.domain.PasswordResetTokenRepository
 import com.sakena.user.domain.Role
 import com.sakena.user.domain.User
 import com.sakena.user.domain.UserRepository
+import com.sakena.user.domain.exceptions.InactiveAccountException
 import com.sakena.user.domain.exceptions.InvalidCredentialsException
 import com.sakena.user.domain.exceptions.TokenInvalidException
 import com.sakena.user.domain.exceptions.UserAlreadyExistsException
@@ -62,7 +63,7 @@ class AuthService(
         }
 
         if (!user.active) {
-            throw DomainException("User account is inactive")
+            throw InactiveAccountException()
         }
 
         return jwtTokenProvider.generateToken(user.username, user.role.name)
