@@ -6,8 +6,10 @@ import com.sakena.servicerequest.domain.ServiceRequestFilters
 import com.sakena.servicerequest.domain.ServiceRequestId
 import com.sakena.servicerequest.domain.ServiceRequestRepository
 import com.sakena.servicerequest.domain.ServiceSubCategory
+import com.sakena.shared.domain.DomainForbiddenException
 import com.sakena.shared.domain.DomainValidationException
 import com.sakena.shared.domain.EntityNotFoundException
+import com.sakena.user.domain.Role
 import com.sakena.user.domain.UserId
 import com.sakena.user.domain.UserRepository
 import org.springframework.stereotype.Service
@@ -100,6 +102,23 @@ class ServiceRequestService(
             completionCost = command.completionCost
         )
         return serviceRequestRepository.save(completed)
+    }
+
+    fun assignCostResponsibility(command: AssignServiceCostResponsibilityCommand): ServiceRequest {
+        val manager = userRepository.findById(command.managerId)
+            ?: throw EntityNotFoundException("User with id '${command.managerId}' was not found")
+        if (manager.role != Role.MANAGER) {
+            throw DomainForbiddenException("Only managers can assign service request cost responsibility")
+        }
+
+        val request = serviceRequestRepository.findById(command.serviceRequestId)
+            ?: throw EntityNotFoundException("Service request not found")
+
+        val updated = request.assignCostResponsibility(
+            responsibility = command.responsibility,
+            userId = command.managerId,
+        )
+        return serviceRequestRepository.save(updated)
     }
 
     fun getCategories(categoryGroupValue: String?): CategoryOptionsResult {
