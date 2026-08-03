@@ -20,7 +20,8 @@ data class ServiceRequest(
     val resolvedAt: Instant? = null,
     val expectedCompletionAt: Instant? = null,
     val completionReport: String? = null,
-    val completionCost: Double? = null
+    val completionCost: Double? = null,
+    val costResponsibility: ServiceCostResponsibility? = null,
 ) {
     companion object {
         fun create(
@@ -70,11 +71,13 @@ data class ServiceRequest(
             resolvedAt: Instant?,
             expectedCompletionAt: Instant? = null,
             completionReport: String? = null,
-            completionCost: Double? = null
+            completionCost: Double? = null,
+            costResponsibility: ServiceCostResponsibility? = null,
         ) = ServiceRequest(
             id, title, description, location, categoryGroup, subCategory,
             createdBy, updatedBy, createdAt, updatedAt, status,
-            assignedTo, resolvedAt, expectedCompletionAt, completionReport, completionCost
+            assignedTo, resolvedAt, expectedCompletionAt, completionReport, completionCost,
+            costResponsibility,
         ).also {
             validate(
                 title = it.title,
@@ -175,6 +178,27 @@ data class ServiceRequest(
             status = ServiceRequestStatus.SETTLED,
             updatedAt = Instant.now(),
             updatedBy = userId
+        )
+    }
+
+    fun assignCostResponsibility(
+        responsibility: ServiceCostResponsibility,
+        userId: UserId,
+    ): ServiceRequest {
+        if (status != ServiceRequestStatus.COMPLETED) {
+            throw DomainValidationException(
+                "Cost responsibility can only be assigned when the service request is completed",
+            )
+        }
+        if (completionCost == null || completionCost <= 0.0) {
+            throw DomainValidationException(
+                "Service request must have a positive completion cost before assigning cost responsibility",
+            )
+        }
+        return copy(
+            costResponsibility = responsibility,
+            updatedAt = Instant.now(),
+            updatedBy = userId,
         )
     }
 
