@@ -15,7 +15,9 @@ class ServiceRequestTest {
     private fun createTestRequest(
         status: ServiceRequestStatus = ServiceRequestStatus.PENDING,
         assignedTo: UserId? = null,
-        resolvedAt: Instant? = null
+        resolvedAt: Instant? = null,
+        completionCost: Double? = null,
+        costResponsibility: ServiceCostResponsibility? = null,
     ): ServiceRequest {
         return ServiceRequest.reconstitute(
             id = ServiceRequestId.generate(),
@@ -30,7 +32,9 @@ class ServiceRequestTest {
             updatedAt = now,
             status = status,
             assignedTo = assignedTo,
-            resolvedAt = resolvedAt
+            resolvedAt = resolvedAt,
+            completionCost = completionCost,
+            costResponsibility = costResponsibility,
         )
     }
 
@@ -59,6 +63,7 @@ class ServiceRequestTest {
         assertNull(request.expectedCompletionAt)
         assertNull(request.completionReport)
         assertNull(request.completionCost)
+        assertNull(request.costResponsibility)
         assertTrue(request.createdAt <= Instant.now())
     }
 
@@ -397,6 +402,72 @@ class ServiceRequestTest {
     }
 
     @Test
+    fun `assignCostResponsibility should record responsibility and manager`() {
+        val managerId = UserId.generate()
+        val request = createTestRequest(
+            status = ServiceRequestStatus.COMPLETED,
+            completionCost = 250.0,
+        )
+
+        val updated = request.assignCostResponsibility(
+            ServiceCostResponsibility.ALL_UNITS,
+            managerId,
+        )
+
+        assertEquals(ServiceCostResponsibility.ALL_UNITS, updated.costResponsibility)
+        assertEquals(managerId, updated.updatedBy)
+        assertFalse(updated.updatedAt.isBefore(request.updatedAt))
+    }
+
+    @Test
+    fun `assignCostResponsibility should allow changing responsibility before settlement`() {
+        val managerId = UserId.generate()
+        val request = createTestRequest(
+            status = ServiceRequestStatus.COMPLETED,
+            completionCost = 250.0,
+            costResponsibility = ServiceCostResponsibility.ALL_UNITS,
+        )
+
+        val updated = request.assignCostResponsibility(
+            ServiceCostResponsibility.REQUESTING_UNIT,
+            managerId,
+        )
+
+        assertEquals(ServiceCostResponsibility.REQUESTING_UNIT, updated.costResponsibility)
+    }
+
+    @Test
+    fun `assignCostResponsibility should require a completed request`() {
+        val managerId = UserId.generate()
+        val invalidStatuses = ServiceRequestStatus.entries - ServiceRequestStatus.COMPLETED
+
+        invalidStatuses.forEach { status ->
+            val request = createTestRequest(status = status, completionCost = 250.0)
+
+            assertThrows<DomainValidationException> {
+                request.assignCostResponsibility(ServiceCostResponsibility.BUILDING_WALLET, managerId)
+            }
+        }
+    }
+
+    @Test
+    fun `assignCostResponsibility should require a positive completion cost`() {
+        listOf(null, 0.0, -1.0).forEach { cost ->
+            val request = createTestRequest(
+                status = ServiceRequestStatus.COMPLETED,
+                completionCost = cost,
+            )
+
+            assertThrows<DomainValidationException> {
+                request.assignCostResponsibility(
+                    ServiceCostResponsibility.BUILDING_WALLET,
+                    UserId.generate(),
+                )
+            }
+        }
+    }
+
+    @Test
     fun `reject should change status to REJECTED from PENDING and set updatedBy`() {
         val request = createTestRequest(status = ServiceRequestStatus.PENDING)
         val adminId = UserId.generate()
@@ -499,7 +570,8 @@ class ServiceRequestTest {
             resolvedAt = resolvedAt,
             expectedCompletionAt = expectedAt,
             completionReport = "Fixed the door",
-            completionCost = 120.0
+            completionCost = 120.0,
+            costResponsibility = ServiceCostResponsibility.BUILDING_WALLET,
         )
 
         assertEquals(id, request.id)
@@ -516,6 +588,7 @@ class ServiceRequestTest {
         assertEquals(expectedAt, request.expectedCompletionAt)
         assertEquals("Fixed the door", request.completionReport)
         assertEquals(120.0, request.completionCost)
+        assertEquals(ServiceCostResponsibility.BUILDING_WALLET, request.costResponsibility)
     }
 
     @Test
@@ -541,6 +614,7 @@ class ServiceRequestTest {
         assertNull(request.expectedCompletionAt)
         assertNull(request.completionReport)
         assertNull(request.completionCost)
+        assertNull(request.costResponsibility)
     }
 
     @Test
