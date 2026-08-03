@@ -1,6 +1,7 @@
 package com.sakena.servicerequest.infrastructure.persistence
 
 import com.sakena.servicerequest.domain.ServiceCategoryGroup
+import com.sakena.servicerequest.domain.ServiceCostResponsibility
 import com.sakena.servicerequest.domain.ServiceRequestStatus
 import com.sakena.servicerequest.domain.ServiceSubCategory
 import jakarta.persistence.*
@@ -11,7 +12,7 @@ import java.util.UUID
 @Table(name = "service_requests")
 class ServiceRequestJpaEntity(
     @Id
-    val id: UUID,
+    var id: UUID,
 
     @Column(nullable = false)
     var title: String,
@@ -59,5 +60,9 @@ class ServiceRequestJpaEntity(
     var completionReport: String? = null,
 
     @Column(name = "completion_cost")
-    var completionCost: Double? = null
+    var completionCost: Double? = null,
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "cost_responsibility")
+    var costResponsibility: ServiceCostResponsibility? = null
 )
