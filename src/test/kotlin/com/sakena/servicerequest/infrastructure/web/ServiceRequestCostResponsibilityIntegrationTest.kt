@@ -3,7 +3,12 @@ package com.sakena.servicerequest.infrastructure.web
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.sakena.IntegrationTest
 import com.sakena.billing.domain.ServiceChargeRepository
+import com.sakena.billing.domain.ChargeItemRepository
+import com.sakena.billing.domain.model.ChargePeriodId
+import com.sakena.billing.domain.model.ChargePeriodType
+import com.sakena.billing.domain.model.CostAllocation
 import com.sakena.billing.domain.model.ServiceChargeTarget
+import com.sakena.billing.infrastructure.web.dto.CreateChargePeriodRequest
 import com.sakena.property.domain.ApartmentRepository
 import com.sakena.property.domain.BuildingRepository
 import com.sakena.property.domain.model.Apartment
@@ -33,6 +38,7 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import java.math.BigDecimal
+import java.time.LocalDate
 import java.util.UUID
 import kotlin.test.assertEquals
 
@@ -47,6 +53,7 @@ class ServiceRequestCostResponsibilityIntegrationTest(
     @Autowired private val apartmentRepository: ApartmentRepository,
     @Autowired private val residencyRepository: ResidencyRepository,
     @Autowired private val serviceChargeRepository: ServiceChargeRepository,
+    @Autowired private val chargeItemRepository: ChargeItemRepository,
 ) : IntegrationTest() {
 
     @Test
@@ -136,6 +143,23 @@ class ServiceRequestCostResponsibilityIntegrationTest(
             0,
             buildingBalanceAfter.compareTo(buildingBalanceBefore - BigDecimal("250.0")),
         )
+
+        val secondApartment = addApartment(requestingApartment.buildingId, "second-$suffix")
+        val issued = issueNextPeriod(manager, requestingApartment.buildingId.value, suffix)
+        assertEquals(
+            0,
+            issued.invoices.getValue(requestingApartmentId).compareTo(BigDecimal("125")),
+        )
+        assertEquals(
+            0,
+            issued.invoices.getValue(secondApartment.id).compareTo(BigDecimal("125")),
+        )
+        val attachedCharge = serviceChargeRepository.findById(queuedCharge.id)
+            ?: error("Deferred service charge disappeared after issuance")
+        assertEquals(issued.periodId, attachedCharge.attachedPeriodId)
+        val chargeItem = chargeItemRepository.findAllByPeriod(issued.periodId).single()
+        assertEquals(CostAllocation.EQUAL, chargeItem.allocation)
+        assertEquals(null, chargeItem.targetApartmentId)
     }
 
     @Test
@@ -192,6 +216,63 @@ class ServiceRequestCostResponsibilityIntegrationTest(
         val workerWallet = walletRepository.findByOwner(staff.id)
             ?: error("Worker wallet was not created")
         assertEquals(0, workerWallet.balance.compareTo(BigDecimal("250.0")))
+
+        addApartment(requestingApartment.buildingId, "second-$suffix")
+        val issued = issueNextPeriod(manager, requestingApartment.buildingId.value, suffix)
+        assertEquals(setOf(requestingApartmentId), issued.invoices.keys)
+        assertEquals(
+            0,
+            issued.invoices.getValue(requestingApartmentId).compareTo(BigDecimal("250")),
+        )
+        val attachedCharge = serviceChargeRepository.findById(queuedCharge.id)
+            ?: error("Targeted service charge disappeared after issuance")
+        assertEquals(issued.periodId, attachedCharge.attachedPeriodId)
+        val chargeItem = chargeItemRepository.findAllByPeriod(issued.periodId).single()
+        assertEquals(CostAllocation.SPECIFIC_UNIT, chargeItem.allocation)
+        assertEquals(requestingApartmentId, chargeItem.targetApartmentId)
+    }
+
+    private fun issueNextPeriod(
+        manager: AuthenticatedUser,
+        buildingId: UUID,
+        suffix: String,
+    ): IssuedPeriod {
+        val createResult = mockMvc.perform(
+            post("/api/v1/charge-periods")
+                .header(HttpHeaders.AUTHORIZATION, bearer(manager.token))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsBytes(
+                        CreateChargePeriodRequest(
+                            buildingId = buildingId,
+                            title = "Next service charge $suffix",
+                            type = ChargePeriodType.MONTHLY,
+                            startsOn = LocalDate.of(2026, 8, 1),
+                            endsOn = LocalDate.of(2026, 9, 1),
+                        ),
+                    ),
+                ),
+        )
+            .andExpect(status().isCreated)
+            .andReturn()
+        val periodId = ChargePeriodId(
+            UUID.fromString(
+                objectMapper.readTree(createResult.response.contentAsString).get("id").asText(),
+            ),
+        )
+
+        val issueResult = mockMvc.perform(
+            post("/api/v1/charge-periods/${periodId.value}/issue")
+                .header(HttpHeaders.AUTHORIZATION, bearer(manager.token)),
+        )
+            .andExpect(status().isCreated)
+            .andReturn()
+        val invoices = objectMapper.readTree(issueResult.response.contentAsString)
+            .associate { node ->
+                ApartmentId(UUID.fromString(node.get("apartmentId").asText())) to
+                    node.get("amount").decimalValue()
+            }
+        return IssuedPeriod(periodId, invoices)
     }
 
     private fun completeServiceRequest(
@@ -286,6 +367,19 @@ class ServiceRequestCostResponsibilityIntegrationTest(
         return apartment.id
     }
 
+    private fun addApartment(
+        buildingId: com.sakena.property.domain.model.BuildingId,
+        unitNumber: String,
+    ): Apartment = apartmentRepository.save(
+        Apartment.create(
+            buildingId = buildingId,
+            unitNumber = unitNumber,
+            floorNumber = 2,
+            areaSquareMeters = BigDecimal("75"),
+            bedrooms = 1,
+        ),
+    )
+
     private fun register(username: String, role: String): AuthenticatedUser {
         val request = RegisterRequest(
             username = username,
@@ -311,5 +405,10 @@ class ServiceRequestCostResponsibilityIntegrationTest(
     private data class AuthenticatedUser(
         val token: String,
         val id: UserId,
+    )
+
+    private data class IssuedPeriod(
+        val periodId: ChargePeriodId,
+        val invoices: Map<ApartmentId, BigDecimal>,
     )
 }

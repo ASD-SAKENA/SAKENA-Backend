@@ -3,6 +3,7 @@ package com.sakena.billing.domain
 import com.sakena.billing.domain.model.ChargePeriodId
 import com.sakena.billing.domain.model.ServiceCharge
 import com.sakena.billing.domain.model.ServiceChargeTarget
+import com.sakena.billing.domain.model.CostAllocation
 import com.sakena.property.domain.model.ApartmentId
 import com.sakena.property.domain.model.BuildingId
 import com.sakena.servicerequest.domain.ServiceRequestId
@@ -72,6 +73,31 @@ class ServiceChargeTest {
         assertFailsWith<DomainConflictException> {
             charge.attachTo(ChargePeriodId.new())
         }
+    }
+
+    @Test
+    fun `all-units charge creates an equally allocated cost line`() {
+        val periodId = ChargePeriodId.new()
+
+        val item = charge(ServiceChargeTarget.ALL_UNITS).createChargeItemFor(periodId)
+
+        assertEquals(periodId, item.periodId)
+        assertEquals(CostAllocation.EQUAL, item.allocation)
+        assertNull(item.targetApartmentId)
+    }
+
+    @Test
+    fun `specific-unit charge creates a cost line for its apartment`() {
+        val periodId = ChargePeriodId.new()
+        val apartmentId = ApartmentId.new()
+
+        val item = charge(
+            ServiceChargeTarget.SPECIFIC_UNIT,
+            apartmentId,
+        ).createChargeItemFor(periodId)
+
+        assertEquals(CostAllocation.SPECIFIC_UNIT, item.allocation)
+        assertEquals(apartmentId, item.targetApartmentId)
     }
 
     private fun charge(
