@@ -2,6 +2,8 @@ package com.sakena.servicerequest.infrastructure.web
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.sakena.IntegrationTest
+import com.sakena.billing.domain.ServiceChargeRepository
+import com.sakena.billing.domain.model.ServiceChargeTarget
 import com.sakena.property.domain.ApartmentRepository
 import com.sakena.property.domain.BuildingRepository
 import com.sakena.property.domain.model.Apartment
@@ -44,10 +46,11 @@ class ServiceRequestCostResponsibilityIntegrationTest(
     @Autowired private val buildingRepository: BuildingRepository,
     @Autowired private val apartmentRepository: ApartmentRepository,
     @Autowired private val residencyRepository: ResidencyRepository,
+    @Autowired private val serviceChargeRepository: ServiceChargeRepository,
 ) : IntegrationTest() {
 
     @Test
-    fun `manager selects responsibility and only building wallet settlement pays the worker`() {
+    fun `manager settles all-units responsibility through the deferred billing queue`() {
         val suffix = UUID.randomUUID().toString().take(8)
         val resident = register("resident-$suffix", "RESIDENT")
         val staff = register("staff-$suffix", "STAFF")
@@ -106,6 +109,17 @@ class ServiceRequestCostResponsibilityIntegrationTest(
             )
 
         mockMvc.perform(
+            post("/api/v1/wallets/settle/$requestId")
+                .header(HttpHeaders.AUTHORIZATION, bearer(manager.token)),
+        ).andExpect(status().isConflict)
+
+        assertEquals(
+            ServiceRequestStatus.COMPLETED,
+            serviceRequestRepository.findById(ServiceRequestId(requestId))?.status,
+        )
+        assertEquals(null, walletRepository.findByOwner(staff.id))
+
+        mockMvc.perform(
             patch(endpoint)
                 .header(HttpHeaders.AUTHORIZATION, bearer(manager.token))
                 .contentType(MediaType.APPLICATION_JSON)
@@ -119,30 +133,8 @@ class ServiceRequestCostResponsibilityIntegrationTest(
         assertEquals(ServiceCostResponsibility.ALL_UNITS, persisted?.costResponsibility)
         assertEquals(manager.id, persisted?.updatedBy)
 
-        mockMvc.perform(
-            post("/api/v1/wallets/settle/$requestId")
-                .header(HttpHeaders.AUTHORIZATION, bearer(manager.token)),
-        ).andExpect(status().isConflict)
-
-        assertEquals(
-            ServiceRequestStatus.COMPLETED,
-            serviceRequestRepository.findById(ServiceRequestId(requestId))?.status,
-        )
-        assertEquals(null, walletRepository.findByOwner(staff.id))
-
         val buildingBalanceBefore = walletRepository.findBuildingWallet()?.balance
             ?: error("Building wallet was not provisioned")
-        val buildingWalletBody = objectMapper.writeValueAsBytes(
-            AssignCostResponsibilityRequest(ServiceCostResponsibility.BUILDING_WALLET),
-        )
-        mockMvc.perform(
-            patch(endpoint)
-                .header(HttpHeaders.AUTHORIZATION, bearer(manager.token))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(buildingWalletBody),
-        )
-            .andExpect(status().isOk)
-            .andExpect(jsonPath("$.costResponsibility").value("BUILDING_WALLET"))
 
         mockMvc.perform(
             post("/api/v1/wallets/settle/$requestId")
@@ -153,6 +145,15 @@ class ServiceRequestCostResponsibilityIntegrationTest(
             ServiceRequestStatus.SETTLED,
             serviceRequestRepository.findById(ServiceRequestId(requestId))?.status,
         )
+        val queuedCharge = serviceChargeRepository.findBySourceServiceRequestId(
+            ServiceRequestId(requestId),
+        ) ?: error("Deferred service charge was not created")
+        val requestingApartment = apartmentRepository.findById(requestingApartmentId)
+            ?: error("Requesting apartment was not found")
+        assertEquals(ServiceChargeTarget.ALL_UNITS, queuedCharge.target)
+        assertEquals(requestingApartment.buildingId, queuedCharge.buildingId)
+        assertEquals(null, queuedCharge.targetApartmentId)
+        assertEquals(true, queuedCharge.pending)
         val workerWallet = walletRepository.findByOwner(staff.id)
             ?: error("Worker wallet was not created")
         assertEquals(0, workerWallet.balance.compareTo(BigDecimal("250.0")))

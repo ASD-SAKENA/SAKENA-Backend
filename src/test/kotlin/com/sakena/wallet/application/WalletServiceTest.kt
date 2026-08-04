@@ -1,6 +1,12 @@
 package com.sakena.wallet.application
 
+import com.sakena.billing.domain.ServiceChargeRepository
+import com.sakena.billing.domain.model.ServiceCharge
+import com.sakena.billing.domain.model.ServiceChargeTarget
+import com.sakena.property.domain.ApartmentRepository
+import com.sakena.property.domain.model.Apartment
 import com.sakena.property.domain.model.ApartmentId
+import com.sakena.property.domain.model.BuildingId
 import com.sakena.servicerequest.domain.ServiceCategoryGroup
 import com.sakena.servicerequest.domain.ServiceCostResponsibility
 import com.sakena.servicerequest.domain.ServiceRequest
@@ -8,6 +14,7 @@ import com.sakena.servicerequest.domain.ServiceRequestRepository
 import com.sakena.servicerequest.domain.ServiceSubCategory
 import com.sakena.shared.domain.DomainConflictException
 import com.sakena.shared.domain.DomainValidationException
+import com.sakena.shared.domain.EntityNotFoundException
 import com.sakena.user.domain.UserId
 import com.sakena.wallet.domain.WalletRepository
 import com.sakena.wallet.domain.WalletTransactionRepository
@@ -26,10 +33,14 @@ class WalletServiceTest {
     private val walletRepository = mockk<WalletRepository>(relaxed = true)
     private val transactionRepository = mockk<WalletTransactionRepository>(relaxed = true)
     private val serviceRequestRepository = mockk<ServiceRequestRepository>(relaxed = true)
+    private val apartmentRepository = mockk<ApartmentRepository>(relaxed = true)
+    private val serviceChargeRepository = mockk<ServiceChargeRepository>(relaxed = true)
     private val service = WalletService(
         walletRepository,
         transactionRepository,
         serviceRequestRepository,
+        apartmentRepository,
+        serviceChargeRepository,
     )
 
     private val manager = UserId.generate()
@@ -165,21 +176,70 @@ class WalletServiceTest {
     }
 
     @Test
-    fun `wallet settlement rejects responsibilities that require billing without writes`() {
-        listOf(
-            ServiceCostResponsibility.ALL_UNITS,
-            ServiceCostResponsibility.REQUESTING_UNIT,
-        ).forEach { responsibility ->
-            val request = completedRequest(responsibility)
-            every { serviceRequestRepository.findById(request.id) } returns request
+    fun `all-units settlement queues the building cost and pays the worker`() {
+        val request = completedRequest(ServiceCostResponsibility.ALL_UNITS)
+        val apartment = apartment(request.requestingApartmentId!!)
+        val buildingWallet = Wallet.createBuilding()
+        every { serviceRequestRepository.findById(request.id) } returns request
+        every { apartmentRepository.findById(apartment.id) } returns apartment
+        every { walletRepository.findBuildingWallet() } returns buildingWallet
+        every { walletRepository.findByOwner(worker) } returns null
+        every { walletRepository.save(any()) } answers { firstArg() }
+        every { serviceRequestRepository.save(any()) } answers { firstArg() }
+        val queuedCharge = slot<ServiceCharge>()
+        every { serviceChargeRepository.save(capture(queuedCharge)) } answers { queuedCharge.captured }
 
-            assertFailsWith<DomainConflictException> {
-                service.settleServiceRequest(request.id, manager)
-            }
+        service.settleServiceRequest(request.id, manager)
+
+        assertEquals(request.id, queuedCharge.captured.sourceServiceRequestId)
+        assertEquals(apartment.buildingId, queuedCharge.captured.buildingId)
+        assertEquals(ServiceChargeTarget.ALL_UNITS, queuedCharge.captured.target)
+        assertEquals(null, queuedCharge.captured.targetApartmentId)
+        assertEquals(BigDecimal("250000.0"), queuedCharge.captured.amount)
+        assertEquals(BigDecimal("-250000.0"), buildingWallet.balance)
+        verify(exactly = 1) { serviceRequestRepository.save(match { it.status.name == "SETTLED" }) }
+    }
+
+    @Test
+    fun `all-units settlement rejects a missing requesting apartment without writes`() {
+        val request = completedRequest(ServiceCostResponsibility.ALL_UNITS)
+        every { serviceRequestRepository.findById(request.id) } returns request
+        every { apartmentRepository.findById(request.requestingApartmentId!!) } returns null
+
+        assertFailsWith<EntityNotFoundException> {
+            service.settleServiceRequest(request.id, manager)
         }
 
+        verify(exactly = 0) { serviceChargeRepository.save(any()) }
         verify(exactly = 0) { walletRepository.save(any()) }
         verify(exactly = 0) { transactionRepository.save(any()) }
         verify(exactly = 0) { serviceRequestRepository.save(any()) }
     }
+
+    @Test
+    fun `wallet settlement keeps requesting-unit responsibility blocked without writes`() {
+        val request = completedRequest(ServiceCostResponsibility.REQUESTING_UNIT)
+        every { serviceRequestRepository.findById(request.id) } returns request
+
+        assertFailsWith<DomainConflictException> {
+            service.settleServiceRequest(request.id, manager)
+        }
+
+        verify(exactly = 0) { apartmentRepository.findById(any()) }
+        verify(exactly = 0) { serviceChargeRepository.save(any()) }
+        verify(exactly = 0) { walletRepository.save(any()) }
+        verify(exactly = 0) { transactionRepository.save(any()) }
+        verify(exactly = 0) { serviceRequestRepository.save(any()) }
+    }
+
+    private fun apartment(id: ApartmentId): Apartment = Apartment.reconstitute(
+        id = id,
+        buildingId = BuildingId.new(),
+        unitNumber = "12",
+        floorNumber = 1,
+        areaSquareMeters = BigDecimal("90"),
+        bedrooms = 2,
+        createdAt = java.time.Instant.parse("2026-01-15T10:00:00Z"),
+        updatedAt = java.time.Instant.parse("2026-01-15T10:00:00Z"),
+    )
 }
