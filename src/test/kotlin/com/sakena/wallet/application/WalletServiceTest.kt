@@ -217,19 +217,28 @@ class WalletServiceTest {
     }
 
     @Test
-    fun `wallet settlement keeps requesting-unit responsibility blocked without writes`() {
+    fun `requesting-unit settlement queues a targeted cost and pays the worker`() {
         val request = completedRequest(ServiceCostResponsibility.REQUESTING_UNIT)
+        val apartment = apartment(request.requestingApartmentId!!)
+        val buildingWallet = Wallet.createBuilding()
         every { serviceRequestRepository.findById(request.id) } returns request
+        every { apartmentRepository.findById(apartment.id) } returns apartment
+        every { walletRepository.findBuildingWallet() } returns buildingWallet
+        every { walletRepository.findByOwner(worker) } returns null
+        every { walletRepository.save(any()) } answers { firstArg() }
+        every { serviceRequestRepository.save(any()) } answers { firstArg() }
+        val queuedCharge = slot<ServiceCharge>()
+        every { serviceChargeRepository.save(capture(queuedCharge)) } answers { queuedCharge.captured }
 
-        assertFailsWith<DomainConflictException> {
-            service.settleServiceRequest(request.id, manager)
-        }
+        service.settleServiceRequest(request.id, manager)
 
-        verify(exactly = 0) { apartmentRepository.findById(any()) }
-        verify(exactly = 0) { serviceChargeRepository.save(any()) }
-        verify(exactly = 0) { walletRepository.save(any()) }
-        verify(exactly = 0) { transactionRepository.save(any()) }
-        verify(exactly = 0) { serviceRequestRepository.save(any()) }
+        assertEquals(request.id, queuedCharge.captured.sourceServiceRequestId)
+        assertEquals(apartment.buildingId, queuedCharge.captured.buildingId)
+        assertEquals(ServiceChargeTarget.SPECIFIC_UNIT, queuedCharge.captured.target)
+        assertEquals(apartment.id, queuedCharge.captured.targetApartmentId)
+        assertEquals(BigDecimal("250000.0"), queuedCharge.captured.amount)
+        assertEquals(BigDecimal("-250000.0"), buildingWallet.balance)
+        verify(exactly = 1) { serviceRequestRepository.save(match { it.status.name == "SETTLED" }) }
     }
 
     private fun apartment(id: ApartmentId): Apartment = Apartment.reconstitute(

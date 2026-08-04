@@ -92,33 +92,6 @@ class ServiceRequestCostResponsibilityIntegrationTest(
             .andExpect(status().isBadRequest)
             .andExpect(jsonPath("$.message").value("Malformed request body"))
 
-        val requestingUnitBody = objectMapper.writeValueAsBytes(
-            AssignCostResponsibilityRequest(ServiceCostResponsibility.REQUESTING_UNIT),
-        )
-        mockMvc.perform(
-            patch(endpoint)
-                .header(HttpHeaders.AUTHORIZATION, bearer(manager.token))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(requestingUnitBody),
-        )
-            .andExpect(status().isOk)
-            .andExpect(jsonPath("$.costResponsibility").value("REQUESTING_UNIT"))
-            .andExpect(
-                jsonPath("$.requestingApartmentId")
-                    .value(requestingApartmentId.value.toString()),
-            )
-
-        mockMvc.perform(
-            post("/api/v1/wallets/settle/$requestId")
-                .header(HttpHeaders.AUTHORIZATION, bearer(manager.token)),
-        ).andExpect(status().isConflict)
-
-        assertEquals(
-            ServiceRequestStatus.COMPLETED,
-            serviceRequestRepository.findById(ServiceRequestId(requestId))?.status,
-        )
-        assertEquals(null, walletRepository.findByOwner(staff.id))
-
         mockMvc.perform(
             patch(endpoint)
                 .header(HttpHeaders.AUTHORIZATION, bearer(manager.token))
@@ -163,6 +136,62 @@ class ServiceRequestCostResponsibilityIntegrationTest(
             0,
             buildingBalanceAfter.compareTo(buildingBalanceBefore - BigDecimal("250.0")),
         )
+    }
+
+    @Test
+    fun `manager settles requesting-unit responsibility through a targeted deferred charge`() {
+        val suffix = UUID.randomUUID().toString().take(8)
+        val resident = register("resident-$suffix", "RESIDENT")
+        val staff = register("staff-$suffix", "STAFF")
+        val manager = register("manager-$suffix", "MANAGER")
+        val requestingApartmentId = startResidency(resident, suffix)
+        val requestId = completeServiceRequest(
+            resident,
+            staff,
+            manager,
+            requestingApartmentId,
+        )
+
+        mockMvc.perform(
+            patch("/api/v1/service-requests/$requestId/cost-responsibility")
+                .header(HttpHeaders.AUTHORIZATION, bearer(manager.token))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsBytes(
+                        AssignCostResponsibilityRequest(
+                            ServiceCostResponsibility.REQUESTING_UNIT,
+                        ),
+                    ),
+                ),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.costResponsibility").value("REQUESTING_UNIT"))
+            .andExpect(
+                jsonPath("$.requestingApartmentId")
+                    .value(requestingApartmentId.value.toString()),
+            )
+
+        mockMvc.perform(
+            post("/api/v1/wallets/settle/$requestId")
+                .header(HttpHeaders.AUTHORIZATION, bearer(manager.token)),
+        ).andExpect(status().isNoContent)
+
+        assertEquals(
+            ServiceRequestStatus.SETTLED,
+            serviceRequestRepository.findById(ServiceRequestId(requestId))?.status,
+        )
+        val queuedCharge = serviceChargeRepository.findBySourceServiceRequestId(
+            ServiceRequestId(requestId),
+        ) ?: error("Targeted service charge was not created")
+        val requestingApartment = apartmentRepository.findById(requestingApartmentId)
+            ?: error("Requesting apartment was not found")
+        assertEquals(ServiceChargeTarget.SPECIFIC_UNIT, queuedCharge.target)
+        assertEquals(requestingApartment.buildingId, queuedCharge.buildingId)
+        assertEquals(requestingApartmentId, queuedCharge.targetApartmentId)
+        assertEquals(true, queuedCharge.pending)
+        val workerWallet = walletRepository.findByOwner(staff.id)
+            ?: error("Worker wallet was not created")
+        assertEquals(0, workerWallet.balance.compareTo(BigDecimal("250.0")))
     }
 
     private fun completeServiceRequest(
