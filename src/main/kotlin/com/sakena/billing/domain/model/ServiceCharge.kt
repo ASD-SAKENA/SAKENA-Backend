@@ -37,6 +37,19 @@ class ServiceCharge private constructor(
 
     val pending: Boolean get() = attachedPeriodId == null
 
+    fun createChargeItemFor(periodId: ChargePeriodId): ChargeItem =
+        ChargeItem.create(
+            periodId = periodId,
+            title = title,
+            amount = amount,
+            kind = ChargeItemKind.EXTRAORDINARY_EXPENSE,
+            allocation = when (target) {
+                ServiceChargeTarget.ALL_UNITS -> CostAllocation.EQUAL
+                ServiceChargeTarget.SPECIFIC_UNIT -> CostAllocation.SPECIFIC_UNIT
+            },
+            targetApartmentId = targetApartmentId,
+        )
+
     fun attachTo(periodId: ChargePeriodId) {
         if (!pending) {
             throw DomainConflictException("Service charge has already been attached to a charge period")
