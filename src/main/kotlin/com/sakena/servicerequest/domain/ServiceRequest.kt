@@ -174,6 +174,9 @@ data class ServiceRequest(
         if (assignedTo == null) {
             throw DomainValidationException("Service request has no assigned worker to pay")
         }
+        if (costResponsibility == null) {
+            throw DomainValidationException("Service request cost responsibility has not been assigned")
+        }
         return this.copy(
             status = ServiceRequestStatus.SETTLED,
             updatedAt = Instant.now(),
