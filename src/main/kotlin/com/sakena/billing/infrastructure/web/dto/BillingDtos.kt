@@ -13,6 +13,7 @@ import com.sakena.billing.domain.model.CostAllocation
 import com.sakena.billing.domain.model.InvoiceStatus
 import com.sakena.billing.domain.model.UnitInvoice
 import com.sakena.property.domain.model.BuildingId
+import com.sakena.property.domain.model.ApartmentId
 import jakarta.validation.constraints.DecimalMin
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.NotNull
@@ -76,12 +77,15 @@ data class AddChargeItemRequest(
 
     @field:NotNull(message = "allocation must not be null")
     val allocation: CostAllocation,
+
+    val targetApartmentId: UUID? = null,
 ) {
     fun toCommand() = AddChargeItemCommand(
         title = title,
         amount = amount,
         kind = kind,
         allocation = allocation,
+        targetApartmentId = targetApartmentId?.let(::ApartmentId),
     )
 }
 
@@ -126,6 +130,7 @@ data class ChargeItemResponse(
     val amount: BigDecimal,
     val kind: ChargeItemKind,
     val allocation: CostAllocation,
+    val targetApartmentId: UUID?,
     val createdAt: Instant,
 ) {
     companion object {
@@ -136,6 +141,7 @@ data class ChargeItemResponse(
             amount = item.amount,
             kind = item.kind,
             allocation = item.allocation,
+            targetApartmentId = item.targetApartmentId?.value,
             createdAt = item.createdAt,
         )
     }

@@ -17,12 +17,17 @@ class CostAllocationPolicyTest {
     private val unitB = BillableUnit(ApartmentId.new(), BigDecimal("100"))
     private val unitC = BillableUnit(ApartmentId.new(), BigDecimal("50"))
 
-    private fun item(amount: String, allocation: CostAllocation) = ChargeItem.create(
+    private fun item(
+        amount: String,
+        allocation: CostAllocation,
+        targetApartmentId: ApartmentId? = null,
+    ) = ChargeItem.create(
         periodId = periodId,
         title = "Charge",
         amount = BigDecimal(amount),
         kind = ChargeItemKind.RECURRING_CHARGE,
         allocation = allocation,
+        targetApartmentId = targetApartmentId,
     )
 
     @Test
@@ -71,6 +76,28 @@ class CostAllocationPolicyTest {
 
         // 100000 equal share + 50000 area share for the 50m² unit.
         assertEquals(BigDecimal("150000.00"), shares.getValue(unitA.apartmentId))
+    }
+
+    @Test
+    fun `specific-unit allocation charges only its target apartment`() {
+        val shares = CostAllocationPolicy.allocate(
+            listOf(item("275000", CostAllocation.SPECIFIC_UNIT, unitB.apartmentId)),
+            listOf(unitA, unitB, unitC),
+        )
+
+        assertEquals(BigDecimal.ZERO, shares.getValue(unitA.apartmentId))
+        assertEquals(BigDecimal("275000"), shares.getValue(unitB.apartmentId))
+        assertEquals(BigDecimal.ZERO, shares.getValue(unitC.apartmentId))
+    }
+
+    @Test
+    fun `specific-unit allocation rejects a target outside the building`() {
+        assertFailsWith<com.sakena.shared.domain.DomainConflictException> {
+            CostAllocationPolicy.allocate(
+                listOf(item("275000", CostAllocation.SPECIFIC_UNIT, ApartmentId.new())),
+                listOf(unitA, unitB, unitC),
+            )
+        }
     }
 
     @Test

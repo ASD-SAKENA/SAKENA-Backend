@@ -78,6 +78,9 @@ class ChargeItemEntity(
     @Column(name = "allocation", nullable = false, length = 20)
     var allocation: CostAllocation,
 
+    @Column(name = "target_apartment_id")
+    var targetApartmentId: UUID?,
+
     @Column(name = "created_at", nullable = false, updatable = false)
     var createdAt: Instant,
 )
