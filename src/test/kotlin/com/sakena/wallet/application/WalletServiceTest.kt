@@ -1,9 +1,11 @@
 package com.sakena.wallet.application
 
 import com.sakena.servicerequest.domain.ServiceCategoryGroup
+import com.sakena.servicerequest.domain.ServiceCostResponsibility
 import com.sakena.servicerequest.domain.ServiceRequest
 import com.sakena.servicerequest.domain.ServiceRequestRepository
 import com.sakena.servicerequest.domain.ServiceSubCategory
+import com.sakena.shared.domain.DomainConflictException
 import com.sakena.shared.domain.DomainValidationException
 import com.sakena.user.domain.UserId
 import com.sakena.wallet.domain.WalletRepository
@@ -32,7 +34,9 @@ class WalletServiceTest {
     private val manager = UserId.generate()
     private val worker = UserId.generate()
 
-    private fun completedRequest(): ServiceRequest {
+    private fun completedRequest(
+        responsibility: ServiceCostResponsibility? = ServiceCostResponsibility.BUILDING_WALLET,
+    ): ServiceRequest {
         val created = ServiceRequest.create(
             title = "Fix kitchen leak",
             description = "The sink is leaking",
@@ -41,11 +45,12 @@ class WalletServiceTest {
             categoryGroup = ServiceCategoryGroup.FACILITIES,
             subCategory = ServiceSubCategory.PLUMBING,
         )
-        return created
+        val completed = created
             .approve(manager)
             .assignTo(worker, manager)
             .startProgress()
             .complete(worker, "Replaced the valve", 250_000.0)
+        return responsibility?.let { completed.assignCostResponsibility(it, manager) } ?: completed
     }
 
     @Test
@@ -141,5 +146,38 @@ class WalletServiceTest {
         assertFailsWith<DomainValidationException> {
             service.settleServiceRequest(noCost.id, manager)
         }
+    }
+
+    @Test
+    fun `settle rejects a completed request without cost responsibility`() {
+        val request = completedRequest(responsibility = null)
+        every { serviceRequestRepository.findById(request.id) } returns request
+
+        assertFailsWith<DomainValidationException> {
+            service.settleServiceRequest(request.id, manager)
+        }
+
+        verify(exactly = 0) { walletRepository.save(any()) }
+        verify(exactly = 0) { transactionRepository.save(any()) }
+        verify(exactly = 0) { serviceRequestRepository.save(any()) }
+    }
+
+    @Test
+    fun `wallet settlement rejects responsibilities that require billing without writes`() {
+        listOf(
+            ServiceCostResponsibility.ALL_UNITS,
+            ServiceCostResponsibility.REQUESTING_UNIT,
+        ).forEach { responsibility ->
+            val request = completedRequest(responsibility)
+            every { serviceRequestRepository.findById(request.id) } returns request
+
+            assertFailsWith<DomainConflictException> {
+                service.settleServiceRequest(request.id, manager)
+            }
+        }
+
+        verify(exactly = 0) { walletRepository.save(any()) }
+        verify(exactly = 0) { transactionRepository.save(any()) }
+        verify(exactly = 0) { serviceRequestRepository.save(any()) }
     }
 }

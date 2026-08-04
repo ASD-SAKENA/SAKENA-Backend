@@ -1,5 +1,6 @@
 package com.sakena.wallet.application
 
+import com.sakena.servicerequest.domain.ServiceCostResponsibility
 import com.sakena.servicerequest.domain.ServiceRequestId
 import com.sakena.servicerequest.domain.ServiceRequestRepository
 import com.sakena.shared.domain.DomainConflictException
@@ -34,6 +35,11 @@ class WalletService(
             ?: throw EntityNotFoundException("Service request with id '$serviceRequestId' was not found")
 
         val settled = request.settle(settledBy)
+        if (settled.costResponsibility != ServiceCostResponsibility.BUILDING_WALLET) {
+            throw DomainConflictException(
+                "Service request responsibility '${settled.costResponsibility}' requires billing settlement",
+            )
+        }
         val amount = BigDecimal.valueOf(
             settled.completionCost
                 ?: throw DomainConflictException("Service request has no completion cost"),

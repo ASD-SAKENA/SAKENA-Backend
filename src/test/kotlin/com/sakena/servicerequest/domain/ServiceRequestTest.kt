@@ -468,6 +468,37 @@ class ServiceRequestTest {
     }
 
     @Test
+    fun `settle should require an assigned cost responsibility`() {
+        val request = createTestRequest(
+            status = ServiceRequestStatus.COMPLETED,
+            assignedTo = UserId.generate(),
+            completionCost = 250.0,
+        )
+
+        val exception = assertThrows<DomainValidationException> {
+            request.settle(UserId.generate())
+        }
+
+        assertEquals("Service request cost responsibility has not been assigned", exception.message)
+    }
+
+    @Test
+    fun `settle should mark a financially prepared request as settled`() {
+        val managerId = UserId.generate()
+        val request = createTestRequest(
+            status = ServiceRequestStatus.COMPLETED,
+            assignedTo = UserId.generate(),
+            completionCost = 250.0,
+            costResponsibility = ServiceCostResponsibility.BUILDING_WALLET,
+        )
+
+        val settled = request.settle(managerId)
+
+        assertEquals(ServiceRequestStatus.SETTLED, settled.status)
+        assertEquals(managerId, settled.updatedBy)
+    }
+
+    @Test
     fun `reject should change status to REJECTED from PENDING and set updatedBy`() {
         val request = createTestRequest(status = ServiceRequestStatus.PENDING)
         val adminId = UserId.generate()
