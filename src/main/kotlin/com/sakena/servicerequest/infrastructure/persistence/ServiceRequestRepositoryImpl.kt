@@ -1,5 +1,6 @@
 package com.sakena.servicerequest.infrastructure.persistence
 
+import com.sakena.property.domain.model.ApartmentId
 import com.sakena.servicerequest.domain.ServiceCategoryGroup
 import com.sakena.servicerequest.domain.ServiceRequest
 import com.sakena.servicerequest.domain.ServiceRequestFilters
@@ -71,6 +72,7 @@ class ServiceRequestRepositoryImpl(
             completionReport = domain.completionReport,
             completionCost = domain.completionCost,
             costResponsibility = domain.costResponsibility,
+            requestingApartmentId = domain.requestingApartmentId?.value,
         )
     }
 
@@ -93,6 +95,7 @@ class ServiceRequestRepositoryImpl(
             completionReport = entity.completionReport,
             completionCost = entity.completionCost,
             costResponsibility = entity.costResponsibility,
+            requestingApartmentId = entity.requestingApartmentId?.let(::ApartmentId),
         )
     }
 }

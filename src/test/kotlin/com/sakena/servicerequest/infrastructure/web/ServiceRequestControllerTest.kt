@@ -3,6 +3,7 @@ package com.sakena.servicerequest.infrastructure.web
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
+import com.sakena.property.domain.model.ApartmentId
 import com.sakena.servicerequest.application.AssignServiceRequestCommand
 import com.sakena.servicerequest.application.AssignServiceCostResponsibilityCommand
 import com.sakena.servicerequest.application.ApproveServiceRequestCommand
@@ -761,6 +762,7 @@ class ServiceRequestControllerTest {
         try {
             setupSecurityContext()
 
+            val requestingApartmentId = ApartmentId.new()
             val completedRequest = createMockServiceRequest(
                 title = "Repair water pump",
                 description = "The main water pump needs repair",
@@ -770,6 +772,7 @@ class ServiceRequestControllerTest {
                 resolvedAt = Instant.now(),
                 completionCost = 250.0,
                 costResponsibility = ServiceCostResponsibility.ALL_UNITS,
+                requestingApartmentId = requestingApartmentId,
             )
             val commandSlot = slot<AssignServiceCostResponsibilityCommand>()
             every { profileService.getUserByUsername(testUsername) } returns testUser
@@ -787,6 +790,10 @@ class ServiceRequestControllerTest {
             )
                 .andExpect(status().isOk)
                 .andExpect(jsonPath("$.costResponsibility").value("ALL_UNITS"))
+                .andExpect(
+                    jsonPath("$.requestingApartmentId")
+                        .value(requestingApartmentId.value.toString()),
+                )
 
             assertEquals(completedRequest.id, commandSlot.captured.serviceRequestId)
             assertEquals(ServiceCostResponsibility.ALL_UNITS, commandSlot.captured.responsibility)
@@ -891,6 +898,7 @@ class ServiceRequestControllerTest {
         completionReport: String? = null,
         completionCost: Double? = null,
         costResponsibility: ServiceCostResponsibility? = null,
+        requestingApartmentId: ApartmentId? = null,
     ): ServiceRequest {
         val now = Instant.now()
         return ServiceRequest.reconstitute(
@@ -909,6 +917,7 @@ class ServiceRequestControllerTest {
             completionReport = completionReport,
             completionCost = completionCost,
             costResponsibility = costResponsibility,
+            requestingApartmentId = requestingApartmentId,
             categoryGroup = categoryGroup,
             subCategory = subCategory
         )

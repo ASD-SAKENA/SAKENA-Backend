@@ -1,5 +1,9 @@
 package com.sakena.servicerequest.application
 
+import com.sakena.property.domain.model.ApartmentId
+import com.sakena.residency.domain.ResidencyRepository
+import com.sakena.residency.domain.model.Residency
+import com.sakena.residency.domain.model.TenancyType
 import com.sakena.servicerequest.domain.ServiceCategoryGroup
 import com.sakena.servicerequest.domain.ServiceCostResponsibility
 import com.sakena.servicerequest.domain.ServiceRequest
@@ -26,7 +30,43 @@ class ServiceRequestServiceTest {
 
     private val serviceRequestRepository = mockk<ServiceRequestRepository>()
     private val userRepository = mockk<UserRepository>()
-    private val service = ServiceRequestService(serviceRequestRepository, userRepository)
+    private val residencyRepository = mockk<ResidencyRepository>()
+    private val service = ServiceRequestService(
+        serviceRequestRepository,
+        userRepository,
+        residencyRepository,
+    )
+
+    @Test
+    fun `create snapshots the resident active apartment`() {
+        val resident = user(Role.RESIDENT)
+        val apartmentId = ApartmentId.new()
+        val residency = Residency.start(
+            apartmentId = apartmentId,
+            residentId = resident.id,
+            tenancy = TenancyType.TENANT,
+        )
+        every { userRepository.findById(resident.id) } returns resident
+        every { residencyRepository.findActiveByResident(resident.id) } returns residency
+        every { serviceRequestRepository.save(any()) } answers { firstArg() }
+
+        val result = service.create(createCommand(), resident.id)
+
+        assertEquals(apartmentId, result.requestingApartmentId)
+        verify(exactly = 1) { serviceRequestRepository.save(result) }
+    }
+
+    @Test
+    fun `create remains valid when the user has no active apartment`() {
+        val resident = user(Role.RESIDENT)
+        every { userRepository.findById(resident.id) } returns resident
+        every { residencyRepository.findActiveByResident(resident.id) } returns null
+        every { serviceRequestRepository.save(any()) } answers { firstArg() }
+
+        val result = service.create(createCommand(), resident.id)
+
+        assertEquals(null, result.requestingApartmentId)
+    }
 
     @Test
     fun `manager assigns cost responsibility to a completed service request`() {
@@ -107,6 +147,14 @@ class ServiceRequestServiceTest {
         serviceRequestId = serviceRequestId,
         responsibility = ServiceCostResponsibility.ALL_UNITS,
         managerId = managerId,
+    )
+
+    private fun createCommand() = CreateServiceRequestCommand(
+        title = "Repair water pump",
+        description = "The main water pump needs repair",
+        location = "Basement",
+        categoryGroup = ServiceCategoryGroup.FACILITIES,
+        subCategory = ServiceSubCategory.PLUMBING,
     )
 
     private fun user(role: Role): User {

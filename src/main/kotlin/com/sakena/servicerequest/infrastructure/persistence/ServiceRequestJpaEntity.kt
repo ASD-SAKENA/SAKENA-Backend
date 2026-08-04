@@ -64,5 +64,8 @@ class ServiceRequestJpaEntity(
 
     @Enumerated(EnumType.STRING)
     @Column(name = "cost_responsibility")
-    var costResponsibility: ServiceCostResponsibility? = null
+    var costResponsibility: ServiceCostResponsibility? = null,
+
+    @Column(name = "requesting_apartment_id")
+    var requestingApartmentId: UUID? = null
 )

@@ -1,5 +1,6 @@
 package com.sakena.servicerequest.application
 
+import com.sakena.residency.domain.ResidencyRepository
 import com.sakena.servicerequest.domain.ServiceCategoryGroup
 import com.sakena.servicerequest.domain.ServiceRequest
 import com.sakena.servicerequest.domain.ServiceRequestFilters
@@ -19,12 +20,14 @@ import org.springframework.transaction.annotation.Transactional
 @Transactional
 class ServiceRequestService(
     private val serviceRequestRepository: ServiceRequestRepository,
-    private val userRepository: UserRepository
+    private val userRepository: UserRepository,
+    private val residencyRepository: ResidencyRepository,
 ) {
 
     fun create(command: CreateServiceRequestCommand, currentUserId: UserId): ServiceRequest {
-        val user = userRepository.findById(currentUserId)
+        userRepository.findById(currentUserId)
             ?: throw IllegalArgumentException("User not found with id: $currentUserId")
+        val requestingApartmentId = residencyRepository.findActiveByResident(currentUserId)?.apartmentId
 
         val request = ServiceRequest.create(
             title = command.title,
@@ -32,7 +35,8 @@ class ServiceRequestService(
             location = command.location,
             createdBy = currentUserId,
             categoryGroup = command.categoryGroup,
-            subCategory = command.subCategory
+            subCategory = command.subCategory,
+            requestingApartmentId = requestingApartmentId,
         )
         return serviceRequestRepository.save(request)
     }
