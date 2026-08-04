@@ -49,6 +49,7 @@ internal object BillingEntityMappers {
             amount = item.amount,
             kind = item.kind,
             allocation = item.allocation,
+            targetApartmentId = item.targetApartmentId?.value,
             createdAt = item.createdAt,
         )
 
@@ -60,6 +61,7 @@ internal object BillingEntityMappers {
             amount = entity.amount,
             kind = entity.kind,
             allocation = entity.allocation,
+            targetApartmentId = entity.targetApartmentId?.let(::ApartmentId),
             createdAt = entity.createdAt,
         )
 

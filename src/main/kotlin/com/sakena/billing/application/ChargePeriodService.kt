@@ -72,6 +72,7 @@ class ChargePeriodService(
             amount = command.amount,
             kind = command.kind,
             allocation = command.allocation,
+            targetApartmentId = command.targetApartmentId,
         )
         return itemRepository.save(item)
     }
