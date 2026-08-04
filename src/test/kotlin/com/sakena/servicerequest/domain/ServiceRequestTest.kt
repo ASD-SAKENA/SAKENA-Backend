@@ -411,6 +411,7 @@ class ServiceRequestTest {
         val request = createTestRequest(
             status = ServiceRequestStatus.COMPLETED,
             completionCost = 250.0,
+            requestingApartmentId = ApartmentId.new(),
         )
 
         val updated = request.assignCostResponsibility(
@@ -475,24 +476,29 @@ class ServiceRequestTest {
     }
 
     @Test
-    fun `assignCostResponsibility should require a requesting apartment for requesting unit`() {
-        val request = createTestRequest(
-            status = ServiceRequestStatus.COMPLETED,
-            completionCost = 250.0,
-            requestingApartmentId = null,
-        )
+    fun `assignCostResponsibility should require a requesting apartment for billable targets`() {
+        listOf(
+            ServiceCostResponsibility.ALL_UNITS,
+            ServiceCostResponsibility.REQUESTING_UNIT,
+        ).forEach { responsibility ->
+            val request = createTestRequest(
+                status = ServiceRequestStatus.COMPLETED,
+                completionCost = 250.0,
+                requestingApartmentId = null,
+            )
 
-        val exception = assertThrows<DomainValidationException> {
-            request.assignCostResponsibility(
-                ServiceCostResponsibility.REQUESTING_UNIT,
-                UserId.generate(),
+            val exception = assertThrows<DomainValidationException> {
+                request.assignCostResponsibility(
+                    responsibility,
+                    UserId.generate(),
+                )
+            }
+
+            assertEquals(
+                "Billable cost responsibility requires a requesting apartment",
+                exception.message,
             )
         }
-
-        assertEquals(
-            "Requesting unit responsibility requires a requesting apartment",
-            exception.message,
-        )
     }
 
     @Test

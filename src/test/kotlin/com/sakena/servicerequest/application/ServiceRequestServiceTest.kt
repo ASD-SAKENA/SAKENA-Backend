@@ -192,6 +192,7 @@ class ServiceRequestServiceTest {
             assignedTo = UserId.generate(),
             resolvedAt = if (status == ServiceRequestStatus.COMPLETED) now else null,
             completionCost = completionCost,
+            requestingApartmentId = ApartmentId.new(),
         )
     }
 }

@@ -204,11 +204,11 @@ data class ServiceRequest(
             )
         }
         if (
-            responsibility == ServiceCostResponsibility.REQUESTING_UNIT &&
+            responsibility != ServiceCostResponsibility.BUILDING_WALLET &&
             requestingApartmentId == null
         ) {
             throw DomainValidationException(
-                "Requesting unit responsibility requires a requesting apartment",
+                "Billable cost responsibility requires a requesting apartment",
             )
         }
         return copy(

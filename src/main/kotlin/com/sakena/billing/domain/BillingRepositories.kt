@@ -4,10 +4,13 @@ import com.sakena.billing.domain.model.ChargeItem
 import com.sakena.billing.domain.model.ChargeItemId
 import com.sakena.billing.domain.model.ChargePeriod
 import com.sakena.billing.domain.model.ChargePeriodId
+import com.sakena.billing.domain.model.ServiceCharge
+import com.sakena.billing.domain.model.ServiceChargeId
 import com.sakena.billing.domain.model.UnitInvoice
 import com.sakena.billing.domain.model.UnitInvoiceId
 import com.sakena.property.domain.model.ApartmentId
 import com.sakena.property.domain.model.BuildingId
+import com.sakena.servicerequest.domain.ServiceRequestId
 
 /**
  * Outbound ports for the billing context. Declared in the domain layer and
@@ -32,6 +35,16 @@ interface ChargeItemRepository {
     fun findAllByPeriod(periodId: ChargePeriodId): List<ChargeItem>
 
     fun deleteById(id: ChargeItemId)
+}
+
+interface ServiceChargeRepository {
+    fun save(charge: ServiceCharge): ServiceCharge
+
+    fun findById(id: ServiceChargeId): ServiceCharge?
+
+    fun findBySourceServiceRequestId(serviceRequestId: ServiceRequestId): ServiceCharge?
+
+    fun findPendingByBuilding(buildingId: BuildingId): List<ServiceCharge>
 }
 
 interface UnitInvoiceRepository {

@@ -39,6 +39,24 @@ value class ChargeItemId(val value: UUID) {
     }
 }
 
+/** Value object identifying a deferred service charge. */
+@JvmInline
+value class ServiceChargeId(val value: UUID) {
+
+    override fun toString(): String = value.toString()
+
+    companion object {
+        fun new(): ServiceChargeId = ServiceChargeId(UUID.randomUUID())
+
+        fun from(raw: String): ServiceChargeId =
+            try {
+                ServiceChargeId(UUID.fromString(raw))
+            } catch (e: IllegalArgumentException) {
+                throw DomainValidationException("'$raw' is not a valid service charge id")
+            }
+    }
+}
+
 /** Value object identifying a [UnitInvoice] aggregate. */
 @JvmInline
 value class UnitInvoiceId(val value: UUID) {

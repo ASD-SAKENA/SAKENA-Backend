@@ -1,5 +1,6 @@
 package com.sakena.wallet.application
 
+import com.sakena.property.domain.model.ApartmentId
 import com.sakena.servicerequest.domain.ServiceCategoryGroup
 import com.sakena.servicerequest.domain.ServiceCostResponsibility
 import com.sakena.servicerequest.domain.ServiceRequest
@@ -44,6 +45,7 @@ class WalletServiceTest {
             createdBy = UserId.generate(),
             categoryGroup = ServiceCategoryGroup.FACILITIES,
             subCategory = ServiceSubCategory.PLUMBING,
+            requestingApartmentId = ApartmentId.new(),
         )
         val completed = created
             .approve(manager)
