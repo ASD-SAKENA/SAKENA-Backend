@@ -25,6 +25,7 @@ data class ServiceRequestResponse(
     val completionReport: String?,
     val completionCost: Double?,
     val costResponsibility: ServiceCostResponsibility?,
+    val requestingApartmentId: String?,
 ) {
     companion object {
         fun fromDomain(request: ServiceRequest): ServiceRequestResponse {
@@ -46,6 +47,7 @@ data class ServiceRequestResponse(
                 completionReport = request.completionReport,
                 completionCost = request.completionCost,
                 costResponsibility = request.costResponsibility,
+                requestingApartmentId = request.requestingApartmentId?.value?.toString(),
             )
         }
     }

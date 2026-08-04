@@ -1,5 +1,6 @@
 package com.sakena.servicerequest.domain
 
+import com.sakena.property.domain.model.ApartmentId
 import com.sakena.shared.domain.DomainValidationException
 import com.sakena.user.domain.UserId
 import org.junit.jupiter.api.Assertions.*
@@ -18,6 +19,7 @@ class ServiceRequestTest {
         resolvedAt: Instant? = null,
         completionCost: Double? = null,
         costResponsibility: ServiceCostResponsibility? = null,
+        requestingApartmentId: ApartmentId? = null,
     ): ServiceRequest {
         return ServiceRequest.reconstitute(
             id = ServiceRequestId.generate(),
@@ -35,6 +37,7 @@ class ServiceRequestTest {
             resolvedAt = resolvedAt,
             completionCost = completionCost,
             costResponsibility = costResponsibility,
+            requestingApartmentId = requestingApartmentId,
         )
     }
 
@@ -64,6 +67,7 @@ class ServiceRequestTest {
         assertNull(request.completionReport)
         assertNull(request.completionCost)
         assertNull(request.costResponsibility)
+        assertNull(request.requestingApartmentId)
         assertTrue(request.createdAt <= Instant.now())
     }
 
@@ -422,10 +426,12 @@ class ServiceRequestTest {
     @Test
     fun `assignCostResponsibility should allow changing responsibility before settlement`() {
         val managerId = UserId.generate()
+        val apartmentId = ApartmentId.new()
         val request = createTestRequest(
             status = ServiceRequestStatus.COMPLETED,
             completionCost = 250.0,
             costResponsibility = ServiceCostResponsibility.ALL_UNITS,
+            requestingApartmentId = apartmentId,
         )
 
         val updated = request.assignCostResponsibility(
@@ -434,6 +440,7 @@ class ServiceRequestTest {
         )
 
         assertEquals(ServiceCostResponsibility.REQUESTING_UNIT, updated.costResponsibility)
+        assertEquals(apartmentId, updated.requestingApartmentId)
     }
 
     @Test
@@ -465,6 +472,27 @@ class ServiceRequestTest {
                 )
             }
         }
+    }
+
+    @Test
+    fun `assignCostResponsibility should require a requesting apartment for requesting unit`() {
+        val request = createTestRequest(
+            status = ServiceRequestStatus.COMPLETED,
+            completionCost = 250.0,
+            requestingApartmentId = null,
+        )
+
+        val exception = assertThrows<DomainValidationException> {
+            request.assignCostResponsibility(
+                ServiceCostResponsibility.REQUESTING_UNIT,
+                UserId.generate(),
+            )
+        }
+
+        assertEquals(
+            "Requesting unit responsibility requires a requesting apartment",
+            exception.message,
+        )
     }
 
     @Test

@@ -2,6 +2,14 @@ package com.sakena.servicerequest.infrastructure.web
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.sakena.IntegrationTest
+import com.sakena.property.domain.ApartmentRepository
+import com.sakena.property.domain.BuildingRepository
+import com.sakena.property.domain.model.Apartment
+import com.sakena.property.domain.model.ApartmentId
+import com.sakena.property.domain.model.Building
+import com.sakena.residency.domain.ResidencyRepository
+import com.sakena.residency.domain.model.Residency
+import com.sakena.residency.domain.model.TenancyType
 import com.sakena.servicerequest.domain.ServiceCategoryGroup
 import com.sakena.servicerequest.domain.ServiceCostResponsibility
 import com.sakena.servicerequest.domain.ServiceRequestId
@@ -33,6 +41,9 @@ class ServiceRequestCostResponsibilityIntegrationTest(
     @Autowired private val userRepository: UserRepository,
     @Autowired private val serviceRequestRepository: ServiceRequestRepository,
     @Autowired private val walletRepository: WalletRepository,
+    @Autowired private val buildingRepository: BuildingRepository,
+    @Autowired private val apartmentRepository: ApartmentRepository,
+    @Autowired private val residencyRepository: ResidencyRepository,
 ) : IntegrationTest() {
 
     @Test
@@ -41,7 +52,13 @@ class ServiceRequestCostResponsibilityIntegrationTest(
         val resident = register("resident-$suffix", "RESIDENT")
         val staff = register("staff-$suffix", "STAFF")
         val manager = register("manager-$suffix", "MANAGER")
-        val requestId = completeServiceRequest(resident, staff, manager)
+        val requestingApartmentId = startResidency(resident, suffix)
+        val requestId = completeServiceRequest(
+            resident,
+            staff,
+            manager,
+            requestingApartmentId,
+        )
         val endpoint = "/api/v1/service-requests/$requestId/cost-responsibility"
         val validBody = objectMapper.writeValueAsBytes(
             AssignCostResponsibilityRequest(ServiceCostResponsibility.ALL_UNITS),
@@ -71,6 +88,22 @@ class ServiceRequestCostResponsibilityIntegrationTest(
         )
             .andExpect(status().isBadRequest)
             .andExpect(jsonPath("$.message").value("Malformed request body"))
+
+        val requestingUnitBody = objectMapper.writeValueAsBytes(
+            AssignCostResponsibilityRequest(ServiceCostResponsibility.REQUESTING_UNIT),
+        )
+        mockMvc.perform(
+            patch(endpoint)
+                .header(HttpHeaders.AUTHORIZATION, bearer(manager.token))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(requestingUnitBody),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.costResponsibility").value("REQUESTING_UNIT"))
+            .andExpect(
+                jsonPath("$.requestingApartmentId")
+                    .value(requestingApartmentId.value.toString()),
+            )
 
         mockMvc.perform(
             patch(endpoint)
@@ -135,6 +168,7 @@ class ServiceRequestCostResponsibilityIntegrationTest(
         resident: AuthenticatedUser,
         staff: AuthenticatedUser,
         manager: AuthenticatedUser,
+        requestingApartmentId: ApartmentId,
     ): UUID {
         val createBody = CreateServiceRequestRequest(
             title = "Repair water pump",
@@ -150,6 +184,10 @@ class ServiceRequestCostResponsibilityIntegrationTest(
                 .content(objectMapper.writeValueAsBytes(createBody)),
         )
             .andExpect(status().isCreated)
+            .andExpect(
+                jsonPath("$.requestingApartmentId")
+                    .value(requestingApartmentId.value.toString()),
+            )
             .andReturn()
         val requestId = UUID.fromString(
             objectMapper.readTree(created.response.contentAsString).get("id").asText(),
@@ -190,6 +228,32 @@ class ServiceRequestCostResponsibilityIntegrationTest(
             .andExpect(jsonPath("$.status").value("COMPLETED"))
 
         return requestId
+    }
+
+    private fun startResidency(
+        resident: AuthenticatedUser,
+        suffix: String,
+    ): ApartmentId {
+        val building = buildingRepository.save(
+            Building.create("Building $suffix", "Address $suffix"),
+        )
+        val apartment = apartmentRepository.save(
+            Apartment.create(
+                buildingId = building.id,
+                unitNumber = "UNIT-$suffix",
+                floorNumber = 1,
+                areaSquareMeters = BigDecimal("90"),
+                bedrooms = 2,
+            ),
+        )
+        residencyRepository.save(
+            Residency.start(
+                apartmentId = apartment.id,
+                residentId = resident.id,
+                tenancy = TenancyType.TENANT,
+            ),
+        )
+        return apartment.id
     }
 
     private fun register(username: String, role: String): AuthenticatedUser {

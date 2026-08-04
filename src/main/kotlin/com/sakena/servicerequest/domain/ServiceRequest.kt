@@ -1,5 +1,6 @@
 package com.sakena.servicerequest.domain
 
+import com.sakena.property.domain.model.ApartmentId
 import com.sakena.shared.domain.DomainValidationException
 import com.sakena.user.domain.UserId
 import java.time.Instant
@@ -22,6 +23,7 @@ data class ServiceRequest(
     val completionReport: String? = null,
     val completionCost: Double? = null,
     val costResponsibility: ServiceCostResponsibility? = null,
+    val requestingApartmentId: ApartmentId? = null,
 ) {
     companion object {
         fun create(
@@ -30,7 +32,8 @@ data class ServiceRequest(
             location: String?,
             createdBy: UserId,
             categoryGroup: ServiceCategoryGroup,
-            subCategory: ServiceSubCategory
+            subCategory: ServiceSubCategory,
+            requestingApartmentId: ApartmentId? = null,
         ): ServiceRequest {
             validate(
                 title = title,
@@ -51,7 +54,8 @@ data class ServiceRequest(
                 updatedBy = createdBy,
                 createdAt = now,
                 updatedAt = now,
-                status = ServiceRequestStatus.PENDING
+                status = ServiceRequestStatus.PENDING,
+                requestingApartmentId = requestingApartmentId,
             )
         }
 
@@ -73,11 +77,12 @@ data class ServiceRequest(
             completionReport: String? = null,
             completionCost: Double? = null,
             costResponsibility: ServiceCostResponsibility? = null,
+            requestingApartmentId: ApartmentId? = null,
         ) = ServiceRequest(
             id, title, description, location, categoryGroup, subCategory,
             createdBy, updatedBy, createdAt, updatedAt, status,
             assignedTo, resolvedAt, expectedCompletionAt, completionReport, completionCost,
-            costResponsibility,
+            costResponsibility, requestingApartmentId,
         ).also {
             validate(
                 title = it.title,
@@ -196,6 +201,14 @@ data class ServiceRequest(
         if (completionCost == null || completionCost <= 0.0) {
             throw DomainValidationException(
                 "Service request must have a positive completion cost before assigning cost responsibility",
+            )
+        }
+        if (
+            responsibility == ServiceCostResponsibility.REQUESTING_UNIT &&
+            requestingApartmentId == null
+        ) {
+            throw DomainValidationException(
+                "Requesting unit responsibility requires a requesting apartment",
             )
         }
         return copy(
