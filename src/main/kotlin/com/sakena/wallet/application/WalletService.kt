@@ -50,9 +50,15 @@ class WalletService(
             ?: throw DomainConflictException("Service request has no assigned worker")
         val serviceCharge = when (settled.costResponsibility) {
             ServiceCostResponsibility.BUILDING_WALLET -> null
-            ServiceCostResponsibility.ALL_UNITS -> createAllUnitsCharge(settled, amount)
-            ServiceCostResponsibility.REQUESTING_UNIT -> throw DomainConflictException(
-                "Service request responsibility '${settled.costResponsibility}' requires targeted billing settlement",
+            ServiceCostResponsibility.ALL_UNITS -> createServiceCharge(
+                settled,
+                amount,
+                ServiceChargeTarget.ALL_UNITS,
+            )
+            ServiceCostResponsibility.REQUESTING_UNIT -> createServiceCharge(
+                settled,
+                amount,
+                ServiceChargeTarget.SPECIFIC_UNIT,
             )
             null -> throw DomainConflictException("Service request cost responsibility has not been assigned")
         }
@@ -85,9 +91,10 @@ class WalletService(
         )
     }
 
-    private fun createAllUnitsCharge(
+    private fun createServiceCharge(
         request: ServiceRequest,
         amount: BigDecimal,
+        target: ServiceChargeTarget,
     ): ServiceCharge {
         val apartmentId = request.requestingApartmentId
             ?: throw DomainConflictException("Service request has no requesting apartment for billing")
@@ -98,7 +105,10 @@ class WalletService(
             buildingId = apartment.buildingId,
             title = request.title,
             amount = amount,
-            target = ServiceChargeTarget.ALL_UNITS,
+            target = target,
+            targetApartmentId = apartment.id.takeIf {
+                target == ServiceChargeTarget.SPECIFIC_UNIT
+            },
         )
     }
 
