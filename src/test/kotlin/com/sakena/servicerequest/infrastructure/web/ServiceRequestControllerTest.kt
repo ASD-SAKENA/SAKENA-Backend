@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import com.sakena.servicerequest.application.AssignServiceRequestCommand
+import com.sakena.servicerequest.application.AssignServiceCostResponsibilityCommand
 import com.sakena.servicerequest.application.ApproveServiceRequestCommand
 import com.sakena.servicerequest.application.CategoryGroupOptionResult
 import com.sakena.servicerequest.application.CategoryOptionsResult
@@ -13,6 +14,7 @@ import com.sakena.servicerequest.application.ServiceRequestService
 import com.sakena.servicerequest.application.StartProgressCommand
 import com.sakena.servicerequest.application.SubCategoryOptionResult
 import com.sakena.servicerequest.domain.ServiceCategoryGroup
+import com.sakena.servicerequest.domain.ServiceCostResponsibility
 import com.sakena.servicerequest.domain.ServiceRequest
 import com.sakena.servicerequest.domain.ServiceRequestFilters
 import com.sakena.servicerequest.domain.ServiceRequestId
@@ -752,6 +754,48 @@ class ServiceRequestControllerTest {
         }
     }
 
+    // ==================== COST RESPONSIBILITY ====================
+
+    @Test
+    fun `assignCostResponsibility should map manager decision and return it`() {
+        try {
+            setupSecurityContext()
+
+            val completedRequest = createMockServiceRequest(
+                title = "Repair water pump",
+                description = "The main water pump needs repair",
+                createdBy = testUserId,
+                status = ServiceRequestStatus.COMPLETED,
+                assignedTo = UserId.generate(),
+                resolvedAt = Instant.now(),
+                completionCost = 250.0,
+                costResponsibility = ServiceCostResponsibility.ALL_UNITS,
+            )
+            val commandSlot = slot<AssignServiceCostResponsibilityCommand>()
+            every { profileService.getUserByUsername(testUsername) } returns testUser
+            every {
+                serviceRequestService.assignCostResponsibility(capture(commandSlot))
+            } returns completedRequest
+
+            mockMvc.perform(
+                patch(
+                    "/api/v1/service-requests/{id}/cost-responsibility",
+                    completedRequest.id.value.toString(),
+                )
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""{"costResponsibility":"ALL_UNITS"}"""),
+            )
+                .andExpect(status().isOk)
+                .andExpect(jsonPath("$.costResponsibility").value("ALL_UNITS"))
+
+            assertEquals(completedRequest.id, commandSlot.captured.serviceRequestId)
+            assertEquals(ServiceCostResponsibility.ALL_UNITS, commandSlot.captured.responsibility)
+            assertEquals(testUserId, commandSlot.captured.managerId)
+        } finally {
+            cleanupSecurityContext()
+        }
+    }
+
     // ==================== CATEGORIES ====================
 
     @Test
@@ -845,7 +889,8 @@ class ServiceRequestControllerTest {
         subCategory: ServiceSubCategory = ServiceSubCategory.GENERAL,
         expectedCompletionAt: Instant? = null,
         completionReport: String? = null,
-        completionCost: Double? = null
+        completionCost: Double? = null,
+        costResponsibility: ServiceCostResponsibility? = null,
     ): ServiceRequest {
         val now = Instant.now()
         return ServiceRequest.reconstitute(
@@ -863,6 +908,7 @@ class ServiceRequestControllerTest {
             expectedCompletionAt = expectedCompletionAt,
             completionReport = completionReport,
             completionCost = completionCost,
+            costResponsibility = costResponsibility,
             categoryGroup = categoryGroup,
             subCategory = subCategory
         )

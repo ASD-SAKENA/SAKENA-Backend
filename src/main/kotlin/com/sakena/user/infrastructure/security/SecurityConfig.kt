@@ -97,7 +97,8 @@ class SecurityConfig(
                         HttpMethod.PATCH,
                         "/api/v1/service-requests/*/approve",
                         "/api/v1/service-requests/*/reject",
-                        "/api/v1/service-requests/*/assign"
+                        "/api/v1/service-requests/*/assign",
+                        "/api/v1/service-requests/*/cost-responsibility"
                     ).hasRole(manager)
                     .requestMatchers(HttpMethod.POST, "/api/v1/announcements").hasRole(manager)
                     .requestMatchers(HttpMethod.POST, "/api/v1/polls").hasRole(manager)
