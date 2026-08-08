@@ -33,7 +33,7 @@ class JwtTokenProviderImpl(
         return try {
             Jwts.parserBuilder().setSigningKey(key).build().parseClaimsJws(token)
             true
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             false
         }
     }

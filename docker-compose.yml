@@ -25,6 +25,8 @@ services:
       db:
         condition: service_healthy
     environment:
+      MAIL_USERNAME: ${MAIL_USERNAME}
+      MAIL_PASSWORD: ${MAIL_PASSWORD}
       DB_URL: jdbc:postgresql://db:5432/${DB_NAME:-sakena}
       DB_USERNAME: ${DB_USERNAME:-sakena}
       DB_PASSWORD: ${DB_PASSWORD:-sakena}
