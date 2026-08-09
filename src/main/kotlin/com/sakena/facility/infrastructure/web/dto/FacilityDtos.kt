@@ -15,13 +15,26 @@ import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalTime
 import java.util.UUID
+import com.fasterxml.jackson.annotation.JsonFormat
+import io.swagger.v3.oas.annotations.media.Schema
 
 /**
  * Scheduling policy of a facility. Absent on a request means "keep the
  * defaults"; the domain re-validates every field it receives.
  */
 data class BookingRulesPayload(
+    @field:JsonFormat(pattern = "HH:mm:ss")
+    @field:Schema(
+        type = "string",
+        example = "08:00:00"
+    )
     val opensAt: LocalTime = BookingRules.DEFAULT.opensAt,
+
+    @field:JsonFormat(pattern = "HH:mm:ss")
+    @field:Schema(
+        type = "string",
+        example = "22:00:00"
+    )
     val closesAt: LocalTime = BookingRules.DEFAULT.closesAt,
     val closedDays: Set<DayOfWeek> = emptySet(),
 
