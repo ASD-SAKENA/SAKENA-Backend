@@ -16,6 +16,7 @@ import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.ResponseStatus
@@ -61,6 +62,13 @@ class PollController(
     ): PollResponse =
         PollResponse.from(
             pollService.vote(PollId.from(id), request.toCommand(), getCurrentUserId()),
+        )
+
+    @Operation(summary = "Withdraw your vote and receive the updated tally")
+    @DeleteMapping("/{id}/votes")
+    fun withdrawVote(@PathVariable id: String): PollResponse =
+        PollResponse.from(
+            pollService.withdrawVote(PollId.from(id), getCurrentUserId()),
         )
 
     @Operation(summary = "Close a poll so it stops accepting votes (manager)")

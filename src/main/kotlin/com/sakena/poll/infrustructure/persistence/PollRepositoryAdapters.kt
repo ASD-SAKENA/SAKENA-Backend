@@ -95,6 +95,10 @@ class PollVoteRepositoryAdapter(
         return vote
     }
 
+    override fun delete(vote: PollVote) {
+        jpaRepository.deleteById(vote.id.value)
+    }
+
     override fun findByPollAndVoter(pollId: PollId, voterId: UserId): PollVote? =
         jpaRepository.findByPollIdAndVoterId(pollId.value, voterId.value)?.let {
             PollVote.reconstitute(
