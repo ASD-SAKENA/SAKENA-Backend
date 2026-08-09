@@ -43,6 +43,9 @@ class PollVote private constructor(
     }
 }
 
+class NoVoteToWithdrawException(pollId: PollId) :
+    DomainValidationException("You have not voted in poll '$pollId'")
+
 /** Tally of one option, including its share of the total — used by the results view. */
 data class PollOptionResult(
     val optionId: PollOptionId,

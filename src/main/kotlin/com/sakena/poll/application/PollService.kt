@@ -6,10 +6,12 @@ import com.sakena.poll.domain.PollNotFoundException
 import com.sakena.poll.domain.PollRepository
 import com.sakena.poll.domain.PollVoteRepository
 import com.sakena.poll.domain.model.AlreadyVotedException
+import com.sakena.poll.domain.model.NoVoteToWithdrawException
 import com.sakena.poll.domain.model.Poll
 import com.sakena.poll.domain.model.PollId
 import com.sakena.poll.domain.model.PollResults
 import com.sakena.poll.domain.model.PollVote
+import com.sakena.shared.domain.DomainConflictException
 import com.sakena.user.domain.UserId
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -44,6 +46,17 @@ class PollService(
             throw AlreadyVotedException(id)
         }
         voteRepository.save(PollVote.cast(id, command.optionId, voterId))
+        return resultsOf(poll, voterId)
+    }
+
+    fun withdrawVote(id: PollId, voterId: UserId): PollResults {
+        val poll = requirePoll(id)
+        if (!poll.open) {
+            throw DomainConflictException("Poll is closed and votes may not be changed")
+        }
+        val vote = voteRepository.findByPollAndVoter(id, voterId)
+            ?: throw NoVoteToWithdrawException(id)
+        voteRepository.delete(vote)
         return resultsOf(poll, voterId)
     }
 

@@ -25,6 +25,8 @@ interface PollVoteRepository {
 
     fun findByPollAndVoter(pollId: PollId, voterId: UserId): PollVote?
 
+    fun delete(vote: PollVote)
+
     /** Vote counts per option for a poll. */
     fun countByOption(pollId: PollId): Map<PollOptionId, Long>
 }
