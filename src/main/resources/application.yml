@@ -52,6 +52,9 @@ management:
       probes:
         enabled: true
       show-details: when_authorized
+  health:
+    mail:
+      enabled: false
 
 springdoc:
   swagger-ui:
