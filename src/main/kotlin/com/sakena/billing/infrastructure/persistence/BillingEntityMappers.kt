@@ -4,10 +4,13 @@ import com.sakena.billing.domain.model.ChargeItem
 import com.sakena.billing.domain.model.ChargeItemId
 import com.sakena.billing.domain.model.ChargePeriod
 import com.sakena.billing.domain.model.ChargePeriodId
+import com.sakena.billing.domain.model.ServiceCharge
+import com.sakena.billing.domain.model.ServiceChargeId
 import com.sakena.billing.domain.model.UnitInvoice
 import com.sakena.billing.domain.model.UnitInvoiceId
 import com.sakena.property.domain.model.ApartmentId
 import com.sakena.property.domain.model.BuildingId
+import com.sakena.servicerequest.domain.ServiceRequestId
 
 /** Translates between the billing aggregates and their JPA representations. */
 internal object BillingEntityMappers {
@@ -46,6 +49,7 @@ internal object BillingEntityMappers {
             amount = item.amount,
             kind = item.kind,
             allocation = item.allocation,
+            targetApartmentId = item.targetApartmentId?.value,
             createdAt = item.createdAt,
         )
 
@@ -57,7 +61,36 @@ internal object BillingEntityMappers {
             amount = entity.amount,
             kind = entity.kind,
             allocation = entity.allocation,
+            targetApartmentId = entity.targetApartmentId?.let(::ApartmentId),
             createdAt = entity.createdAt,
+        )
+
+    fun toEntity(charge: ServiceCharge): ServiceChargeEntity =
+        ServiceChargeEntity(
+            id = charge.id.value,
+            sourceServiceRequestId = charge.sourceServiceRequestId.value,
+            buildingId = charge.buildingId.value,
+            title = charge.title,
+            amount = charge.amount,
+            target = charge.target,
+            targetApartmentId = charge.targetApartmentId?.value,
+            chargePeriodId = charge.attachedPeriodId?.value,
+            createdAt = charge.createdAt,
+            attachedAt = charge.attachedAt,
+        )
+
+    fun toDomain(entity: ServiceChargeEntity): ServiceCharge =
+        ServiceCharge.reconstitute(
+            id = ServiceChargeId(entity.id),
+            sourceServiceRequestId = ServiceRequestId(entity.sourceServiceRequestId),
+            buildingId = BuildingId(entity.buildingId),
+            title = entity.title,
+            amount = entity.amount,
+            target = entity.target,
+            targetApartmentId = entity.targetApartmentId?.let(::ApartmentId),
+            attachedPeriodId = entity.chargePeriodId?.let(::ChargePeriodId),
+            createdAt = entity.createdAt,
+            attachedAt = entity.attachedAt,
         )
 
     fun toEntity(invoice: UnitInvoice): UnitInvoiceEntity =

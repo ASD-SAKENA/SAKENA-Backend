@@ -4,6 +4,7 @@ import com.sakena.billing.domain.model.ChargeItemKind
 import com.sakena.billing.domain.model.ChargePeriodType
 import com.sakena.billing.domain.model.CostAllocation
 import com.sakena.property.domain.model.BuildingId
+import com.sakena.property.domain.model.ApartmentId
 import java.math.BigDecimal
 import java.time.LocalDate
 
@@ -26,6 +27,7 @@ data class AddChargeItemCommand(
     val amount: BigDecimal,
     val kind: ChargeItemKind,
     val allocation: CostAllocation,
+    val targetApartmentId: ApartmentId? = null,
 )
 
 data class RegisterInvoicePaymentCommand(

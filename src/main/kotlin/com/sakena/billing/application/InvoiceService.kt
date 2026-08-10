@@ -6,6 +6,7 @@ import com.sakena.billing.domain.ChargeItemRepository
 import com.sakena.billing.domain.ChargePeriodNotFoundException
 import com.sakena.billing.domain.ChargePeriodRepository
 import com.sakena.billing.domain.CostAllocationPolicy
+import com.sakena.billing.domain.ServiceChargeRepository
 import com.sakena.billing.domain.UnitInvoiceNotFoundException
 import com.sakena.billing.domain.UnitInvoiceRepository
 import com.sakena.billing.domain.model.ChargePeriod
@@ -31,6 +32,7 @@ class InvoiceService(
     private val itemRepository: ChargeItemRepository,
     private val invoiceRepository: UnitInvoiceRepository,
     private val apartmentRepository: ApartmentRepository,
+    private val serviceChargeRepository: ServiceChargeRepository,
 ) {
 
     fun issue(periodId: ChargePeriodId): List<UnitInvoice> {
@@ -39,7 +41,11 @@ class InvoiceService(
             throw DomainConflictException("Charge period '${period.title}' has already been issued")
         }
 
-        val items = itemRepository.findAllByPeriod(periodId)
+        val pendingServiceCharges = serviceChargeRepository.findPendingByBuilding(
+            period.buildingId,
+        )
+        val serviceChargeItems = pendingServiceCharges.map { it.createChargeItemFor(periodId) }
+        val items = itemRepository.findAllByPeriod(periodId) + serviceChargeItems
         if (items.isEmpty()) {
             throw DomainConflictException("Cannot issue a charge period without any cost lines")
         }
@@ -50,6 +56,11 @@ class InvoiceService(
 
         // Issuing freezes the cost lines, so the period transitions before the write.
         period.issue()
+        serviceChargeItems.forEach(itemRepository::save)
+        pendingServiceCharges.forEach { charge ->
+            charge.attachTo(periodId)
+            serviceChargeRepository.save(charge)
+        }
         periodRepository.save(period)
 
         val invoices = shares

@@ -1,5 +1,6 @@
 package com.sakena.billing.domain.model
 
+import com.sakena.property.domain.model.ApartmentId
 import com.sakena.shared.domain.DomainValidationException
 import java.math.BigDecimal
 import java.time.Instant
@@ -23,6 +24,9 @@ enum class CostAllocation {
 
     /** Each unit pays proportionally to its area in square meters. */
     BY_AREA,
+
+    /** One explicitly selected unit pays the full cost. */
+    SPECIFIC_UNIT,
 }
 
 /**
@@ -37,6 +41,7 @@ class ChargeItem private constructor(
     val amount: BigDecimal,
     val kind: ChargeItemKind,
     val allocation: CostAllocation,
+    val targetApartmentId: ApartmentId?,
     val createdAt: Instant,
 ) {
 
@@ -49,6 +54,7 @@ class ChargeItem private constructor(
             amount: BigDecimal,
             kind: ChargeItemKind,
             allocation: CostAllocation,
+            targetApartmentId: ApartmentId? = null,
         ): ChargeItem =
             ChargeItem(
                 id = ChargeItemId.new(),
@@ -57,6 +63,7 @@ class ChargeItem private constructor(
                 amount = validateAmount(amount),
                 kind = kind,
                 allocation = allocation,
+                targetApartmentId = validateTarget(allocation, targetApartmentId),
                 createdAt = Instant.now(),
             )
 
@@ -68,8 +75,18 @@ class ChargeItem private constructor(
             amount: BigDecimal,
             kind: ChargeItemKind,
             allocation: CostAllocation,
+            targetApartmentId: ApartmentId?,
             createdAt: Instant,
-        ): ChargeItem = ChargeItem(id, periodId, title, amount, kind, allocation, createdAt)
+        ): ChargeItem = ChargeItem(
+            id,
+            periodId,
+            title,
+            amount,
+            kind,
+            allocation,
+            targetApartmentId,
+            createdAt,
+        )
 
         private fun validateTitle(title: String): String {
             val trimmed = title.trim()
@@ -85,6 +102,23 @@ class ChargeItem private constructor(
                 throw DomainValidationException("Charge item amount must be greater than zero")
             }
             return amount
+        }
+
+        private fun validateTarget(
+            allocation: CostAllocation,
+            targetApartmentId: ApartmentId?,
+        ): ApartmentId? {
+            if (allocation == CostAllocation.SPECIFIC_UNIT && targetApartmentId == null) {
+                throw DomainValidationException(
+                    "A specific-unit charge item must identify its target apartment",
+                )
+            }
+            if (allocation != CostAllocation.SPECIFIC_UNIT && targetApartmentId != null) {
+                throw DomainValidationException(
+                    "Only a specific-unit charge item may identify a target apartment",
+                )
+            }
+            return targetApartmentId
         }
     }
 }

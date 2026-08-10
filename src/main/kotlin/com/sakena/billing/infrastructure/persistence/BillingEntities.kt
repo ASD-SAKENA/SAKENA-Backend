@@ -4,6 +4,7 @@ import com.sakena.billing.domain.model.ChargeItemKind
 import com.sakena.billing.domain.model.ChargePeriodStatus
 import com.sakena.billing.domain.model.ChargePeriodType
 import com.sakena.billing.domain.model.CostAllocation
+import com.sakena.billing.domain.model.ServiceChargeTarget
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
 import jakarta.persistence.EnumType
@@ -77,8 +78,47 @@ class ChargeItemEntity(
     @Column(name = "allocation", nullable = false, length = 20)
     var allocation: CostAllocation,
 
+    @Column(name = "target_apartment_id")
+    var targetApartmentId: UUID?,
+
     @Column(name = "created_at", nullable = false, updatable = false)
     var createdAt: Instant,
+)
+
+@Entity
+@Table(name = "service_charges")
+class ServiceChargeEntity(
+    @Id
+    @Column(name = "id", nullable = false, updatable = false)
+    var id: UUID,
+
+    @Column(name = "source_service_request_id", nullable = false, updatable = false)
+    var sourceServiceRequestId: UUID,
+
+    @Column(name = "building_id", nullable = false, updatable = false)
+    var buildingId: UUID,
+
+    @Column(name = "title", nullable = false, length = 200)
+    var title: String,
+
+    @Column(name = "amount", nullable = false, precision = 18, scale = 2)
+    var amount: BigDecimal,
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "target_type", nullable = false, length = 20)
+    var target: ServiceChargeTarget,
+
+    @Column(name = "target_apartment_id")
+    var targetApartmentId: UUID?,
+
+    @Column(name = "charge_period_id")
+    var chargePeriodId: UUID?,
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    var createdAt: Instant,
+
+    @Column(name = "attached_at")
+    var attachedAt: Instant?,
 )
 
 @Entity

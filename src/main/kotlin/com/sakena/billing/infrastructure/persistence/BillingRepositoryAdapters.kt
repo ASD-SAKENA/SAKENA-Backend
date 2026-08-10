@@ -2,15 +2,19 @@ package com.sakena.billing.infrastructure.persistence
 
 import com.sakena.billing.domain.ChargeItemRepository
 import com.sakena.billing.domain.ChargePeriodRepository
+import com.sakena.billing.domain.ServiceChargeRepository
 import com.sakena.billing.domain.UnitInvoiceRepository
 import com.sakena.billing.domain.model.ChargeItem
 import com.sakena.billing.domain.model.ChargeItemId
 import com.sakena.billing.domain.model.ChargePeriod
 import com.sakena.billing.domain.model.ChargePeriodId
+import com.sakena.billing.domain.model.ServiceCharge
+import com.sakena.billing.domain.model.ServiceChargeId
 import com.sakena.billing.domain.model.UnitInvoice
 import com.sakena.billing.domain.model.UnitInvoiceId
 import com.sakena.property.domain.model.ApartmentId
 import com.sakena.property.domain.model.BuildingId
+import com.sakena.servicerequest.domain.ServiceRequestId
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Component
 
@@ -59,6 +63,30 @@ class ChargeItemRepositoryAdapter(
             .map(BillingEntityMappers::toDomain)
 
     override fun deleteById(id: ChargeItemId) = jpaRepository.deleteById(id.value)
+}
+
+@Component
+class ServiceChargeRepositoryAdapter(
+    private val jpaRepository: ServiceChargeJpaRepository,
+) : ServiceChargeRepository {
+
+    override fun save(charge: ServiceCharge): ServiceCharge {
+        val saved = jpaRepository.save(BillingEntityMappers.toEntity(charge))
+        return BillingEntityMappers.toDomain(saved)
+    }
+
+    override fun findById(id: ServiceChargeId): ServiceCharge? =
+        jpaRepository.findByIdOrNull(id.value)?.let(BillingEntityMappers::toDomain)
+
+    override fun findBySourceServiceRequestId(
+        serviceRequestId: ServiceRequestId,
+    ): ServiceCharge? =
+        jpaRepository.findBySourceServiceRequestId(serviceRequestId.value)
+            ?.let(BillingEntityMappers::toDomain)
+
+    override fun findPendingByBuilding(buildingId: BuildingId): List<ServiceCharge> =
+        jpaRepository.findAllByBuildingIdAndChargePeriodIdIsNullOrderByCreatedAt(buildingId.value)
+            .map(BillingEntityMappers::toDomain)
 }
 
 @Component

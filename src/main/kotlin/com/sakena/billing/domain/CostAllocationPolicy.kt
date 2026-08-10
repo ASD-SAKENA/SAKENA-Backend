@@ -31,12 +31,27 @@ object CostAllocationPolicy {
             val shares = when (item.allocation) {
                 CostAllocation.EQUAL -> splitEqually(item.amount, units)
                 CostAllocation.BY_AREA -> splitByArea(item.amount, units)
+                CostAllocation.SPECIFIC_UNIT -> allocateToSpecificUnit(item, units)
             }
             for ((apartmentId, share) in shares) {
                 totals[apartmentId] = totals.getValue(apartmentId) + share
             }
         }
         return totals
+    }
+
+    private fun allocateToSpecificUnit(
+        item: ChargeItem,
+        units: List<BillableUnit>,
+    ): Map<ApartmentId, BigDecimal> {
+        val targetApartmentId = item.targetApartmentId
+            ?: throw DomainConflictException("Specific-unit charge has no target apartment")
+        if (units.none { it.apartmentId == targetApartmentId }) {
+            throw DomainConflictException(
+                "Target apartment '$targetApartmentId' does not belong to the charge period building",
+            )
+        }
+        return mapOf(targetApartmentId to item.amount)
     }
 
     private fun splitEqually(
