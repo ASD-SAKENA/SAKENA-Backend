@@ -1,13 +1,16 @@
 package com.sakena.servicerequest.application
 
+import com.sakena.residency.domain.ResidencyRepository
 import com.sakena.servicerequest.domain.ServiceCategoryGroup
 import com.sakena.servicerequest.domain.ServiceRequest
 import com.sakena.servicerequest.domain.ServiceRequestFilters
 import com.sakena.servicerequest.domain.ServiceRequestId
 import com.sakena.servicerequest.domain.ServiceRequestRepository
 import com.sakena.servicerequest.domain.ServiceSubCategory
+import com.sakena.shared.domain.DomainForbiddenException
 import com.sakena.shared.domain.DomainValidationException
 import com.sakena.shared.domain.EntityNotFoundException
+import com.sakena.user.domain.Role
 import com.sakena.user.domain.UserId
 import com.sakena.user.domain.UserRepository
 import org.springframework.stereotype.Service
@@ -17,12 +20,14 @@ import org.springframework.transaction.annotation.Transactional
 @Transactional
 class ServiceRequestService(
     private val serviceRequestRepository: ServiceRequestRepository,
-    private val userRepository: UserRepository
+    private val userRepository: UserRepository,
+    private val residencyRepository: ResidencyRepository,
 ) {
 
     fun create(command: CreateServiceRequestCommand, currentUserId: UserId): ServiceRequest {
-        val user = userRepository.findById(currentUserId)
+        userRepository.findById(currentUserId)
             ?: throw IllegalArgumentException("User not found with id: $currentUserId")
+        val requestingApartmentId = residencyRepository.findActiveByResident(currentUserId)?.apartmentId
 
         val request = ServiceRequest.create(
             title = command.title,
@@ -30,7 +35,8 @@ class ServiceRequestService(
             location = command.location,
             createdBy = currentUserId,
             categoryGroup = command.categoryGroup,
-            subCategory = command.subCategory
+            subCategory = command.subCategory,
+            requestingApartmentId = requestingApartmentId,
         )
         return serviceRequestRepository.save(request)
     }
@@ -100,6 +106,23 @@ class ServiceRequestService(
             completionCost = command.completionCost
         )
         return serviceRequestRepository.save(completed)
+    }
+
+    fun assignCostResponsibility(command: AssignServiceCostResponsibilityCommand): ServiceRequest {
+        val manager = userRepository.findById(command.managerId)
+            ?: throw EntityNotFoundException("User with id '${command.managerId}' was not found")
+        if (manager.role != Role.MANAGER) {
+            throw DomainForbiddenException("Only managers can assign service request cost responsibility")
+        }
+
+        val request = serviceRequestRepository.findById(command.serviceRequestId)
+            ?: throw EntityNotFoundException("Service request not found")
+
+        val updated = request.assignCostResponsibility(
+            responsibility = command.responsibility,
+            userId = command.managerId,
+        )
+        return serviceRequestRepository.save(updated)
     }
 
     fun getCategories(categoryGroupValue: String?): CategoryOptionsResult {

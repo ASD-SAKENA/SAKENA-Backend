@@ -1,5 +1,11 @@
 package com.sakena.wallet.application
 
+import com.sakena.billing.domain.ServiceChargeRepository
+import com.sakena.billing.domain.model.ServiceCharge
+import com.sakena.billing.domain.model.ServiceChargeTarget
+import com.sakena.property.domain.ApartmentRepository
+import com.sakena.servicerequest.domain.ServiceCostResponsibility
+import com.sakena.servicerequest.domain.ServiceRequest
 import com.sakena.servicerequest.domain.ServiceRequestId
 import com.sakena.servicerequest.domain.ServiceRequestRepository
 import com.sakena.shared.domain.DomainConflictException
@@ -27,6 +33,8 @@ class WalletService(
     private val walletRepository: WalletRepository,
     private val transactionRepository: WalletTransactionRepository,
     private val serviceRequestRepository: ServiceRequestRepository,
+    private val apartmentRepository: ApartmentRepository,
+    private val serviceChargeRepository: ServiceChargeRepository,
 ) {
 
     fun settleServiceRequest(serviceRequestId: ServiceRequestId, settledBy: UserId) {
@@ -40,6 +48,20 @@ class WalletService(
         )
         val worker = settled.assignedTo
             ?: throw DomainConflictException("Service request has no assigned worker")
+        val serviceCharge = when (settled.costResponsibility) {
+            ServiceCostResponsibility.BUILDING_WALLET -> null
+            ServiceCostResponsibility.ALL_UNITS -> createServiceCharge(
+                settled,
+                amount,
+                ServiceChargeTarget.ALL_UNITS,
+            )
+            ServiceCostResponsibility.REQUESTING_UNIT -> createServiceCharge(
+                settled,
+                amount,
+                ServiceChargeTarget.SPECIFIC_UNIT,
+            )
+            null -> throw DomainConflictException("Service request cost responsibility has not been assigned")
+        }
 
         val buildingWallet = requireBuildingWallet()
         val workerWallet = walletRepository.findByOwner(worker) ?: Wallet.createForUser(worker)
@@ -47,6 +69,7 @@ class WalletService(
         buildingWallet.debit(amount)
         workerWallet.credit(amount)
 
+        serviceCharge?.let(serviceChargeRepository::save)
         walletRepository.save(buildingWallet)
         walletRepository.save(workerWallet)
         serviceRequestRepository.save(settled)
@@ -65,6 +88,27 @@ class WalletService(
             TransactionCategory.WAGE_SETTLEMENT,
             amount,
             label,
+        )
+    }
+
+    private fun createServiceCharge(
+        request: ServiceRequest,
+        amount: BigDecimal,
+        target: ServiceChargeTarget,
+    ): ServiceCharge {
+        val apartmentId = request.requestingApartmentId
+            ?: throw DomainConflictException("Service request has no requesting apartment for billing")
+        val apartment = apartmentRepository.findById(apartmentId)
+            ?: throw EntityNotFoundException("Requesting apartment with id '$apartmentId' was not found")
+        return ServiceCharge.create(
+            sourceServiceRequestId = request.id,
+            buildingId = apartment.buildingId,
+            title = request.title,
+            amount = amount,
+            target = target,
+            targetApartmentId = apartment.id.takeIf {
+                target == ServiceChargeTarget.SPECIFIC_UNIT
+            },
         )
     }
 
