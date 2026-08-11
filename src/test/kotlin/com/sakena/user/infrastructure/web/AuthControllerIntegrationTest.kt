@@ -4,7 +4,9 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.sakena.IntegrationTest
 import com.sakena.user.domain.User
 import com.sakena.user.domain.UserRepository
+import com.sakena.user.infrastructure.security.AuthRateLimitFilter
 import org.hamcrest.Matchers.startsWith
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Value
@@ -25,8 +27,14 @@ class AuthControllerIntegrationTest(
     @Autowired private val objectMapper: ObjectMapper,
     @Autowired private val userRepository: UserRepository,
     @Autowired private val passwordEncoder: PasswordEncoder,
+    @Autowired private val authRateLimitFilter: AuthRateLimitFilter,
     @Value("\${app.rate-limit.auth.attempts:10}") private val authAttemptLimit: Int,
 ) : IntegrationTest() {
+
+    @BeforeEach
+    fun clearAuthRateLimits() {
+        authRateLimitFilter.clear()
+    }
 
     @Test
     fun `login with invalid credentials returns 401 without revealing which credential failed`() {

@@ -51,6 +51,11 @@ class FixedWindowRateLimiter(
         counters.remove(key)
     }
 
+    /** Drops every window — used between integration tests so suites don't share limits. */
+    fun clear() {
+        counters.clear()
+    }
+
     /**
      * Drops windows that have already expired, so a long-running instance does
      * not accumulate an entry per IP that ever hit the endpoint.

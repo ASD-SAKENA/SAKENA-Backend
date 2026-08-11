@@ -38,6 +38,14 @@ jobs:
       - name: Run tests
         run: ./gradlew test --no-daemon --stacktrace
 
+      - name: Upload test report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-report
+          path: build/reports/tests/test/
+          if-no-files-found: ignore
+
   build-and-push:
     name: Build & Push
     needs: [ci]
