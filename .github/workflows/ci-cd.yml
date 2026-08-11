@@ -116,7 +116,12 @@ jobs:
 
             docker network inspect infra_network >/dev/null 2>&1 || docker network create infra_network
 
+            # docker-compose 1.29 + modern Docker images blows up on recreate
+            # with KeyError: 'ContainerConfig'. Remove containers first so `up`
+            # creates fresh ones (named volumes are kept — no -v).
             docker-compose -f docker-compose.prod.yml pull
+            docker-compose -f docker-compose.prod.yml stop || true
+            docker-compose -f docker-compose.prod.yml rm -f || true
             docker-compose -f docker-compose.prod.yml up -d
 
             echo "Waiting for backend health..."
