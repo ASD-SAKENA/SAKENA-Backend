@@ -16,6 +16,24 @@ services:
       timeout: 5s
       retries: 10
 
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    container_name: sakena-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-sakena}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-sakena-secret}
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - sakena-minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   app:
     build:
       context: .
@@ -24,6 +42,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      minio:
+        condition: service_started
     environment:
       DB_URL: jdbc:postgresql://db:5432/${DB_NAME:-sakena}
       DB_USERNAME: ${DB_USERNAME:-sakena}
@@ -34,6 +54,12 @@ services:
       SPRING_MAIL_PROPERTIES_MAIL_SMTP_STARTTLS_ENABLE: ${SPRING_MAIL_PROPERTIES_MAIL_SMTP_STARTTLS_ENABLE:-true}
       APP_RESET_TOKEN_EXPIRATION_MINUTES: ${APP_RESET_TOKEN_EXPIRATION_MINUTES:-60}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_PUBLIC_ENDPOINT: ${MINIO_PUBLIC_ENDPOINT:-http://localhost:9000}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-sakena}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-sakena-secret}
+      MINIO_BUCKET: ${MINIO_BUCKET:-sakena-chat}
+      MINIO_REGION: ${MINIO_REGION:-us-east-1}
     ports:
       - "${SERVER_PORT:-8080}:8080"
     healthcheck:
@@ -45,3 +71,4 @@ services:
 
 volumes:
   sakena-db-data:
+  sakena-minio-data:

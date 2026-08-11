@@ -46,6 +46,9 @@ dependencies {
     // --- API documentation (Swagger UI) ---
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:${property("springdocVersion")}")
 
+    // --- Object storage (chat attachments) ---
+    implementation("io.minio:minio:8.5.17")
+
     // --- Database & migrations ---
     runtimeOnly("org.postgresql:postgresql")
     implementation("org.flywaydb:flyway-core")

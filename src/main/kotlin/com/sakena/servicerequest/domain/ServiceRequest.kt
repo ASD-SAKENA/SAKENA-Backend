@@ -1,5 +1,6 @@
 package com.sakena.servicerequest.domain
 
+import com.sakena.property.domain.model.ApartmentId
 import com.sakena.shared.domain.DomainValidationException
 import com.sakena.user.domain.UserId
 import java.time.Instant
@@ -20,7 +21,9 @@ data class ServiceRequest(
     val resolvedAt: Instant? = null,
     val expectedCompletionAt: Instant? = null,
     val completionReport: String? = null,
-    val completionCost: Double? = null
+    val completionCost: Double? = null,
+    val costResponsibility: ServiceCostResponsibility? = null,
+    val requestingApartmentId: ApartmentId? = null,
 ) {
     companion object {
         fun create(
@@ -29,7 +32,8 @@ data class ServiceRequest(
             location: String?,
             createdBy: UserId,
             categoryGroup: ServiceCategoryGroup,
-            subCategory: ServiceSubCategory
+            subCategory: ServiceSubCategory,
+            requestingApartmentId: ApartmentId? = null,
         ): ServiceRequest {
             validate(
                 title = title,
@@ -50,7 +54,8 @@ data class ServiceRequest(
                 updatedBy = createdBy,
                 createdAt = now,
                 updatedAt = now,
-                status = ServiceRequestStatus.PENDING
+                status = ServiceRequestStatus.PENDING,
+                requestingApartmentId = requestingApartmentId,
             )
         }
 
@@ -70,11 +75,14 @@ data class ServiceRequest(
             resolvedAt: Instant?,
             expectedCompletionAt: Instant? = null,
             completionReport: String? = null,
-            completionCost: Double? = null
+            completionCost: Double? = null,
+            costResponsibility: ServiceCostResponsibility? = null,
+            requestingApartmentId: ApartmentId? = null,
         ) = ServiceRequest(
             id, title, description, location, categoryGroup, subCategory,
             createdBy, updatedBy, createdAt, updatedAt, status,
-            assignedTo, resolvedAt, expectedCompletionAt, completionReport, completionCost
+            assignedTo, resolvedAt, expectedCompletionAt, completionReport, completionCost,
+            costResponsibility, requestingApartmentId,
         ).also {
             validate(
                 title = it.title,
@@ -158,6 +166,55 @@ data class ServiceRequest(
             completionCost = completionCost?.takeIf { it >= 0 },
             updatedAt = Instant.now(),
             updatedBy = userId
+        )
+    }
+
+    fun settle(userId: UserId): ServiceRequest {
+        if (status != ServiceRequestStatus.COMPLETED) {
+            throw DomainValidationException("Service request can only be settled when it is completed")
+        }
+        if (completionCost == null || completionCost <= 0.0) {
+            throw DomainValidationException("Service request has no completion cost to settle")
+        }
+        if (assignedTo == null) {
+            throw DomainValidationException("Service request has no assigned worker to pay")
+        }
+        if (costResponsibility == null) {
+            throw DomainValidationException("Service request cost responsibility has not been assigned")
+        }
+        return this.copy(
+            status = ServiceRequestStatus.SETTLED,
+            updatedAt = Instant.now(),
+            updatedBy = userId
+        )
+    }
+
+    fun assignCostResponsibility(
+        responsibility: ServiceCostResponsibility,
+        userId: UserId,
+    ): ServiceRequest {
+        if (status != ServiceRequestStatus.COMPLETED) {
+            throw DomainValidationException(
+                "Cost responsibility can only be assigned when the service request is completed",
+            )
+        }
+        if (completionCost == null || completionCost <= 0.0) {
+            throw DomainValidationException(
+                "Service request must have a positive completion cost before assigning cost responsibility",
+            )
+        }
+        if (
+            responsibility != ServiceCostResponsibility.BUILDING_WALLET &&
+            requestingApartmentId == null
+        ) {
+            throw DomainValidationException(
+                "Billable cost responsibility requires a requesting apartment",
+            )
+        }
+        return copy(
+            costResponsibility = responsibility,
+            updatedAt = Instant.now(),
+            updatedBy = userId,
         )
     }
 
