@@ -19,7 +19,8 @@ services:
       - infra_network
 
   sakena_minio:
-    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    # -cpuv1: older CPUs without x86-64-v2 (glibc). Console stays free on this 2025 release.
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z-cpuv1
     container_name: sakena_minio
     restart: unless-stopped
     command: server /data --console-address ":9001"
