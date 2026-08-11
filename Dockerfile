@@ -18,6 +18,11 @@ RUN ./gradlew --no-daemon clean bootJar
 FROM eclipse-temurin:21-jre AS runtime
 WORKDIR /app
 
+# wget is required by docker-compose.prod.yml healthcheck.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends wget \
+    && rm -rf /var/lib/apt/lists/*
+
 # Run as an unprivileged user.
 RUN groupadd --system sakena && useradd --system --gid sakena sakena
 
