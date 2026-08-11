@@ -1,0 +1,1 @@
+ALTER TABLE users ADD COLUMN specialty VARCHAR(100);

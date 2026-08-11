@@ -1,7 +1,9 @@
 package com.sakena.user.application
 
 import com.sakena.user.domain.*
+import com.sakena.user.domain.exceptions.InactiveAccountException
 import com.sakena.user.domain.exceptions.InvalidCredentialsException
+import com.sakena.user.domain.exceptions.InvalidRoleException
 import com.sakena.user.domain.exceptions.TokenInvalidException
 import com.sakena.user.domain.exceptions.UserAlreadyExistsException
 import io.mockk.*
@@ -107,6 +109,18 @@ class AuthServiceTest {
         verify(exactly = 0) { userRepository.save(any()) }
     }
 
+    @Test
+    fun `register should throw InvalidRoleException if role is unsupported`() {
+        val command = RegisterCommand("john", "john@example.com", "password123", "OWNER")
+        every { userRepository.existsByUsername(command.username) } returns false
+        every { userRepository.existsByEmail(command.email) } returns false
+
+        assertThrows<InvalidRoleException> { authService.register(command) }
+
+        verify(exactly = 0) { passwordEncoder.encode(any()) }
+        verify(exactly = 0) { userRepository.save(any()) }
+    }
+
     // ===== LOGIN TESTS =====
 
     @Test
@@ -141,11 +155,11 @@ class AuthServiceTest {
     }
 
     @Test
-    fun `login should throw DomainException when user is inactive`() {
+    fun `login should throw InactiveAccountException when user is inactive`() {
         val user = createUser(active = false)
         every { userRepository.findByUsername("john") } returns user
         every { passwordEncoder.matches("pass", user.passwordHash) } returns true
-        assertThrows<com.sakena.shared.domain.DomainException> {
+        assertThrows<InactiveAccountException> {
             authService.login(LoginCommand("john", "pass"))
         }
     }
@@ -244,6 +258,24 @@ class AuthServiceTest {
         every { resetTokenRepository.findByToken("used") } returns tokenEntity
         assertThrows<TokenInvalidException> {
             authService.resetPassword(ResetPasswordCommand("used", "newPass"))
+        }
+    }
+
+    @Test
+    fun `resetPassword should throw TokenInvalidException if token user is missing`() {
+        val userId = UserId.generate()
+        val tokenEntity = PasswordResetToken(
+            id = PasswordResetTokenId.generate(),
+            userId = userId,
+            token = "orphaned",
+            expiresAt = Instant.now().plusSeconds(60),
+            used = false
+        )
+        every { resetTokenRepository.findByToken("orphaned") } returns tokenEntity
+        every { userRepository.findById(userId) } returns null
+
+        assertThrows<TokenInvalidException> {
+            authService.resetPassword(ResetPasswordCommand("orphaned", "newPass"))
         }
     }
 }

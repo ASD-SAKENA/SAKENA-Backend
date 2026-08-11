@@ -1,5 +1,6 @@
 package com.sakena.servicerequest.infrastructure.persistence
 
+import com.sakena.property.domain.model.ApartmentId
 import com.sakena.servicerequest.domain.ServiceCategoryGroup
 import com.sakena.servicerequest.domain.ServiceRequest
 import com.sakena.servicerequest.domain.ServiceRequestFilters
@@ -10,7 +11,6 @@ import com.sakena.servicerequest.domain.ServiceSubCategory
 import com.sakena.user.domain.UserId
 import jakarta.persistence.criteria.Predicate
 import org.springframework.stereotype.Repository
-import java.time.Instant
 import java.util.UUID
 
 @Repository
@@ -70,7 +70,9 @@ class ServiceRequestRepositoryImpl(
             resolvedAt = domain.resolvedAt,
             expectedCompletionAt = domain.expectedCompletionAt,
             completionReport = domain.completionReport,
-            completionCost = domain.completionCost
+            completionCost = domain.completionCost,
+            costResponsibility = domain.costResponsibility,
+            requestingApartmentId = domain.requestingApartmentId?.value,
         )
     }
 
@@ -91,7 +93,9 @@ class ServiceRequestRepositoryImpl(
             resolvedAt = entity.resolvedAt,
             expectedCompletionAt = entity.expectedCompletionAt,
             completionReport = entity.completionReport,
-            completionCost = entity.completionCost
+            completionCost = entity.completionCost,
+            costResponsibility = entity.costResponsibility,
+            requestingApartmentId = entity.requestingApartmentId?.let(::ApartmentId),
         )
     }
 }

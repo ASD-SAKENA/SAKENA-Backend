@@ -1,6 +1,7 @@
 package com.sakena.servicerequest.infrastructure.web
 
 import com.sakena.servicerequest.domain.ServiceCategoryGroup
+import com.sakena.servicerequest.domain.ServiceCostResponsibility
 import com.sakena.servicerequest.domain.ServiceRequest
 import com.sakena.servicerequest.domain.ServiceRequestStatus
 import com.sakena.servicerequest.domain.ServiceSubCategory
@@ -22,7 +23,9 @@ data class ServiceRequestResponse(
     val resolvedAt: Instant?,
     val expectedCompletionAt: Instant?,
     val completionReport: String?,
-    val completionCost: Double?
+    val completionCost: Double?,
+    val costResponsibility: ServiceCostResponsibility?,
+    val requestingApartmentId: String?,
 ) {
     companion object {
         fun fromDomain(request: ServiceRequest): ServiceRequestResponse {
@@ -42,7 +45,9 @@ data class ServiceRequestResponse(
                 resolvedAt = request.resolvedAt,
                 expectedCompletionAt = request.expectedCompletionAt,
                 completionReport = request.completionReport,
-                completionCost = request.completionCost
+                completionCost = request.completionCost,
+                costResponsibility = request.costResponsibility,
+                requestingApartmentId = request.requestingApartmentId?.value?.toString(),
             )
         }
     }

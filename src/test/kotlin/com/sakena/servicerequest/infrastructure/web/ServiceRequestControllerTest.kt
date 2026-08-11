@@ -3,7 +3,9 @@ package com.sakena.servicerequest.infrastructure.web
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
+import com.sakena.property.domain.model.ApartmentId
 import com.sakena.servicerequest.application.AssignServiceRequestCommand
+import com.sakena.servicerequest.application.AssignServiceCostResponsibilityCommand
 import com.sakena.servicerequest.application.ApproveServiceRequestCommand
 import com.sakena.servicerequest.application.CategoryGroupOptionResult
 import com.sakena.servicerequest.application.CategoryOptionsResult
@@ -13,6 +15,7 @@ import com.sakena.servicerequest.application.ServiceRequestService
 import com.sakena.servicerequest.application.StartProgressCommand
 import com.sakena.servicerequest.application.SubCategoryOptionResult
 import com.sakena.servicerequest.domain.ServiceCategoryGroup
+import com.sakena.servicerequest.domain.ServiceCostResponsibility
 import com.sakena.servicerequest.domain.ServiceRequest
 import com.sakena.servicerequest.domain.ServiceRequestFilters
 import com.sakena.servicerequest.domain.ServiceRequestId
@@ -31,6 +34,7 @@ import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken
@@ -48,6 +52,7 @@ import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestControllerAdvice
 import java.time.Instant
 
+@TestConfiguration
 @RestControllerAdvice
 class TestControllerAdvice {
 
@@ -750,6 +755,54 @@ class ServiceRequestControllerTest {
         }
     }
 
+    // ==================== COST RESPONSIBILITY ====================
+
+    @Test
+    fun `assignCostResponsibility should map manager decision and return it`() {
+        try {
+            setupSecurityContext()
+
+            val requestingApartmentId = ApartmentId.new()
+            val completedRequest = createMockServiceRequest(
+                title = "Repair water pump",
+                description = "The main water pump needs repair",
+                createdBy = testUserId,
+                status = ServiceRequestStatus.COMPLETED,
+                assignedTo = UserId.generate(),
+                resolvedAt = Instant.now(),
+                completionCost = 250.0,
+                costResponsibility = ServiceCostResponsibility.ALL_UNITS,
+                requestingApartmentId = requestingApartmentId,
+            )
+            val commandSlot = slot<AssignServiceCostResponsibilityCommand>()
+            every { profileService.getUserByUsername(testUsername) } returns testUser
+            every {
+                serviceRequestService.assignCostResponsibility(capture(commandSlot))
+            } returns completedRequest
+
+            mockMvc.perform(
+                patch(
+                    "/api/v1/service-requests/{id}/cost-responsibility",
+                    completedRequest.id.value.toString(),
+                )
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""{"costResponsibility":"ALL_UNITS"}"""),
+            )
+                .andExpect(status().isOk)
+                .andExpect(jsonPath("$.costResponsibility").value("ALL_UNITS"))
+                .andExpect(
+                    jsonPath("$.requestingApartmentId")
+                        .value(requestingApartmentId.value.toString()),
+                )
+
+            assertEquals(completedRequest.id, commandSlot.captured.serviceRequestId)
+            assertEquals(ServiceCostResponsibility.ALL_UNITS, commandSlot.captured.responsibility)
+            assertEquals(testUserId, commandSlot.captured.managerId)
+        } finally {
+            cleanupSecurityContext()
+        }
+    }
+
     // ==================== CATEGORIES ====================
 
     @Test
@@ -843,7 +896,9 @@ class ServiceRequestControllerTest {
         subCategory: ServiceSubCategory = ServiceSubCategory.GENERAL,
         expectedCompletionAt: Instant? = null,
         completionReport: String? = null,
-        completionCost: Double? = null
+        completionCost: Double? = null,
+        costResponsibility: ServiceCostResponsibility? = null,
+        requestingApartmentId: ApartmentId? = null,
     ): ServiceRequest {
         val now = Instant.now()
         return ServiceRequest.reconstitute(
@@ -861,6 +916,8 @@ class ServiceRequestControllerTest {
             expectedCompletionAt = expectedCompletionAt,
             completionReport = completionReport,
             completionCost = completionCost,
+            costResponsibility = costResponsibility,
+            requestingApartmentId = requestingApartmentId,
             categoryGroup = categoryGroup,
             subCategory = subCategory
         )

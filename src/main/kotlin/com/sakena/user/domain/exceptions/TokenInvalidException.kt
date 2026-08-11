@@ -1,5 +1,5 @@
 package com.sakena.user.domain.exceptions
 
-import com.sakena.shared.domain.DomainException
+import com.sakena.shared.domain.DomainValidationException
 
-class TokenInvalidException : DomainException("Invalid or expired reset token")
+class TokenInvalidException : DomainValidationException("Invalid or expired reset token")

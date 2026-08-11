@@ -1,6 +1,8 @@
 package com.sakena.servicerequest.infrastructure.web
 
 import com.sakena.servicerequest.application.AssignServiceRequestCommand
+import com.sakena.servicerequest.application.AssignServiceCostResponsibilityCommand
+import com.sakena.servicerequest.application.RejectServiceRequestCommand
 import com.sakena.servicerequest.application.ApproveServiceRequestCommand
 import com.sakena.servicerequest.application.CompleteServiceRequestCommand
 import com.sakena.servicerequest.application.CreateServiceRequestCommand
@@ -169,6 +171,17 @@ class ServiceRequestController(
         return ServiceRequestResponse.fromDomain(approved)
     }
 
+    @PatchMapping("/{id}/reject")
+    @Operation(summary = "Reject a pending service request")
+    fun rejectRequest(@PathVariable id: String): ServiceRequestResponse {
+        val command = RejectServiceRequestCommand(
+            serviceRequestId = ServiceRequestId.fromString(id),
+            userId = getCurrentUserId()
+        )
+        val rejected = serviceRequestService.rejectRequest(command)
+        return ServiceRequestResponse.fromDomain(rejected)
+    }
+
     @PatchMapping("/{id}/assign")
     @Operation(summary = "Assign an approved service request to a worker")
     fun assignRequest(@PathVariable id: String, @RequestParam workerId: String): ServiceRequestResponse {
@@ -210,6 +223,21 @@ class ServiceRequestController(
         )
         val completed = serviceRequestService.completeRequest(command)
         return ServiceRequestResponse.fromDomain(completed)
+    }
+
+    @PatchMapping("/{id}/cost-responsibility")
+    @Operation(summary = "Assign responsibility for a completed service request's cost (manager)")
+    fun assignCostResponsibility(
+        @PathVariable id: String,
+        @RequestBody @Valid request: AssignCostResponsibilityRequest,
+    ): ServiceRequestResponse {
+        val command = AssignServiceCostResponsibilityCommand(
+            serviceRequestId = ServiceRequestId.fromString(id),
+            responsibility = request.costResponsibility!!,
+            managerId = getCurrentUserId(),
+        )
+        val updated = serviceRequestService.assignCostResponsibility(command)
+        return ServiceRequestResponse.fromDomain(updated)
     }
 
     private fun getCurrentUserId(): UserId {

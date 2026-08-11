@@ -1,11 +1,11 @@
 package com.sakena.user.application
 
-import com.sakena.shared.domain.DomainException
 import com.sakena.user.domain.PasswordResetToken
 import com.sakena.user.domain.PasswordResetTokenRepository
 import com.sakena.user.domain.Role
 import com.sakena.user.domain.User
 import com.sakena.user.domain.UserRepository
+import com.sakena.user.domain.exceptions.InactiveAccountException
 import com.sakena.user.domain.exceptions.InvalidCredentialsException
 import com.sakena.user.domain.exceptions.TokenInvalidException
 import com.sakena.user.domain.exceptions.UserAlreadyExistsException
@@ -36,7 +36,7 @@ class AuthService(
             throw UserAlreadyExistsException("email", command.email)
         }
 
-        val role = command.role?.let { Role.valueOf(it.uppercase()) } ?: Role.RESIDENT
+        val role = command.role?.let(Role::from) ?: Role.RESIDENT
 
         val user = User.register(
             username = command.username,
@@ -62,7 +62,7 @@ class AuthService(
         }
 
         if (!user.active) {
-            throw DomainException("User account is inactive")
+            throw InactiveAccountException()
         }
 
         return jwtTokenProvider.generateToken(user.username, user.role.name)
@@ -95,7 +95,7 @@ class AuthService(
         }
 
         val user = userRepository.findById(tokenEntity.userId)
-            ?: throw DomainException("User not found")
+            ?: throw TokenInvalidException()
 
         // Update password
         val updatedUser = user.withNewPassword(
