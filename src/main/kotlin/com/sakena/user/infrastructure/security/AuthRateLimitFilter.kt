@@ -49,7 +49,18 @@ class AuthRateLimitFilter(
 
         filterChain.doFilter(request, response)
 
-        if (response.status == HttpStatus.OK.value()) limiter.reset(key)
+        // Register returns 201 Created (not 200). Treat both as successful auth
+        // so a legitimate signup clears the window the same way a login does.
+        if (response.status == HttpStatus.OK.value() ||
+            response.status == HttpStatus.CREATED.value()
+        ) {
+            limiter.reset(key)
+        }
+    }
+
+    /** Test-only: wipe in-memory windows so one class cannot starve another. */
+    fun clear() {
+        limiter.clear()
     }
 
     private fun writeTooManyRequests(

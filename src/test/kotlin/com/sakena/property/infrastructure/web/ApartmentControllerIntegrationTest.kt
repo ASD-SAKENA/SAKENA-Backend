@@ -3,9 +3,12 @@ package com.sakena.property.infrastructure.web
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.sakena.IntegrationTest
 import com.sakena.property.infrastructure.web.dto.CreateBuildingRequest
+import com.sakena.support.TestAuth
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
+import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete
@@ -22,30 +25,55 @@ class ApartmentControllerIntegrationTest(
     @Autowired private val objectMapper: ObjectMapper,
 ) : IntegrationTest() {
 
+    private lateinit var managerToken: String
+
+    @BeforeEach
+    fun registerManager() {
+        managerToken = TestAuth.register(mockMvc, objectMapper, role = "MANAGER", usernamePrefix = "apt-mgr")
+    }
+
     @Test
     fun `full apartment lifecycle over HTTP`() {
         val buildingId = createBuilding("Tower C", "Third Street")
         val created = createApartment(buildingId, "301")
         val apartmentId = objectMapper.readTree(created.response.contentAsString).get("id").asText()
 
-        mockMvc.perform(get("/api/v1/apartments/$apartmentId"))
+        mockMvc.perform(
+            get("/api/v1/apartments/$apartmentId")
+                .header(HttpHeaders.AUTHORIZATION, TestAuth.bearer(managerToken)),
+        )
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.id").value(apartmentId))
             .andExpect(jsonPath("$.buildingId").value(buildingId))
 
         val updateBody = apartmentJson(buildingId, "302", 3, "95.25", 3)
-        mockMvc.perform(put("/api/v1/apartments/$apartmentId").contentType(MediaType.APPLICATION_JSON).content(updateBody))
+        mockMvc.perform(
+            put("/api/v1/apartments/$apartmentId")
+                .header(HttpHeaders.AUTHORIZATION, TestAuth.bearer(managerToken))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(updateBody),
+        )
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.unitNumber").value("302"))
             .andExpect(jsonPath("$.floorNumber").value(3))
             .andExpect(jsonPath("$.bedrooms").value(3))
 
-        mockMvc.perform(get("/api/v1/apartments?buildingId=$buildingId"))
+        mockMvc.perform(
+            get("/api/v1/apartments?buildingId=$buildingId")
+                .header(HttpHeaders.AUTHORIZATION, TestAuth.bearer(managerToken)),
+        )
             .andExpect(status().isOk)
             .andExpect(jsonPath("$[?(@.id == '$apartmentId')]").exists())
 
-        mockMvc.perform(delete("/api/v1/apartments/$apartmentId")).andExpect(status().isNoContent)
-        mockMvc.perform(get("/api/v1/apartments/$apartmentId")).andExpect(status().isNotFound)
+        mockMvc.perform(
+            delete("/api/v1/apartments/$apartmentId")
+                .header(HttpHeaders.AUTHORIZATION, TestAuth.bearer(managerToken)),
+        ).andExpect(status().isNoContent)
+
+        mockMvc.perform(
+            get("/api/v1/apartments/$apartmentId")
+                .header(HttpHeaders.AUTHORIZATION, TestAuth.bearer(managerToken)),
+        ).andExpect(status().isNotFound)
     }
 
     @Test
@@ -53,7 +81,12 @@ class ApartmentControllerIntegrationTest(
         val missingBuildingId = UUID.randomUUID().toString()
         val body = apartmentJson(missingBuildingId, "404", 4, "70.00", 1)
 
-        mockMvc.perform(post("/api/v1/apartments").contentType(MediaType.APPLICATION_JSON).content(body))
+        mockMvc.perform(
+            post("/api/v1/apartments")
+                .header(HttpHeaders.AUTHORIZATION, TestAuth.bearer(managerToken))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body),
+        )
             .andExpect(status().isNotFound)
     }
 
@@ -62,7 +95,12 @@ class ApartmentControllerIntegrationTest(
         val buildingId = createBuilding("Tower D", "Fourth Street")
         val body = apartmentJson(buildingId, "401", 4, "0.00", 1)
 
-        mockMvc.perform(post("/api/v1/apartments").contentType(MediaType.APPLICATION_JSON).content(body))
+        mockMvc.perform(
+            post("/api/v1/apartments")
+                .header(HttpHeaders.AUTHORIZATION, TestAuth.bearer(managerToken))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body),
+        )
             .andExpect(status().isBadRequest)
             .andExpect(jsonPath("$.fieldErrors[0].field").value("areaSquareMeters"))
     }
@@ -70,7 +108,10 @@ class ApartmentControllerIntegrationTest(
     private fun createBuilding(name: String, address: String): String {
         val body = objectMapper.writeValueAsString(CreateBuildingRequest(name, address))
         val created = mockMvc.perform(
-            post("/api/v1/buildings").contentType(MediaType.APPLICATION_JSON).content(body),
+            post("/api/v1/buildings")
+                .header(HttpHeaders.AUTHORIZATION, TestAuth.bearer(managerToken))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body),
         )
             .andExpect(status().isCreated)
             .andReturn()
@@ -81,6 +122,7 @@ class ApartmentControllerIntegrationTest(
     private fun createApartment(buildingId: String, unitNumber: String) =
         mockMvc.perform(
             post("/api/v1/apartments")
+                .header(HttpHeaders.AUTHORIZATION, TestAuth.bearer(managerToken))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(apartmentJson(buildingId, unitNumber, 3, "85.50", 2)),
         )
