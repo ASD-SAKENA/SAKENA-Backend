@@ -1,26 +1,38 @@
 name: CI/CD Backend
 
-# Fast-fail CI → build/push GHCR → SSH deploy (docker-compose v1 on server).
+# Fail fast → build/push GHCR → scan → k8s deploy (namespace `sakena`) → verify.
+#
+# `ci` also runs on pull requests so a broken build/test never reaches `main`
+# in the first place; build/scan/deploy only run on pushes to `main` (or
+# tags), same gating as before.
 
 on:
   push:
     branches: [main]
     tags: ["v*.*.*"]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ghcr.io/asd-sakena/sakena-backend
-  DEPLOY_DIR: SAKENA-Backend
+  NAMESPACE: sakena
+  DEPLOYMENT: sakena-backend
+  CONTAINER: sakena-backend
 
 concurrency:
   group: backend-cicd-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   ci:
     name: Test
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -47,15 +59,23 @@ jobs:
           if-no-files-found: ignore
 
   build-and-push:
-    name: Build & Push
+    name: Build, scan & push
     needs: [ci]
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
       packages: write
+    outputs:
+      image_tag: ${{ steps.vars.outputs.sha_short }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Short sha
+        id: vars
+        run: echo "sha_short=${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -91,50 +111,67 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # Scans the tag we're about to deploy. A CRITICAL finding fails the
+      # job here, before the deploy job (which needs this one) ever runs -
+      # the image stays published under its sha tag for forensics, but
+      # nothing rolls it out.
+      - name: Scan image for critical vulnerabilities
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}:sha-${{ steps.vars.outputs.sha_short }}
+          format: table
+          severity: CRITICAL
+          exit-code: "1"
+          ignore-unfixed: true
+
   deploy:
     name: Deploy
     needs: [build-and-push]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      IMAGE_TAG: sha-${{ needs.build-and-push.outputs.image_tag }}
     steps:
-      - name: Deploy over SSH
-        uses: appleboy/ssh-action@v1.2.0
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          password: ${{ secrets.SSH_PASSWORD }}
-          script_stop: true
-          command_timeout: 10m
-          script: |
-            set -euo pipefail
-            cd ~/${{ env.DEPLOY_DIR }}
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
 
-            if [ -d .git ]; then
-              git fetch origin main || true
-              git pull --ff-only origin main || true
-            fi
+      - name: Write kubeconfig
+        run: |
+          set -euo pipefail
+          install -m 600 /dev/null "$RUNNER_TEMP/kubeconfig"
+          echo "${{ secrets.KUBE_CONFIG_SAKENA }}" | base64 -d > "$RUNNER_TEMP/kubeconfig"
+          echo "KUBECONFIG=$RUNNER_TEMP/kubeconfig" >> "$GITHUB_ENV"
 
-            docker network inspect infra_network >/dev/null 2>&1 || docker network create infra_network
+      - name: Roll out new image
+        run: |
+          set -euo pipefail
+          kubectl -n "$NAMESPACE" set image "deployment/$DEPLOYMENT" \
+            "$CONTAINER=$IMAGE_NAME:$IMAGE_TAG" --record=false
 
-            # docker-compose 1.29 + modern Docker images blows up on recreate
-            # with KeyError: 'ContainerConfig'. Remove containers first so `up`
-            # creates fresh ones (named volumes are kept — no -v).
-            docker-compose -f docker-compose.prod.yml pull
-            docker-compose -f docker-compose.prod.yml stop || true
-            docker-compose -f docker-compose.prod.yml rm -f || true
-            docker-compose -f docker-compose.prod.yml up -d
-
-            echo "Waiting for backend health..."
-            for i in $(seq 1 30); do
-              if wget -qO- http://127.0.0.1:8080/actuator/health 2>/dev/null | grep -q UP; then
-                echo "Backend is healthy"
-                docker-compose -f docker-compose.prod.yml ps
-                exit 0
-              fi
-              sleep 4
-            done
-
-            echo "Backend health check failed"
-            docker-compose -f docker-compose.prod.yml ps || true
-            docker-compose -f docker-compose.prod.yml logs --tail=80 sakena_backend || true
+      - name: Wait for rollout, roll back on failure
+        run: |
+          set -euo pipefail
+          if ! kubectl -n "$NAMESPACE" rollout status "deployment/$DEPLOYMENT" --timeout=180s; then
+            echo "::error::Rollout failed - rolling back deployment/$DEPLOYMENT"
+            kubectl -n "$NAMESPACE" rollout undo "deployment/$DEPLOYMENT"
+            kubectl -n "$NAMESPACE" rollout status "deployment/$DEPLOYMENT" --timeout=120s || true
+            echo "--- describe ---"
+            kubectl -n "$NAMESPACE" describe "deployment/$DEPLOYMENT"
+            echo "--- recent pod logs ---"
+            kubectl -n "$NAMESPACE" logs -l app="$DEPLOYMENT" --tail=100 --since=10m || true
             exit 1
+          fi
+
+      - name: Smoke test
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 15); do
+            if curl -fsS https://api.sakena.aptcodegen.online/actuator/health | grep -q '"status":"UP"'; then
+              echo "Backend is healthy"
+              exit 0
+            fi
+            sleep 4
+          done
+          echo "::error::Smoke test failed - backend did not report healthy after rollout"
+          exit 1
