@@ -116,7 +116,7 @@ jobs:
       # the image stays published under its sha tag for forensics, but
       # nothing rolls it out.
       - name: Scan image for critical vulnerabilities
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.29.0
         with:
           image-ref: ${{ env.IMAGE_NAME }}:sha-${{ steps.vars.outputs.sha_short }}
           format: table
