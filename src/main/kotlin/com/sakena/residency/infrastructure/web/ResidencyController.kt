@@ -51,10 +51,13 @@ class ResidencyController(
         )
     }
 
-    @Operation(summary = "Active residencies of a building — one row per occupied unit")
+    @Operation(
+        summary = "Active residencies — one row per occupied unit",
+        description = "Scoped to one building when buildingId is given, or every building when it's omitted.",
+    )
     @GetMapping
-    fun listByBuilding(@RequestParam buildingId: String): List<ResidencyResponse> =
-        toResponses(residencyService.getActiveByBuilding(BuildingId.from(buildingId)))
+    fun listByBuilding(@RequestParam(required = false) buildingId: String?): List<ResidencyResponse> =
+        toResponses(residencyService.getActiveByBuilding(buildingId?.let(BuildingId::from)))
 
     @Operation(summary = "Occupancy history of a unit, newest first")
     @GetMapping("/apartments/{apartmentId}")

@@ -66,9 +66,14 @@ class ResidencyService(
     fun getHistory(apartmentId: ApartmentId): List<Residency> =
         residencyRepository.findAllByApartment(apartmentId)
 
+    /** Active residencies of one building, or of every building when [buildingId] is null. */
     @Transactional(readOnly = true)
-    fun getActiveByBuilding(buildingId: BuildingId): List<Residency> =
-        residencyRepository.findActiveByBuilding(buildingId)
+    fun getActiveByBuilding(buildingId: BuildingId?): List<Residency> =
+        if (buildingId != null) {
+            residencyRepository.findActiveByBuilding(buildingId)
+        } else {
+            residencyRepository.findAllActive()
+        }
 
     /** The unit the signed-in resident occupies, or null while none is assigned. */
     @Transactional(readOnly = true)
