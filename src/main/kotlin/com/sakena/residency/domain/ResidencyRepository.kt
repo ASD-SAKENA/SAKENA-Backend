@@ -27,6 +27,9 @@ interface ResidencyRepository {
 
     /** Active residencies of every unit in a building — one query for the units table. */
     fun findActiveByBuilding(buildingId: BuildingId): List<Residency>
+
+    /** Active residencies across every building — the unfiltered "all buildings" view. */
+    fun findAllActive(): List<Residency>
 }
 
 class ResidencyNotFoundException(id: ResidencyId) :

@@ -31,6 +31,8 @@ interface ResidencyJpaRepository : JpaRepository<ResidencyEntity, UUID> {
         """
     )
     fun findActiveByBuilding(@Param("buildingId") buildingId: UUID): List<ResidencyEntity>
+
+    fun findByMovedOutAtIsNull(): List<ResidencyEntity>
 }
 
 /**
@@ -61,6 +63,9 @@ class ResidencyRepositoryAdapter(
 
     override fun findActiveByBuilding(buildingId: BuildingId): List<Residency> =
         jpaRepository.findActiveByBuilding(buildingId.value).map(::toDomain)
+
+    override fun findAllActive(): List<Residency> =
+        jpaRepository.findByMovedOutAtIsNull().map(::toDomain)
 
     private fun toEntity(residency: Residency): ResidencyEntity =
         ResidencyEntity(
