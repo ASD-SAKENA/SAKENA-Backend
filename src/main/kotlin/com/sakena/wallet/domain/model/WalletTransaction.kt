@@ -25,8 +25,9 @@ enum class TransactionDirection {
     DEBIT,
 }
 
-/** Why the money moved; drives grouping in the manager's ledger view. */
+/** Why the money moved; drives grouping in wallet ledger views. */
 enum class TransactionCategory {
+    WALLET_FUNDING,
     CHARGE_COLLECTION,
     WAGE_SETTLEMENT,
     OPERATING_EXPENSE,

@@ -13,12 +13,20 @@ import com.sakena.servicerequest.domain.ServiceRequest
 import com.sakena.servicerequest.domain.ServiceRequestRepository
 import com.sakena.servicerequest.domain.ServiceSubCategory
 import com.sakena.shared.domain.DomainConflictException
+import com.sakena.shared.domain.DomainForbiddenException
 import com.sakena.shared.domain.DomainValidationException
 import com.sakena.shared.domain.EntityNotFoundException
+import com.sakena.user.domain.Role
+import com.sakena.user.domain.User
 import com.sakena.user.domain.UserId
+import com.sakena.user.domain.UserRepository
+import com.sakena.wallet.application.command.FundWalletCommand
 import com.sakena.wallet.domain.WalletRepository
 import com.sakena.wallet.domain.WalletTransactionRepository
+import com.sakena.wallet.domain.model.TransactionCategory
+import com.sakena.wallet.domain.model.TransactionDirection
 import com.sakena.wallet.domain.model.Wallet
+import com.sakena.wallet.domain.model.WalletTransaction
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
@@ -35,12 +43,14 @@ class WalletServiceTest {
     private val serviceRequestRepository = mockk<ServiceRequestRepository>(relaxed = true)
     private val apartmentRepository = mockk<ApartmentRepository>(relaxed = true)
     private val serviceChargeRepository = mockk<ServiceChargeRepository>(relaxed = true)
+    private val userRepository = mockk<UserRepository>(relaxed = true)
     private val service = WalletService(
         walletRepository,
         transactionRepository,
         serviceRequestRepository,
         apartmentRepository,
         serviceChargeRepository,
+        userRepository,
     )
 
     private val manager = UserId.generate()
@@ -130,6 +140,86 @@ class WalletServiceTest {
         assertEquals(BigDecimal("-400000"), building.balance)
         assertEquals("Boiler room service", ledger.captured.description)
         assertEquals(building.balance, ledger.captured.balanceAfter)
+    }
+
+    @Test
+    fun `building transactions reject the personal wallet funding category`() {
+        assertFailsWith<DomainValidationException> {
+            service.recordBuildingTransaction(
+                com.sakena.wallet.application.command.RecordBuildingTransactionCommand(
+                    direction = TransactionDirection.CREDIT,
+                    category = TransactionCategory.WALLET_FUNDING,
+                    amount = BigDecimal("400000"),
+                    description = "Invalid building top-up",
+                ),
+            )
+        }
+
+        verify(exactly = 0) { walletRepository.save(any()) }
+        verify(exactly = 0) { transactionRepository.save(any()) }
+    }
+
+    @Test
+    fun `resident funds an existing wallet and records the credit`() {
+        val resident = user(Role.RESIDENT)
+        val wallet = Wallet.createForUser(resident.id).apply { credit(BigDecimal("100000")) }
+        every { userRepository.findById(resident.id) } returns resident
+        every { walletRepository.findByOwner(resident.id) } returns wallet
+        every { walletRepository.save(any()) } answers { firstArg() }
+        val ledger = slot<WalletTransaction>()
+        every { transactionRepository.save(capture(ledger)) } answers { ledger.captured }
+
+        val funded = service.fundMyWallet(FundWalletCommand(BigDecimal("250000")), resident.id)
+
+        assertEquals(BigDecimal("350000"), funded.balance)
+        assertEquals(TransactionDirection.CREDIT, ledger.captured.direction)
+        assertEquals(TransactionCategory.WALLET_FUNDING, ledger.captured.category)
+        assertEquals(BigDecimal("250000"), ledger.captured.amount)
+        assertEquals(BigDecimal("350000"), ledger.captured.balanceAfter)
+    }
+
+    @Test
+    fun `first funding creates the resident wallet`() {
+        val resident = user(Role.RESIDENT)
+        every { userRepository.findById(resident.id) } returns resident
+        every { walletRepository.findByOwner(resident.id) } returns null
+        val savedWallet = slot<Wallet>()
+        every { walletRepository.save(capture(savedWallet)) } answers { savedWallet.captured }
+        every { transactionRepository.save(any()) } answers { firstArg() }
+
+        val funded = service.fundMyWallet(FundWalletCommand(BigDecimal("500000")), resident.id)
+
+        assertEquals(resident.id, savedWallet.captured.ownerUserId)
+        assertEquals(BigDecimal("500000"), funded.balance)
+        verify(exactly = 1) { transactionRepository.save(any()) }
+    }
+
+    @Test
+    fun `non-resident cannot fund a personal wallet`() {
+        val manager = user(Role.MANAGER)
+        every { userRepository.findById(manager.id) } returns manager
+
+        assertFailsWith<DomainForbiddenException> {
+            service.fundMyWallet(FundWalletCommand(BigDecimal("500000")), manager.id)
+        }
+
+        verify(exactly = 0) { walletRepository.save(any()) }
+        verify(exactly = 0) { transactionRepository.save(any()) }
+    }
+
+    @Test
+    fun `non-positive funding is rejected without writes`() {
+        val resident = user(Role.RESIDENT)
+        val wallet = Wallet.createForUser(resident.id)
+        every { userRepository.findById(resident.id) } returns resident
+        every { walletRepository.findByOwner(resident.id) } returns wallet
+
+        assertFailsWith<DomainValidationException> {
+            service.fundMyWallet(FundWalletCommand(BigDecimal.ZERO), resident.id)
+        }
+
+        verify(exactly = 0) { walletRepository.save(any()) }
+        verify(exactly = 0) { transactionRepository.save(any()) }
     }
 
     @Test
@@ -251,4 +341,18 @@ class WalletServiceTest {
         createdAt = java.time.Instant.parse("2026-01-15T10:00:00Z"),
         updatedAt = java.time.Instant.parse("2026-01-15T10:00:00Z"),
     )
+
+    private fun user(role: Role): User {
+        val now = java.time.Instant.parse("2026-01-15T10:00:00Z")
+        return User.reconstitute(
+            id = UserId.generate(),
+            username = "${role.name.lowercase()}-user",
+            email = "${role.name.lowercase()}@example.com",
+            passwordHash = "hash",
+            role = role,
+            createdAt = now,
+            updatedAt = now,
+            active = true,
+        )
+    }
 }
