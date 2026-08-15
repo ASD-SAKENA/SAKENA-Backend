@@ -4,6 +4,7 @@ import com.sakena.servicerequest.domain.ServiceRequestId
 import com.sakena.user.application.ProfileService
 import com.sakena.user.domain.UserId
 import com.sakena.wallet.application.WalletService
+import com.sakena.wallet.infrastructure.web.dto.FundWalletRequest
 import com.sakena.wallet.infrastructure.web.dto.RecordBuildingTransactionRequest
 import com.sakena.wallet.infrastructure.web.dto.WalletResponse
 import com.sakena.wallet.infrastructure.web.dto.WalletTransactionResponse
@@ -22,12 +23,11 @@ import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
 
 /**
- * REST adapter for the Wallet bounded context: the worker's own balance and
- * the manager's wage settlement of a completed service request.
+ * REST adapter for personal wallets, the shared building account and wage settlement.
  */
 @RestController
 @RequestMapping("/api/v1/wallets")
-@Tag(name = "Wallets", description = "Building account, worker wallets and wage settlement")
+@Tag(name = "Wallets", description = "Personal wallets, building account and wage settlement")
 @SecurityRequirement(name = "bearerAuth")
 class WalletController(
     private val walletService: WalletService,
@@ -43,6 +43,14 @@ class WalletController(
     @GetMapping("/me/transactions")
     fun myTransactions(): List<WalletTransactionResponse> =
         walletService.getMyLedger(getCurrentUserId()).map(WalletTransactionResponse::from)
+
+    @Operation(summary = "Fund the current resident's wallet (simulated top-up)")
+    @PostMapping("/me/top-ups")
+    @ResponseStatus(HttpStatus.CREATED)
+    fun fundMyWallet(
+        @Valid @RequestBody request: FundWalletRequest,
+    ): WalletResponse =
+        WalletResponse.from(walletService.fundMyWallet(request.toCommand(), getCurrentUserId()))
 
     @Operation(summary = "Shared building account balance (manager)")
     @GetMapping("/building")

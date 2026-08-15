@@ -1,11 +1,13 @@
 package com.sakena.wallet.infrastructure.web.dto
 
+import com.sakena.wallet.application.command.FundWalletCommand
 import com.sakena.wallet.application.command.RecordBuildingTransactionCommand
 import com.sakena.wallet.domain.model.TransactionCategory
 import com.sakena.wallet.domain.model.TransactionDirection
 import com.sakena.wallet.domain.model.Wallet
 import com.sakena.wallet.domain.model.WalletTransaction
 import jakarta.validation.constraints.DecimalMin
+import jakarta.validation.constraints.Digits
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.NotNull
 import jakarta.validation.constraints.Size
@@ -19,6 +21,19 @@ data class WalletResponse(
     companion object {
         fun from(wallet: Wallet) = WalletResponse(balance = wallet.balance)
     }
+}
+
+data class FundWalletRequest(
+    @field:NotNull(message = "amount must not be null")
+    @field:DecimalMin(value = "0.01", message = "amount must be greater than zero")
+    @field:Digits(
+        integer = 16,
+        fraction = 2,
+        message = "amount must have at most 16 integer digits and 2 decimal places",
+    )
+    val amount: BigDecimal,
+) {
+    fun toCommand() = FundWalletCommand(amount = amount)
 }
 
 data class RecordBuildingTransactionRequest(

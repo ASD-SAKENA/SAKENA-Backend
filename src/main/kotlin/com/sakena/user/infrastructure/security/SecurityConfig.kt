@@ -78,6 +78,9 @@ class SecurityConfig(
                     .requestMatchers(HttpMethod.GET, "/api/v1/payments/*/receipt")
                     .hasAnyRole(resident, manager)
 
+                    // Residents may fund only the personal wallet bound to their identity.
+                    .requestMatchers(HttpMethod.POST, "/api/v1/wallets/me/top-ups").hasRole(resident)
+
                     // ─── Manager-only surface ───
                     .requestMatchers("/api/v1/dashboard/manager").hasRole(manager)
                     .requestMatchers("/api/v1/users/**").hasRole(manager)

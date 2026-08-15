@@ -9,8 +9,13 @@ import com.sakena.servicerequest.domain.ServiceRequest
 import com.sakena.servicerequest.domain.ServiceRequestId
 import com.sakena.servicerequest.domain.ServiceRequestRepository
 import com.sakena.shared.domain.DomainConflictException
+import com.sakena.shared.domain.DomainForbiddenException
+import com.sakena.shared.domain.DomainValidationException
 import com.sakena.shared.domain.EntityNotFoundException
+import com.sakena.user.domain.Role
 import com.sakena.user.domain.UserId
+import com.sakena.user.domain.UserRepository
+import com.sakena.wallet.application.command.FundWalletCommand
 import com.sakena.wallet.application.command.RecordBuildingTransactionCommand
 import com.sakena.wallet.domain.WalletRepository
 import com.sakena.wallet.domain.WalletTransactionRepository
@@ -35,6 +40,7 @@ class WalletService(
     private val serviceRequestRepository: ServiceRequestRepository,
     private val apartmentRepository: ApartmentRepository,
     private val serviceChargeRepository: ServiceChargeRepository,
+    private val userRepository: UserRepository,
 ) {
 
     fun settleServiceRequest(serviceRequestId: ServiceRequestId, settledBy: UserId) {
@@ -114,6 +120,9 @@ class WalletService(
 
     /** Manager-driven credit or debit of the shared building account. */
     fun recordBuildingTransaction(command: RecordBuildingTransactionCommand): Wallet {
+        if (command.category == TransactionCategory.WALLET_FUNDING) {
+            throw DomainValidationException("Wallet funding is only valid for personal wallets")
+        }
         val wallet = requireBuildingWallet()
         when (command.direction) {
             TransactionDirection.CREDIT -> wallet.credit(command.amount)
@@ -126,6 +135,26 @@ class WalletService(
             command.category,
             command.amount,
             command.description,
+        )
+        return saved
+    }
+
+    fun fundMyWallet(command: FundWalletCommand, userId: UserId): Wallet {
+        val user = userRepository.findById(userId)
+            ?: throw EntityNotFoundException("User with id '$userId' was not found")
+        if (user.role != Role.RESIDENT) {
+            throw DomainForbiddenException("Only residents can fund their wallet")
+        }
+
+        val wallet = walletRepository.findByOwner(userId) ?: Wallet.createForUser(userId)
+        wallet.credit(command.amount)
+        val saved = walletRepository.save(wallet)
+        recordTransaction(
+            saved,
+            TransactionDirection.CREDIT,
+            TransactionCategory.WALLET_FUNDING,
+            command.amount,
+            "Wallet funding",
         )
         return saved
     }
