@@ -3,6 +3,7 @@ package com.sakena.residency.application
 import com.sakena.property.domain.ApartmentRepository
 import com.sakena.property.domain.BuildingRepository
 import com.sakena.property.domain.model.ApartmentId
+import com.sakena.property.domain.model.BuildingId
 import com.sakena.residency.application.command.StartResidencyCommand
 import com.sakena.residency.domain.ResidencyRepository
 import com.sakena.residency.domain.model.Residency
@@ -135,5 +136,28 @@ class ResidencyServiceTest {
         every { residencyRepository.findActiveByApartment(apartmentId) } returns null
 
         assertFailsWith<EntityNotFoundException> { service.endCurrent(apartmentId) }
+    }
+
+    @Test
+    fun `getActiveByBuilding with a building id scopes the query to that building`() {
+        val buildingId = BuildingId.new()
+        val residency = Residency.start(apartmentId, user().id, TenancyType.TENANT)
+        every { residencyRepository.findActiveByBuilding(buildingId) } returns listOf(residency)
+
+        val residencies = service.getActiveByBuilding(buildingId)
+
+        assertEquals(listOf(residency), residencies)
+        verify(exactly = 0) { residencyRepository.findAllActive() }
+    }
+
+    @Test
+    fun `getActiveByBuilding with no building id returns residencies across every building`() {
+        val residency = Residency.start(apartmentId, user().id, TenancyType.TENANT)
+        every { residencyRepository.findAllActive() } returns listOf(residency)
+
+        val residencies = service.getActiveByBuilding(null)
+
+        assertEquals(listOf(residency), residencies)
+        verify(exactly = 0) { residencyRepository.findActiveByBuilding(any()) }
     }
 }
