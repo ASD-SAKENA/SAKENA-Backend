@@ -52,10 +52,11 @@ class ResidencyController(
     }
 
     @Operation(
-        summary = "Active residencies — one row per occupied unit",
+        summary = "Active residencies — one row per occupied unit (manager)",
         description = "Scoped to one building when buildingId is given, or every building when it's omitted.",
     )
     @GetMapping
+    @PreAuthorize("hasRole('MANAGER')")
     fun listByBuilding(@RequestParam(required = false) buildingId: String?): List<ResidencyResponse> =
         toResponses(residencyService.getActiveByBuilding(buildingId?.let(BuildingId::from)))
 
