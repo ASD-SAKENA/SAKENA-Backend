@@ -15,7 +15,9 @@ import com.sakena.billing.domain.model.UnitInvoice
 import com.sakena.billing.domain.model.UnitInvoiceId
 import com.sakena.property.domain.ApartmentRepository
 import com.sakena.property.domain.model.ApartmentId
+import com.sakena.property.domain.model.BuildingId
 import com.sakena.shared.domain.DomainConflictException
+import com.sakena.shared.domain.DomainForbiddenException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.math.BigDecimal
@@ -35,8 +37,11 @@ class InvoiceService(
     private val serviceChargeRepository: ServiceChargeRepository,
 ) {
 
-    fun issue(periodId: ChargePeriodId): List<UnitInvoice> {
+    fun issue(periodId: ChargePeriodId, requesterManagedBuildingId: BuildingId?): List<UnitInvoice> {
         val period = requirePeriod(periodId)
+        if (requesterManagedBuildingId != period.buildingId) {
+            throw DomainForbiddenException("You do not manage building '${period.buildingId}'")
+        }
         if (invoiceRepository.existsByPeriod(periodId)) {
             throw DomainConflictException("Charge period '${period.title}' has already been issued")
         }
@@ -72,16 +77,24 @@ class InvoiceService(
     fun registerPayment(
         invoiceId: UnitInvoiceId,
         command: RegisterInvoicePaymentCommand,
+        requesterManagedBuildingId: BuildingId?,
     ): UnitInvoice {
         val invoice = invoiceRepository.findById(invoiceId)
             ?: throw UnitInvoiceNotFoundException(invoiceId)
+        val period = requirePeriod(invoice.periodId)
+        if (requesterManagedBuildingId != period.buildingId) {
+            throw DomainForbiddenException("You do not manage building '${period.buildingId}'")
+        }
         invoice.registerPayment(command.amount)
         return invoiceRepository.save(invoice)
     }
 
     @Transactional(readOnly = true)
-    fun getByPeriod(periodId: ChargePeriodId): List<UnitInvoice> {
-        requirePeriod(periodId)
+    fun getByPeriod(periodId: ChargePeriodId, requesterManagedBuildingId: BuildingId?): List<UnitInvoice> {
+        val period = requirePeriod(periodId)
+        if (requesterManagedBuildingId != period.buildingId) {
+            throw DomainForbiddenException("You do not manage building '${period.buildingId}'")
+        }
         return invoiceRepository.findAllByPeriod(periodId)
     }
 

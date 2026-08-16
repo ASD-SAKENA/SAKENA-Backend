@@ -14,6 +14,7 @@ import com.sakena.billing.domain.model.ChargePeriod
 import com.sakena.billing.domain.model.ChargePeriodId
 import com.sakena.property.domain.model.BuildingId
 import com.sakena.shared.domain.DomainConflictException
+import com.sakena.shared.domain.DomainForbiddenException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 
@@ -29,7 +30,10 @@ class ChargePeriodService(
     private val invoiceRepository: UnitInvoiceRepository,
 ) {
 
-    fun create(command: CreateChargePeriodCommand): ChargePeriod {
+    fun create(command: CreateChargePeriodCommand, requesterManagedBuildingId: BuildingId?): ChargePeriod {
+        if (requesterManagedBuildingId != command.buildingId) {
+            throw DomainForbiddenException("You do not manage building '${command.buildingId}'")
+        }
         val period = ChargePeriod.create(
             buildingId = command.buildingId,
             title = command.title,
@@ -40,20 +44,24 @@ class ChargePeriodService(
         return periodRepository.save(period)
     }
 
-    fun update(id: ChargePeriodId, command: UpdateChargePeriodCommand): ChargePeriod {
-        val period = requirePeriod(id)
+    fun update(
+        id: ChargePeriodId,
+        command: UpdateChargePeriodCommand,
+        requesterManagedBuildingId: BuildingId?,
+    ): ChargePeriod {
+        val period = requireOwnedPeriod(id, requesterManagedBuildingId)
         period.reschedule(command.title, command.startsOn, command.endsOn)
         return periodRepository.save(period)
     }
 
-    fun close(id: ChargePeriodId): ChargePeriod {
-        val period = requirePeriod(id)
+    fun close(id: ChargePeriodId, requesterManagedBuildingId: BuildingId?): ChargePeriod {
+        val period = requireOwnedPeriod(id, requesterManagedBuildingId)
         period.close()
         return periodRepository.save(period)
     }
 
-    fun delete(id: ChargePeriodId) {
-        val period = requirePeriod(id)
+    fun delete(id: ChargePeriodId, requesterManagedBuildingId: BuildingId?) {
+        val period = requireOwnedPeriod(id, requesterManagedBuildingId)
         if (invoiceRepository.existsByPeriod(id)) {
             throw DomainConflictException("Cannot delete a charge period that already has invoices")
         }
@@ -61,8 +69,12 @@ class ChargePeriodService(
         periodRepository.deleteById(period.id)
     }
 
-    fun addItem(periodId: ChargePeriodId, command: AddChargeItemCommand): ChargeItem {
-        val period = requirePeriod(periodId)
+    fun addItem(
+        periodId: ChargePeriodId,
+        command: AddChargeItemCommand,
+        requesterManagedBuildingId: BuildingId?,
+    ): ChargeItem {
+        val period = requireOwnedPeriod(periodId, requesterManagedBuildingId)
         if (!period.editable) {
             throw DomainConflictException("Cannot add cost lines to a period that is already ${period.status}")
         }
@@ -77,8 +89,8 @@ class ChargePeriodService(
         return itemRepository.save(item)
     }
 
-    fun removeItem(periodId: ChargePeriodId, itemId: ChargeItemId) {
-        val period = requirePeriod(periodId)
+    fun removeItem(periodId: ChargePeriodId, itemId: ChargeItemId, requesterManagedBuildingId: BuildingId?) {
+        val period = requireOwnedPeriod(periodId, requesterManagedBuildingId)
         if (!period.editable) {
             throw DomainConflictException("Cannot remove cost lines from a period that is already ${period.status}")
         }
@@ -101,4 +113,12 @@ class ChargePeriodService(
 
     private fun requirePeriod(id: ChargePeriodId): ChargePeriod =
         periodRepository.findById(id) ?: throw ChargePeriodNotFoundException(id)
+
+    private fun requireOwnedPeriod(id: ChargePeriodId, requesterManagedBuildingId: BuildingId?): ChargePeriod {
+        val period = requirePeriod(id)
+        if (requesterManagedBuildingId != period.buildingId) {
+            throw DomainForbiddenException("You do not manage building '${period.buildingId}'")
+        }
+        return period
+    }
 }
