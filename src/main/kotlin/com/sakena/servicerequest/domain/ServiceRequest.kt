@@ -117,6 +117,35 @@ data class ServiceRequest(
         }
     }
 
+    fun updateDetails(
+        title: String,
+        description: String,
+        location: String?,
+        categoryGroup: ServiceCategoryGroup,
+        subCategory: ServiceSubCategory,
+        userId: UserId,
+    ): ServiceRequest {
+        if (status != ServiceRequestStatus.PENDING) {
+            throw DomainValidationException("Service request can only be edited while it is pending")
+        }
+        validate(
+            title = title,
+            description = description,
+            location = location,
+            categoryGroup = categoryGroup,
+            subCategory = subCategory,
+        )
+        return this.copy(
+            title = title.trim(),
+            description = description.trim(),
+            location = location?.trim(),
+            categoryGroup = categoryGroup,
+            subCategory = subCategory,
+            updatedAt = Instant.now(),
+            updatedBy = userId,
+        )
+    }
+
     fun assignTo(workerId: UserId, userId: UserId): ServiceRequest {
         if (status != ServiceRequestStatus.APPROVED && status != ServiceRequestStatus.ASSIGNED) {
             throw DomainValidationException("Service request can only be assigned when it is approved")
