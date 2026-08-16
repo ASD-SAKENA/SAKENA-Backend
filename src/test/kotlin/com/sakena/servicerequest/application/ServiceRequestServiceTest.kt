@@ -69,6 +69,47 @@ class ServiceRequestServiceTest {
     }
 
     @Test
+    fun `owner updates their pending service request`() {
+        val resident = user(Role.RESIDENT)
+        val request = serviceRequest(status = ServiceRequestStatus.PENDING, completionCost = null, createdBy = resident.id)
+        every { serviceRequestRepository.findById(request.id) } returns request
+        every { serviceRequestRepository.save(any()) } answers { firstArg() }
+
+        val result = service.updateRequest(updateCommand(request.id, resident.id))
+
+        assertEquals("Updated title", result.title)
+        assertEquals(resident.id, result.updatedBy)
+        verify(exactly = 1) { serviceRequestRepository.save(result) }
+    }
+
+    @Test
+    fun `non-owner cannot update another resident's service request`() {
+        val owner = user(Role.RESIDENT)
+        val impersonator = user(Role.RESIDENT)
+        val request = serviceRequest(status = ServiceRequestStatus.PENDING, completionCost = null, createdBy = owner.id)
+        every { serviceRequestRepository.findById(request.id) } returns request
+
+        assertFailsWith<DomainForbiddenException> {
+            service.updateRequest(updateCommand(request.id, impersonator.id))
+        }
+
+        verify(exactly = 0) { serviceRequestRepository.save(any()) }
+    }
+
+    @Test
+    fun `updateRequest fails for an unknown service request`() {
+        val resident = user(Role.RESIDENT)
+        val requestId = ServiceRequestId.generate()
+        every { serviceRequestRepository.findById(requestId) } returns null
+
+        assertFailsWith<EntityNotFoundException> {
+            service.updateRequest(updateCommand(requestId, resident.id))
+        }
+
+        verify(exactly = 0) { serviceRequestRepository.save(any()) }
+    }
+
+    @Test
     fun `manager assigns cost responsibility to a completed service request`() {
         val manager = user(Role.MANAGER)
         val request = serviceRequest(status = ServiceRequestStatus.COMPLETED, completionCost = 250.0)
@@ -149,6 +190,19 @@ class ServiceRequestServiceTest {
         managerId = managerId,
     )
 
+    private fun updateCommand(
+        serviceRequestId: ServiceRequestId,
+        userId: UserId,
+    ) = UpdateServiceRequestCommand(
+        serviceRequestId = serviceRequestId,
+        title = "Updated title",
+        description = "Updated description",
+        location = "Basement",
+        categoryGroup = ServiceCategoryGroup.FACILITIES,
+        subCategory = ServiceSubCategory.PLUMBING,
+        userId = userId,
+    )
+
     private fun createCommand() = CreateServiceRequestCommand(
         title = "Repair water pump",
         description = "The main water pump needs repair",
@@ -174,8 +228,8 @@ class ServiceRequestServiceTest {
     private fun serviceRequest(
         status: ServiceRequestStatus,
         completionCost: Double?,
+        createdBy: UserId = UserId.generate(),
     ): ServiceRequest {
-        val createdBy = UserId.generate()
         val now = Instant.parse("2026-01-15T10:00:00Z")
         return ServiceRequest.reconstitute(
             id = ServiceRequestId.generate(),

@@ -8,6 +8,7 @@ import com.sakena.servicerequest.application.CompleteServiceRequestCommand
 import com.sakena.servicerequest.application.CreateServiceRequestCommand
 import com.sakena.servicerequest.application.ServiceRequestService
 import com.sakena.servicerequest.application.StartProgressCommand
+import com.sakena.servicerequest.application.UpdateServiceRequestCommand
 import com.sakena.servicerequest.domain.ServiceCategoryGroup
 import com.sakena.servicerequest.domain.ServiceRequestFilters
 import com.sakena.servicerequest.domain.ServiceRequestId
@@ -158,6 +159,27 @@ class ServiceRequestController(
                 )
             }
         )
+    }
+
+    @PatchMapping("/{id}")
+    @Operation(summary = "Edit the content of a pending service request (resident, owner only)")
+    fun updateRequest(
+        @PathVariable id: String,
+        @RequestBody @Valid request: UpdateServiceRequestRequest,
+    ): ServiceRequestResponse {
+        request.validateOrThrow()
+
+        val command = UpdateServiceRequestCommand(
+            serviceRequestId = ServiceRequestId.fromString(id),
+            title = request.title!!.trim(),
+            description = request.description!!.trim(),
+            location = request.location?.takeIf { it.isNotBlank() }?.trim(),
+            categoryGroup = request.categoryGroup!!,
+            subCategory = request.subCategory!!,
+            userId = getCurrentUserId(),
+        )
+        val updated = serviceRequestService.updateRequest(command)
+        return ServiceRequestResponse.fromDomain(updated)
     }
 
     @PatchMapping("/{id}/approve")

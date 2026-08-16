@@ -53,6 +53,25 @@ class ServiceRequestService(
         return serviceRequestRepository.findById(id)
     }
 
+    fun updateRequest(command: UpdateServiceRequestCommand): ServiceRequest {
+        val request = serviceRequestRepository.findById(command.serviceRequestId)
+            ?: throw EntityNotFoundException("Service request not found")
+
+        if (request.createdBy != command.userId) {
+            throw DomainForbiddenException("Only the resident who created this request can edit it")
+        }
+
+        val updated = request.updateDetails(
+            title = command.title,
+            description = command.description,
+            location = command.location,
+            categoryGroup = command.categoryGroup,
+            subCategory = command.subCategory,
+            userId = command.userId,
+        )
+        return serviceRequestRepository.save(updated)
+    }
+
     fun approveRequest(command: ApproveServiceRequestCommand): ServiceRequest {
         val request = serviceRequestRepository.findById(command.serviceRequestId)
             ?: throw EntityNotFoundException("Service request not found")
