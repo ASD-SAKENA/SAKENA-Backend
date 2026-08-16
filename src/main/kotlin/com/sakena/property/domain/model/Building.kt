@@ -1,10 +1,16 @@
 package com.sakena.property.domain.model
 
 import com.sakena.shared.domain.DomainValidationException
+import com.sakena.user.domain.UserId
 import java.time.Instant
 
 class Building private constructor(
     val id: BuildingId,
+    /**
+     * The manager responsible for this building. Older rows created before
+     * manager scoping was introduced may be unassigned until they are migrated.
+     */
+    val managerId: UserId?,
     name: String,
     address: String,
     val createdAt: Instant,
@@ -33,10 +39,11 @@ class Building private constructor(
         const val MAX_NAME_LENGTH = 150
         const val MAX_ADDRESS_LENGTH = 500
 
-        fun create(name: String, address: String): Building {
+        fun create(name: String, address: String, managerId: UserId? = null): Building {
             val now = Instant.now()
             return Building(
                 id = BuildingId.new(),
+                managerId = managerId,
                 name = validateName(name),
                 address = validateAddress(address),
                 createdAt = now,
@@ -46,11 +53,12 @@ class Building private constructor(
 
         fun reconstitute(
             id: BuildingId,
+            managerId: UserId?,
             name: String,
             address: String,
             createdAt: Instant,
             updatedAt: Instant,
-        ): Building = Building(id, name, address, createdAt, updatedAt)
+        ): Building = Building(id, managerId, name, address, createdAt, updatedAt)
 
         private fun validateName(name: String): String {
             val trimmed = name.trim()
