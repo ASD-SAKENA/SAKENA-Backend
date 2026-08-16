@@ -5,12 +5,15 @@ import com.sakena.facility.domain.model.FacilityId
 import com.sakena.facility.infrastructure.web.dto.CreateFacilityRequest
 import com.sakena.facility.infrastructure.web.dto.FacilityResponse
 import com.sakena.facility.infrastructure.web.dto.UpdateFacilityRequest
+import com.sakena.user.application.ProfileService
+import com.sakena.user.domain.User
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.security.SecurityRequirement
 import io.swagger.v3.oas.annotations.tags.Tag
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
+import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
@@ -34,17 +37,18 @@ import java.net.URI
 @SecurityRequirement(name = "bearerAuth")
 class FacilityController(
     private val facilityService: FacilityService,
+    private val profileService: ProfileService,
 ) {
 
     @Operation(summary = "List all facilities")
     @GetMapping
     fun list(): List<FacilityResponse> =
-        facilityService.getAll().map(FacilityResponse::from)
+        facilityService.getAll(currentUser()).map(FacilityResponse::from)
 
     @Operation(summary = "Get a facility by id")
     @GetMapping("/{id}")
     fun getById(@PathVariable id: String): FacilityResponse =
-        FacilityResponse.from(facilityService.getById(FacilityId.from(id)))
+        FacilityResponse.from(facilityService.getById(FacilityId.from(id), currentUser()))
 
     @Operation(summary = "Create a new facility (manager)")
     @PostMapping
@@ -52,7 +56,7 @@ class FacilityController(
         @Valid @RequestBody request: CreateFacilityRequest,
         uriBuilder: UriComponentsBuilder,
     ): ResponseEntity<FacilityResponse> {
-        val facility = facilityService.create(request.toCommand())
+        val facility = facilityService.create(request.toCommand(), currentUser())
         val location: URI = uriBuilder.path("/api/v1/facilities/{id}").build(facility.id.value)
         return ResponseEntity.created(location).body(FacilityResponse.from(facility))
     }
@@ -63,11 +67,19 @@ class FacilityController(
         @PathVariable id: String,
         @Valid @RequestBody request: UpdateFacilityRequest,
     ): FacilityResponse =
-        FacilityResponse.from(facilityService.update(FacilityId.from(id), request.toCommand()))
+        FacilityResponse.from(
+            facilityService.update(FacilityId.from(id), request.toCommand(), currentUser()),
+        )
 
     @Operation(summary = "Delete a facility (manager)")
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     fun delete(@PathVariable id: String) =
-        facilityService.delete(FacilityId.from(id))
+        facilityService.delete(FacilityId.from(id), currentUser())
+
+    private fun currentUser(): User {
+        val username = SecurityContextHolder.getContext().authentication.name
+        return profileService.getUserByUsername(username)
+            ?: throw IllegalStateException("Authenticated user '$username' no longer exists")
+    }
 }

@@ -3,6 +3,7 @@ package com.sakena.facility.domain
 import com.sakena.facility.domain.model.BookingId
 import com.sakena.facility.domain.model.FacilityBooking
 import com.sakena.facility.domain.model.FacilityId
+import com.sakena.property.domain.model.BuildingId
 import com.sakena.user.domain.UserId
 import java.time.Instant
 
@@ -25,8 +26,12 @@ interface FacilityBookingRepository {
         to: Instant,
     ): Long
 
-    /** A resident's bookings that have not started yet, across all facilities. */
-    fun findUpcomingByResident(residentId: UserId, from: Instant): List<FacilityBooking>
+    /** A resident's upcoming bookings, limited to their current building. */
+    fun findUpcomingByResidentInBuilding(
+        residentId: UserId,
+        buildingId: BuildingId,
+        from: Instant,
+    ): List<FacilityBooking>
 
     fun deleteById(id: BookingId)
 }
