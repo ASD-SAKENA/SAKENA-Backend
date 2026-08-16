@@ -13,9 +13,15 @@ import com.sakena.billing.domain.model.ChargePeriod
 import com.sakena.billing.domain.model.ChargePeriodId
 import com.sakena.billing.domain.model.UnitInvoice
 import com.sakena.billing.domain.model.UnitInvoiceId
+import com.sakena.property.domain.ApartmentNotFoundException
 import com.sakena.property.domain.ApartmentRepository
+import com.sakena.property.domain.BuildingAccess
+import com.sakena.property.domain.model.Apartment
 import com.sakena.property.domain.model.ApartmentId
+import com.sakena.residency.domain.ResidencyRepository
 import com.sakena.shared.domain.DomainConflictException
+import com.sakena.shared.domain.DomainForbiddenException
+import com.sakena.user.domain.UserId
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.math.BigDecimal
@@ -33,10 +39,12 @@ class InvoiceService(
     private val invoiceRepository: UnitInvoiceRepository,
     private val apartmentRepository: ApartmentRepository,
     private val serviceChargeRepository: ServiceChargeRepository,
+    private val buildingAccess: BuildingAccess,
+    private val residencyRepository: ResidencyRepository,
 ) {
 
-    fun issue(periodId: ChargePeriodId): List<UnitInvoice> {
-        val period = requirePeriod(periodId)
+    fun issue(periodId: ChargePeriodId, managerId: UserId): List<UnitInvoice> {
+        val period = requireManagedPeriod(periodId, managerId)
         if (invoiceRepository.existsByPeriod(periodId)) {
             throw DomainConflictException("Charge period '${period.title}' has already been issued")
         }
@@ -72,22 +80,45 @@ class InvoiceService(
     fun registerPayment(
         invoiceId: UnitInvoiceId,
         command: RegisterInvoicePaymentCommand,
+        managerId: UserId,
     ): UnitInvoice {
         val invoice = invoiceRepository.findById(invoiceId)
             ?: throw UnitInvoiceNotFoundException(invoiceId)
+        requireManagedPeriod(invoice.periodId, managerId)
         invoice.registerPayment(command.amount)
         return invoiceRepository.save(invoice)
     }
 
     @Transactional(readOnly = true)
-    fun getByPeriod(periodId: ChargePeriodId): List<UnitInvoice> {
-        requirePeriod(periodId)
+    fun getByPeriod(periodId: ChargePeriodId, managerId: UserId): List<UnitInvoice> {
+        requireManagedPeriod(periodId, managerId)
         return invoiceRepository.findAllByPeriod(periodId)
     }
 
     @Transactional(readOnly = true)
-    fun getByApartment(apartmentId: ApartmentId): List<UnitInvoice> =
-        invoiceRepository.findAllByApartment(apartmentId)
+    fun getByApartment(apartmentId: ApartmentId, managerId: UserId): List<UnitInvoice> {
+        val apartment = requireApartment(apartmentId)
+        buildingAccess.requireManagerAccess(apartment.buildingId, managerId)
+        return invoiceRepository.findAllByApartment(apartmentId)
+    }
+
+    @Transactional(readOnly = true)
+    fun getOwnApartment(apartmentId: ApartmentId, residentId: UserId): List<UnitInvoice> {
+        val residency = residencyRepository.findActiveByResident(residentId)
+        if (residency?.apartmentId != apartmentId) {
+            throw DomainForbiddenException("You may only access invoices for your own apartment")
+        }
+        return invoiceRepository.findAllByApartment(apartmentId)
+    }
+
+    private fun requireManagedPeriod(id: ChargePeriodId, managerId: UserId): ChargePeriod {
+        val period = requirePeriod(id)
+        buildingAccess.requireManagerAccess(period.buildingId, managerId)
+        return period
+    }
+
+    private fun requireApartment(id: ApartmentId): Apartment =
+        apartmentRepository.findById(id) ?: throw ApartmentNotFoundException(id)
 
     private fun requirePeriod(id: ChargePeriodId): ChargePeriod =
         periodRepository.findById(id) ?: throw ChargePeriodNotFoundException(id)
