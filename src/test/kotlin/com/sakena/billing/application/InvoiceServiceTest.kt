@@ -19,6 +19,7 @@ import com.sakena.property.domain.model.Apartment
 import com.sakena.property.domain.model.BuildingId
 import com.sakena.servicerequest.domain.ServiceRequestId
 import com.sakena.shared.domain.DomainConflictException
+import com.sakena.shared.domain.DomainForbiddenException
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
@@ -82,7 +83,7 @@ class InvoiceServiceTest {
         val saved = slot<List<UnitInvoice>>()
         every { invoiceRepository.saveAll(capture(saved)) } answers { saved.captured }
 
-        val invoices = service.issue(period.id)
+        val invoices = service.issue(period.id, requesterManagedBuildingId = buildingId)
 
         assertEquals(2, invoices.size)
         assertEquals(BigDecimal("450000.00"), invoices.first().amount)
@@ -91,12 +92,24 @@ class InvoiceServiceTest {
     }
 
     @Test
+    fun `issue is rejected for a manager who does not administer the period's building`() {
+        val period = period()
+        every { periodRepository.findById(period.id) } returns period
+
+        assertFailsWith<DomainForbiddenException> {
+            service.issue(period.id, requesterManagedBuildingId = BuildingId.new())
+        }
+    }
+
+    @Test
     fun `issuing twice is rejected`() {
         val period = period()
         every { periodRepository.findById(period.id) } returns period
         every { invoiceRepository.existsByPeriod(period.id) } returns true
 
-        assertFailsWith<DomainConflictException> { service.issue(period.id) }
+        assertFailsWith<DomainConflictException> {
+            service.issue(period.id, requesterManagedBuildingId = buildingId)
+        }
     }
 
     @Test
@@ -107,22 +120,42 @@ class InvoiceServiceTest {
         every { serviceChargeRepository.findPendingByBuilding(buildingId) } returns emptyList()
         every { itemRepository.findAllByPeriod(period.id) } returns emptyList()
 
-        assertFailsWith<DomainConflictException> { service.issue(period.id) }
+        assertFailsWith<DomainConflictException> {
+            service.issue(period.id, requesterManagedBuildingId = buildingId)
+        }
     }
 
     @Test
     fun `registerPayment settles the invoice through the aggregate`() {
         val period = period()
         val invoice = UnitInvoice.issue(period.id, apartment("1", "50").id, BigDecimal("500000"))
+        every { periodRepository.findById(period.id) } returns period
         every { invoiceRepository.findById(invoice.id) } returns invoice
         every { invoiceRepository.save(any()) } answers { firstArg() }
 
         val result = service.registerPayment(
             invoice.id,
             RegisterInvoicePaymentCommand(BigDecimal("500000")),
+            requesterManagedBuildingId = buildingId,
         )
 
         assertEquals(BigDecimal("500000"), result.paidAmount)
+    }
+
+    @Test
+    fun `registerPayment is rejected for a manager who does not administer the invoice's building`() {
+        val period = period()
+        val invoice = UnitInvoice.issue(period.id, apartment("1", "50").id, BigDecimal("500000"))
+        every { periodRepository.findById(period.id) } returns period
+        every { invoiceRepository.findById(invoice.id) } returns invoice
+
+        assertFailsWith<DomainForbiddenException> {
+            service.registerPayment(
+                invoice.id,
+                RegisterInvoicePaymentCommand(BigDecimal("500000")),
+                requesterManagedBuildingId = BuildingId.new(),
+            )
+        }
     }
 
     @Test
@@ -150,7 +183,7 @@ class InvoiceServiceTest {
         val saved = slot<List<UnitInvoice>>()
         every { invoiceRepository.saveAll(capture(saved)) } answers { saved.captured }
 
-        val invoices = service.issue(period.id).associateBy { it.apartmentId }
+        val invoices = service.issue(period.id, requesterManagedBuildingId = buildingId).associateBy { it.apartmentId }
 
         assertEquals(BigDecimal("125.00"), invoices.getValue(units.first().id).amount)
         assertEquals(BigDecimal("50.00"), invoices.getValue(units.last().id).amount)
