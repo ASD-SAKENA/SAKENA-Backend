@@ -75,7 +75,7 @@ class ServiceRequestController(
             updatedFrom = updatedFrom,
             updatedTo = updatedTo
         )
-        val requests = serviceRequestService.getRequests(filters)
+        val requests = serviceRequestService.getResidentRequests(filters, userId)
         return requests.map { ServiceRequestResponse.fromDomain(it) }
     }
 
@@ -133,7 +133,7 @@ class ServiceRequestController(
             updatedFrom = updatedFrom,
             updatedTo = updatedTo
         )
-        val requests = serviceRequestService.getRequests(filters)
+        val requests = serviceRequestService.getAssignedRequests(filters, userId)
         return requests.map { ServiceRequestResponse.fromDomain(it) }
     }
 

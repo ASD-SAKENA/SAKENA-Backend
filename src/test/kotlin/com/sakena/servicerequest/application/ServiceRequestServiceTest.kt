@@ -128,6 +128,34 @@ class ServiceRequestServiceTest {
     }
 
     @Test
+    fun `resident list always binds the authenticated resident identity`() {
+        val residentId = UserId.generate()
+        val forgedId = UserId.generate()
+        val supplied = com.sakena.servicerequest.domain.ServiceRequestFilters(createdBy = forgedId)
+        val scoped = supplied.copy(createdBy = residentId)
+        every { serviceRequestRepository.findAllByFilters(scoped) } returns emptyList()
+
+        service.getResidentRequests(supplied, residentId)
+
+        verify(exactly = 1) { serviceRequestRepository.findAllByFilters(scoped) }
+        verify(exactly = 0) { serviceRequestRepository.findAllByFilters(supplied) }
+    }
+
+    @Test
+    fun `assigned list always binds the authenticated staff identity`() {
+        val staffId = UserId.generate()
+        val forgedId = UserId.generate()
+        val supplied = com.sakena.servicerequest.domain.ServiceRequestFilters(assignedTo = forgedId)
+        val scoped = supplied.copy(assignedTo = staffId)
+        every { serviceRequestRepository.findAllByFilters(scoped) } returns emptyList()
+
+        service.getAssignedRequests(supplied, staffId)
+
+        verify(exactly = 1) { serviceRequestRepository.findAllByFilters(scoped) }
+        verify(exactly = 0) { serviceRequestRepository.findAllByFilters(supplied) }
+    }
+
+    @Test
     fun `manager cannot approve a request from another building`() {
         val manager = user(Role.MANAGER)
         val request = serviceRequest(ServiceRequestStatus.PENDING, null)

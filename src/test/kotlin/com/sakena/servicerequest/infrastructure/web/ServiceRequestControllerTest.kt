@@ -351,8 +351,9 @@ class ServiceRequestControllerTest {
 
             every { profileService.getUserByUsername(testUsername) } returns testUser
             every {
-                serviceRequestService.getRequests(
-                    ServiceRequestFilters(createdBy = testUserId)
+                serviceRequestService.getResidentRequests(
+                    ServiceRequestFilters(createdBy = testUserId),
+                    testUserId,
                 )
             } returns requests
 
@@ -373,8 +374,9 @@ class ServiceRequestControllerTest {
 
             every { profileService.getUserByUsername(testUsername) } returns testUser
             every {
-                serviceRequestService.getRequests(
-                    ServiceRequestFilters(createdBy = testUserId)
+                serviceRequestService.getResidentRequests(
+                    ServiceRequestFilters(createdBy = testUserId),
+                    testUserId,
                 )
             } returns emptyList()
 
@@ -397,8 +399,9 @@ class ServiceRequestControllerTest {
 
             every { profileService.getUserByUsername(testUsername) } returns testUser
             every {
-                serviceRequestService.getRequests(
-                    ServiceRequestFilters(createdBy = testUserId, status = ServiceRequestStatus.PENDING)
+                serviceRequestService.getResidentRequests(
+                    ServiceRequestFilters(createdBy = testUserId, status = ServiceRequestStatus.PENDING),
+                    testUserId,
                 )
             } returns requests
 
@@ -428,8 +431,9 @@ class ServiceRequestControllerTest {
 
             every { profileService.getUserByUsername(testUsername) } returns testUser
             every {
-                serviceRequestService.getRequests(
-                    ServiceRequestFilters(createdBy = testUserId, categoryGroup = ServiceCategoryGroup.FACILITIES)
+                serviceRequestService.getResidentRequests(
+                    ServiceRequestFilters(createdBy = testUserId, categoryGroup = ServiceCategoryGroup.FACILITIES),
+                    testUserId,
                 )
             } returns requests
 
@@ -459,13 +463,14 @@ class ServiceRequestControllerTest {
 
             every { profileService.getUserByUsername(testUsername) } returns testUser
             every {
-                serviceRequestService.getRequests(
+                serviceRequestService.getResidentRequests(
                     ServiceRequestFilters(
                         createdBy = testUserId,
                         status = ServiceRequestStatus.PENDING,
                         categoryGroup = ServiceCategoryGroup.FACILITIES,
                         subCategory = ServiceSubCategory.ELEVATOR
-                    )
+                    ),
+                    testUserId,
                 )
             } returns requests
 
@@ -554,8 +559,9 @@ class ServiceRequestControllerTest {
 
             every { profileService.getUserByUsername(testUsername) } returns testUser
             every {
-                serviceRequestService.getRequests(
-                    ServiceRequestFilters(assignedTo = testUserId)
+                serviceRequestService.getAssignedRequests(
+                    ServiceRequestFilters(assignedTo = testUserId),
+                    testUserId,
                 )
             } returns requests
 
@@ -579,8 +585,9 @@ class ServiceRequestControllerTest {
 
             every { profileService.getUserByUsername(testUsername) } returns testUser
             every {
-                serviceRequestService.getRequests(
-                    ServiceRequestFilters(assignedTo = testUserId, status = ServiceRequestStatus.IN_PROGRESS)
+                serviceRequestService.getAssignedRequests(
+                    ServiceRequestFilters(assignedTo = testUserId, status = ServiceRequestStatus.IN_PROGRESS),
+                    testUserId,
                 )
             } returns requests
 
@@ -603,8 +610,9 @@ class ServiceRequestControllerTest {
 
             every { profileService.getUserByUsername(testUsername) } returns testUser
             every {
-                serviceRequestService.getRequests(
-                    ServiceRequestFilters(assignedTo = testUserId)
+                serviceRequestService.getAssignedRequests(
+                    ServiceRequestFilters(assignedTo = testUserId),
+                    testUserId,
                 )
             } returns emptyList()
 

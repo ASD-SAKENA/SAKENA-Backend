@@ -47,13 +47,13 @@ class ServiceRequestService(
         return serviceRequestRepository.save(request)
     }
 
-    /**
-     * Fetch service requests matching the given filters.
-     * Pass an empty [ServiceRequestFilters]() to get all requests.
-     */
-    fun getRequests(filters: ServiceRequestFilters): List<ServiceRequest> {
-        return serviceRequestRepository.findAllByFilters(filters)
-    }
+    @Transactional(readOnly = true)
+    fun getResidentRequests(filters: ServiceRequestFilters, residentId: UserId): List<ServiceRequest> =
+        serviceRequestRepository.findAllByFilters(filters.copy(createdBy = residentId))
+
+    @Transactional(readOnly = true)
+    fun getAssignedRequests(filters: ServiceRequestFilters, staffId: UserId): List<ServiceRequest> =
+        serviceRequestRepository.findAllByFilters(filters.copy(assignedTo = staffId))
 
     @Transactional(readOnly = true)
     fun getManagerRequests(
