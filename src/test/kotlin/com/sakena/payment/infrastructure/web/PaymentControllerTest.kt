@@ -7,6 +7,7 @@ import com.sakena.payment.domain.model.Payment
 import com.sakena.payment.domain.model.PaymentStatus
 import com.sakena.payment.infrastructure.web.dto.RecordPaymentRequest
 import com.sakena.payment.infrastructure.web.dto.RejectPaymentRequest
+import com.sakena.property.domain.model.BuildingId
 import com.sakena.shared.web.GlobalExceptionHandler
 import com.sakena.user.application.ProfileService
 import com.sakena.user.domain.Role
@@ -197,6 +198,7 @@ class PaymentControllerTest {
         receiptObjectKey: String? = null,
     ): Payment =
         Payment.submit(
+            buildingId = BuildingId.new(),
             payerId = payerId,
             title = "Monthly charge",
             amount = BigDecimal("500000"),

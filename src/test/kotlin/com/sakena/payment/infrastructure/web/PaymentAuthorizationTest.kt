@@ -5,6 +5,7 @@ import com.ninjasquad.springmockk.MockkBean
 import com.sakena.payment.application.PaymentService
 import com.sakena.payment.domain.model.Payment
 import com.sakena.payment.infrastructure.web.dto.RecordPaymentRequest
+import com.sakena.property.domain.model.BuildingId
 import com.sakena.user.application.JwtTokenProvider
 import com.sakena.user.application.ProfileService
 import com.sakena.user.domain.Role
@@ -140,6 +141,7 @@ class PaymentAuthorizationTest {
     )
 
     private fun pendingPayment(payerId: UserId): Payment = Payment.submit(
+        buildingId = BuildingId.new(),
         payerId = payerId,
         title = "Monthly charge",
         amount = BigDecimal("500000"),
