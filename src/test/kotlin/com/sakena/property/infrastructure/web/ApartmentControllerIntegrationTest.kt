@@ -105,11 +105,67 @@ class ApartmentControllerIntegrationTest(
             .andExpect(jsonPath("$.fieldErrors[0].field").value("areaSquareMeters"))
     }
 
-    private fun createBuilding(name: String, address: String): String {
+    @Test
+    fun `manager cannot access apartments in another manager's building`() {
+        val ownerBuildingId = createBuilding("Owner Apartments", "Owner Street")
+        val apartmentId = objectMapper.readTree(
+            createApartment(ownerBuildingId, "901").response.contentAsString,
+        ).get("id").asText()
+
+        val otherManagerToken = TestAuth.register(
+            mockMvc,
+            objectMapper,
+            role = "MANAGER",
+            usernamePrefix = "other-apt-mgr",
+        )
+        createBuilding("Other Apartments", "Other Street", otherManagerToken)
+
+        mockMvc.perform(
+            get("/api/v1/apartments?buildingId=$ownerBuildingId")
+                .header(HttpHeaders.AUTHORIZATION, TestAuth.bearer(otherManagerToken)),
+        ).andExpect(status().isForbidden)
+
+        mockMvc.perform(
+            get("/api/v1/apartments/$apartmentId")
+                .header(HttpHeaders.AUTHORIZATION, TestAuth.bearer(otherManagerToken)),
+        ).andExpect(status().isForbidden)
+
+        mockMvc.perform(
+            post("/api/v1/apartments")
+                .header(HttpHeaders.AUTHORIZATION, TestAuth.bearer(otherManagerToken))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(apartmentJson(ownerBuildingId, "902", 9, "90.00", 2)),
+        ).andExpect(status().isForbidden)
+
+        mockMvc.perform(
+            put("/api/v1/apartments/$apartmentId")
+                .header(HttpHeaders.AUTHORIZATION, TestAuth.bearer(otherManagerToken))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(apartmentJson(ownerBuildingId, "999", 9, "99.00", 3)),
+        ).andExpect(status().isForbidden)
+
+        mockMvc.perform(
+            delete("/api/v1/apartments/$apartmentId")
+                .header(HttpHeaders.AUTHORIZATION, TestAuth.bearer(otherManagerToken)),
+        ).andExpect(status().isForbidden)
+
+        mockMvc.perform(
+            get("/api/v1/apartments/$apartmentId")
+                .header(HttpHeaders.AUTHORIZATION, TestAuth.bearer(managerToken)),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.unitNumber").value("901"))
+    }
+
+    private fun createBuilding(
+        name: String,
+        address: String,
+        token: String = managerToken,
+    ): String {
         val body = objectMapper.writeValueAsString(CreateBuildingRequest(name, address))
         val created = mockMvc.perform(
             post("/api/v1/buildings")
-                .header(HttpHeaders.AUTHORIZATION, TestAuth.bearer(managerToken))
+                .header(HttpHeaders.AUTHORIZATION, TestAuth.bearer(token))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body),
         )

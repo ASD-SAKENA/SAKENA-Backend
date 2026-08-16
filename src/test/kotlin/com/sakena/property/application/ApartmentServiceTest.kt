@@ -6,6 +6,9 @@ import com.sakena.property.domain.BuildingNotFoundException
 import com.sakena.property.domain.BuildingRepository
 import com.sakena.property.domain.model.Apartment
 import com.sakena.property.domain.model.BuildingId
+import com.sakena.property.domain.model.Building
+import com.sakena.shared.domain.DomainForbiddenException
+import com.sakena.user.domain.UserId
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
@@ -17,6 +20,7 @@ import kotlin.test.assertFailsWith
 
 class ApartmentServiceTest {
 
+    private val managerId = UserId.generate()
     private val apartmentRepository = mockk<ApartmentRepository>()
     private val buildingRepository = mockk<BuildingRepository>()
     private val service = ApartmentService(apartmentRepository, buildingRepository)
@@ -25,7 +29,15 @@ class ApartmentServiceTest {
     fun `create persists an apartment for an existing building`() {
         val buildingId = BuildingId.new()
         val saved = slot<Apartment>()
-        every { buildingRepository.existsById(buildingId) } returns true
+        every { buildingRepository.findById(buildingId) } returns
+            Building.reconstitute(
+                buildingId,
+                managerId,
+                "Tower",
+                "Address",
+                java.time.Instant.now(),
+                java.time.Instant.now(),
+            )
         every { apartmentRepository.save(capture(saved)) } answers { saved.captured }
 
         val result = service.create(
@@ -36,6 +48,7 @@ class ApartmentServiceTest {
                 areaSquareMeters = BigDecimal("85.50"),
                 bedrooms = 2,
             ),
+            managerId,
         )
 
         assertEquals(buildingId, result.buildingId)
@@ -46,7 +59,7 @@ class ApartmentServiceTest {
     @Test
     fun `create throws when building is missing`() {
         val buildingId = BuildingId.new()
-        every { buildingRepository.existsById(buildingId) } returns false
+        every { buildingRepository.findById(buildingId) } returns null
 
         assertFailsWith<BuildingNotFoundException> {
             service.create(
@@ -57,6 +70,27 @@ class ApartmentServiceTest {
                     areaSquareMeters = BigDecimal("40"),
                     bedrooms = 1,
                 ),
+                managerId,
+            )
+        }
+        verify(exactly = 0) { apartmentRepository.save(any()) }
+    }
+
+    @Test
+    fun `create rejects another manager's building`() {
+        val building = Building.create("Other", "Address", UserId.generate())
+        every { buildingRepository.findById(building.id) } returns building
+
+        assertFailsWith<DomainForbiddenException> {
+            service.create(
+                CreateApartmentCommand(
+                    buildingId = building.id,
+                    unitNumber = "1",
+                    floorNumber = 0,
+                    areaSquareMeters = BigDecimal("40"),
+                    bedrooms = 1,
+                ),
+                managerId,
             )
         }
         verify(exactly = 0) { apartmentRepository.save(any()) }
