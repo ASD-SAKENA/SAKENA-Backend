@@ -124,21 +124,50 @@ class AuthServiceTest {
     // ===== LOGIN TESTS =====
 
     @Test
-    fun `login should return JWT when credentials are valid`() {
+    fun `login should return JWT and the resolved user when credentials are valid`() {
         val command = LoginCommand("john", "correct")
         val user = createUser(passwordHash = "hashed_correct")
         every { userRepository.findByUsername(command.username) } returns user
         every { passwordEncoder.matches(command.password, user.passwordHash) } returns true
         every { jwtTokenProvider.generateToken(user.username, user.role.name) } returns "jwt-token"
 
-        val token = authService.login(command)
-        assertEquals("jwt-token", token)
+        val result = authService.login(command)
+        assertEquals("jwt-token", result.token)
+        assertEquals(user, result.user)
         verify(exactly = 1) { jwtTokenProvider.generateToken(any(), any()) }
     }
 
     @Test
-    fun `login should throw InvalidCredentialsException when user not found`() {
+    fun `login falls back to matching by email when no username matches`() {
+        val user = createUser(username = "john", email = "john@example.com", passwordHash = "hashed_correct")
+        every { userRepository.findByUsername("john@example.com") } returns null
+        every { userRepository.findByEmail("john@example.com") } returns user
+        every { passwordEncoder.matches("correct", user.passwordHash) } returns true
+        every { jwtTokenProvider.generateToken(user.username, user.role.name) } returns "jwt-token"
+
+        val result = authService.login(LoginCommand("john@example.com", "correct"))
+
+        assertEquals("jwt-token", result.token)
+        assertEquals("john", result.user.username)
+    }
+
+    @Test
+    fun `login normalizes case and whitespace before matching by email`() {
+        val user = createUser(username = "john", email = "john@example.com", passwordHash = "hashed_correct")
+        every { userRepository.findByUsername("  John@Example.com  ") } returns null
+        every { userRepository.findByEmail("john@example.com") } returns user
+        every { passwordEncoder.matches("correct", user.passwordHash) } returns true
+        every { jwtTokenProvider.generateToken(user.username, user.role.name) } returns "jwt-token"
+
+        val result = authService.login(LoginCommand("  John@Example.com  ", "correct"))
+
+        assertEquals("john", result.user.username)
+    }
+
+    @Test
+    fun `login should throw InvalidCredentialsException when user not found by username or email`() {
         every { userRepository.findByUsername("unknown") } returns null
+        every { userRepository.findByEmail("unknown") } returns null
         assertThrows<InvalidCredentialsException> {
             authService.login(LoginCommand("unknown", "pass"))
         }

@@ -53,8 +53,16 @@ class AuthService(
     fun findByUsername(username: String): User? =
         userRepository.findByUsername(username)
 
-    fun login(command: LoginCommand): String {
+    /**
+     * The login field is labelled "username" but a user who registered with
+     * their email nearby often types it here out of habit — accept either so
+     * that mistake doesn't lock them out of an otherwise-valid account.
+     * Returns the resolved user alongside the token so the caller reports
+     * their actual username/role, not whatever string they typed to log in.
+     */
+    fun login(command: LoginCommand): LoginResult {
         val user = userRepository.findByUsername(command.username)
+            ?: userRepository.findByEmail(command.username.trim().lowercase())
             ?: throw InvalidCredentialsException()
 
         if (!user.verifyPassword(command.password, passwordEncoder::matches)) {
@@ -65,7 +73,8 @@ class AuthService(
             throw InactiveAccountException()
         }
 
-        return jwtTokenProvider.generateToken(user.username, user.role.name)
+        val token = jwtTokenProvider.generateToken(user.username, user.role.name)
+        return LoginResult(token, user)
     }
 
     fun forgotPassword(command: ForgotPasswordCommand) {
