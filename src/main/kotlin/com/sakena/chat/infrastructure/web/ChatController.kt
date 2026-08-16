@@ -54,7 +54,7 @@ class ChatController(
         @RequestParam(required = false) limit: Int?,
     ): List<ChatMessageResponse> {
         val viewer = currentUser()
-        val messages = chatService.getPage(BuildingId.from(buildingId), before, limit)
+        val messages = chatService.getPage(BuildingId.from(buildingId), before, limit, viewer)
         return assembler.toResponses(messages, viewer.id)
     }
 
@@ -65,7 +65,7 @@ class ChatController(
         @RequestParam since: Instant,
     ): List<ChatMessageResponse> {
         val viewer = currentUser()
-        val messages = chatService.getSince(BuildingId.from(buildingId), since)
+        val messages = chatService.getSince(BuildingId.from(buildingId), since, viewer)
         return assembler.toResponses(messages, viewer.id)
     }
 

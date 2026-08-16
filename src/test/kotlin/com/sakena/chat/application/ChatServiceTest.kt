@@ -7,9 +7,16 @@ import com.sakena.chat.domain.ChatAttachmentStorage
 import com.sakena.chat.domain.ChatMessageRepository
 import com.sakena.chat.domain.model.ChatMessage
 import com.sakena.chat.domain.model.ChatMessageKind
+import com.sakena.property.domain.ApartmentRepository
 import com.sakena.property.domain.BuildingRepository
+import com.sakena.property.domain.model.Apartment
+import com.sakena.property.domain.model.ApartmentId
 import com.sakena.property.domain.model.BuildingId
+import com.sakena.residency.domain.ResidencyRepository
+import com.sakena.residency.domain.model.Residency
+import com.sakena.residency.domain.model.TenancyType
 import com.sakena.shared.domain.DomainConflictException
+import com.sakena.shared.domain.DomainForbiddenException
 import com.sakena.shared.domain.DomainValidationException
 import com.sakena.shared.domain.EntityNotFoundException
 import com.sakena.user.domain.Role
@@ -29,7 +36,15 @@ class ChatServiceTest {
     private val messageRepository = mockk<ChatMessageRepository>()
     private val attachmentStorage = mockk<ChatAttachmentStorage>()
     private val buildingRepository = mockk<BuildingRepository>()
-    private val service = ChatService(messageRepository, attachmentStorage, buildingRepository)
+    private val residencyRepository = mockk<ResidencyRepository>()
+    private val apartmentRepository = mockk<ApartmentRepository>()
+    private val service = ChatService(
+        messageRepository,
+        attachmentStorage,
+        buildingRepository,
+        residencyRepository,
+        apartmentRepository,
+    )
 
     private val buildingId = BuildingId.new()
 
@@ -48,9 +63,27 @@ class ChatServiceTest {
         every { buildingRepository.existsById(buildingId) } returns true
     }
 
+    /** The resident lives in [buildingId] — every membership check should pass. */
+    private fun givenResidentLivesHere(resident: User, inBuildingId: BuildingId = buildingId) {
+        val apartmentId = ApartmentId.new()
+        every { residencyRepository.findActiveByResident(resident.id) } returns Residency.start(
+            apartmentId = apartmentId,
+            residentId = resident.id,
+            tenancy = TenancyType.OWNER_OCCUPIER,
+        )
+        every { apartmentRepository.findById(apartmentId) } returns Apartment.create(
+            buildingId = inBuildingId,
+            unitNumber = "1",
+            floorNumber = 1,
+            areaSquareMeters = java.math.BigDecimal.TEN,
+            bedrooms = 1,
+        )
+    }
+
     @Test
     fun `sendText persists the message for an existing building`() {
         givenBuildingExists()
+        givenResidentLivesHere(author)
         val saved = slot<ChatMessage>()
         every { messageRepository.save(capture(saved)) } answers { saved.captured }
 
@@ -72,6 +105,7 @@ class ChatServiceTest {
     @Test
     fun `sendAttachment stores the object and keeps its storage key`() {
         givenBuildingExists()
+        givenResidentLivesHere(author)
         every {
             attachmentStorage.store(buildingId, "note.webm", "audio/webm;codecs=opus", 2048, any())
         } returns "chat/key.webm"
@@ -99,6 +133,7 @@ class ChatServiceTest {
     @Test
     fun `an unsupported attachment type is rejected before touching storage`() {
         givenBuildingExists()
+        givenResidentLivesHere(author)
 
         assertFailsWith<DomainValidationException> {
             service.sendAttachment(
@@ -121,6 +156,7 @@ class ChatServiceTest {
     @Test
     fun `an oversized attachment is rejected`() {
         givenBuildingExists()
+        givenResidentLivesHere(author)
 
         assertFailsWith<DomainValidationException> {
             service.sendAttachment(
@@ -201,8 +237,62 @@ class ChatServiceTest {
             messageRepository.findPage(buildingId, null, ChatService.MAX_PAGE_SIZE)
         } returns emptyList()
 
-        service.getPage(buildingId, before = null, limit = 5_000)
+        service.getPage(buildingId, before = null, limit = 5_000, viewer = manager)
 
         verify { messageRepository.findPage(buildingId, null, ChatService.MAX_PAGE_SIZE) }
+    }
+
+    @Test
+    fun `a manager can read and post in any building's chat`() {
+        givenBuildingExists()
+        every { messageRepository.findPage(buildingId, null, ChatService.DEFAULT_PAGE_SIZE) } returns emptyList()
+
+        service.getPage(buildingId, before = null, limit = null, viewer = manager)
+
+        verify { messageRepository.findPage(buildingId, null, ChatService.DEFAULT_PAGE_SIZE) }
+    }
+
+    @Test
+    fun `a resident of the building can send a message`() {
+        givenBuildingExists()
+        givenResidentLivesHere(author)
+        val saved = slot<ChatMessage>()
+        every { messageRepository.save(capture(saved)) } answers { saved.captured }
+
+        val message = service.sendText(buildingId, SendTextMessageCommand("Hello"), author)
+
+        assertEquals("Hello", message.body)
+    }
+
+    @Test
+    fun `a resident of a different building cannot read its chat`() {
+        val otherBuildingId = BuildingId.new()
+        givenBuildingExists()
+        givenResidentLivesHere(author, inBuildingId = otherBuildingId)
+
+        assertFailsWith<DomainForbiddenException> {
+            service.getPage(buildingId, before = null, limit = null, viewer = author)
+        }
+    }
+
+    @Test
+    fun `a resident of a different building cannot post to it`() {
+        val otherBuildingId = BuildingId.new()
+        givenBuildingExists()
+        givenResidentLivesHere(author, inBuildingId = otherBuildingId)
+
+        assertFailsWith<DomainForbiddenException> {
+            service.sendText(buildingId, SendTextMessageCommand("Hello"), author)
+        }
+    }
+
+    @Test
+    fun `a resident with no active residency cannot reach any building's chat`() {
+        givenBuildingExists()
+        every { residencyRepository.findActiveByResident(author.id) } returns null
+
+        assertFailsWith<DomainForbiddenException> {
+            service.getPage(buildingId, before = null, limit = null, viewer = author)
+        }
     }
 }
