@@ -2,24 +2,23 @@ package com.sakena.chat.infrastructure.persistence
 
 import org.springframework.data.domain.Pageable
 import org.springframework.data.jpa.repository.JpaRepository
-import org.springframework.data.jpa.repository.Query
-import org.springframework.data.repository.query.Param
 import java.time.Instant
 import java.util.UUID
 
 interface ChatMessageJpaRepository : JpaRepository<ChatMessageEntity, UUID> {
 
-    @Query(
-        """
-        SELECT m FROM ChatMessageEntity m
-        WHERE m.buildingId = :buildingId
-          AND (:before IS NULL OR m.sentAt < :before)
-        ORDER BY m.sentAt DESC
-        """
-    )
-    fun findPage(
-        @Param("buildingId") buildingId: UUID,
-        @Param("before") before: Instant?,
+    /**
+     * The newest page, with no lower bound. Kept as its own query — folding
+     * this into one query with `:before IS NULL OR m.sentAt < :before` makes
+     * Postgres unable to infer a type for a null-valued `:before` parameter
+     * bound only inside an `IS NULL` check ("could not determine data type
+     * of parameter"), which is exactly the case on every first page load.
+     */
+    fun findByBuildingIdOrderBySentAtDesc(buildingId: UUID, pageable: Pageable): List<ChatMessageEntity>
+
+    fun findByBuildingIdAndSentAtLessThanOrderBySentAtDesc(
+        buildingId: UUID,
+        before: Instant,
         pageable: Pageable,
     ): List<ChatMessageEntity>
 

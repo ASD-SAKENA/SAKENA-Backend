@@ -54,6 +54,7 @@ class ChatServiceTest {
         rawPassword = "password123",
         passwordEncoder = { it },
         role = role,
+        managedBuildingId = if (role == Role.MANAGER) BuildingId.new() else null,
     )
 
     private val author = user(Role.RESIDENT)
