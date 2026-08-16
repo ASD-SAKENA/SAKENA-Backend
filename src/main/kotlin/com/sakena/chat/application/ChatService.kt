@@ -10,8 +10,11 @@ import com.sakena.chat.domain.model.ChatAttachment
 import com.sakena.chat.domain.model.ChatMessage
 import com.sakena.chat.domain.model.ChatMessageId
 import com.sakena.chat.domain.model.ChatMessageKind
+import com.sakena.property.domain.ApartmentRepository
 import com.sakena.property.domain.BuildingRepository
 import com.sakena.property.domain.model.BuildingId
+import com.sakena.residency.domain.ResidencyRepository
+import com.sakena.shared.domain.DomainForbiddenException
 import com.sakena.shared.domain.DomainValidationException
 import com.sakena.shared.domain.EntityNotFoundException
 import com.sakena.user.domain.Role
@@ -31,6 +34,8 @@ class ChatService(
     private val messageRepository: ChatMessageRepository,
     private val attachmentStorage: ChatAttachmentStorage,
     private val buildingRepository: BuildingRepository,
+    private val residencyRepository: ResidencyRepository,
+    private val apartmentRepository: ApartmentRepository,
 ) {
 
     companion object {
@@ -44,7 +49,7 @@ class ChatService(
     }
 
     fun sendText(buildingId: BuildingId, command: SendTextMessageCommand, sender: User): ChatMessage {
-        requireBuilding(buildingId)
+        requireMembership(buildingId, sender)
         return messageRepository.save(ChatMessage.text(buildingId, sender.id, command.body))
     }
 
@@ -53,7 +58,7 @@ class ChatService(
         command: SendAttachmentCommand,
         sender: User,
     ): ChatMessage {
-        requireBuilding(buildingId)
+        requireMembership(buildingId, sender)
         validateAttachment(command)
 
         val storageKey = attachmentStorage.store(
@@ -97,15 +102,15 @@ class ChatService(
     }
 
     @Transactional(readOnly = true)
-    fun getPage(buildingId: BuildingId, before: Instant?, limit: Int?): List<ChatMessage> {
-        requireBuilding(buildingId)
+    fun getPage(buildingId: BuildingId, before: Instant?, limit: Int?, viewer: User): List<ChatMessage> {
+        requireMembership(buildingId, viewer)
         val size = (limit ?: DEFAULT_PAGE_SIZE).coerceIn(1, MAX_PAGE_SIZE)
         return messageRepository.findPage(buildingId, before, size)
     }
 
     @Transactional(readOnly = true)
-    fun getSince(buildingId: BuildingId, since: Instant): List<ChatMessage> {
-        requireBuilding(buildingId)
+    fun getSince(buildingId: BuildingId, since: Instant, viewer: User): List<ChatMessage> {
+        requireMembership(buildingId, viewer)
         return messageRepository.findSince(buildingId, since)
     }
 
@@ -131,9 +136,22 @@ class ChatService(
         }
     }
 
-    private fun requireBuilding(buildingId: BuildingId) {
+    /**
+     * Managers and staff work across every building, matching how they're
+     * authorized elsewhere in the app. A resident may only reach the chat of
+     * the building they actually live in.
+     */
+    private fun requireMembership(buildingId: BuildingId, user: User) {
         if (!buildingRepository.existsById(buildingId)) {
             throw EntityNotFoundException("Building with id '$buildingId' was not found")
+        }
+        if (user.role != Role.RESIDENT) return
+
+        val residency = residencyRepository.findActiveByResident(user.id)
+            ?: throw DomainForbiddenException("You are not a resident of any building")
+        val residentBuildingId = apartmentRepository.findById(residency.apartmentId)?.buildingId
+        if (residentBuildingId != buildingId) {
+            throw DomainForbiddenException("You are not a resident of this building")
         }
     }
 
