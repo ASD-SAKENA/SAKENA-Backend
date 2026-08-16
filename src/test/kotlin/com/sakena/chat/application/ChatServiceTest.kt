@@ -4,17 +4,14 @@ import com.sakena.chat.application.command.EditMessageCommand
 import com.sakena.chat.application.command.SendAttachmentCommand
 import com.sakena.chat.application.command.SendTextMessageCommand
 import com.sakena.chat.domain.ChatAttachmentStorage
+import com.sakena.chat.domain.ChatMessageNotFoundException
 import com.sakena.chat.domain.ChatMessageRepository
 import com.sakena.chat.domain.model.ChatMessage
 import com.sakena.chat.domain.model.ChatMessageKind
-import com.sakena.property.domain.ApartmentRepository
+import com.sakena.property.domain.BuildingAccess
 import com.sakena.property.domain.BuildingRepository
-import com.sakena.property.domain.model.Apartment
-import com.sakena.property.domain.model.ApartmentId
+import com.sakena.property.domain.model.Building
 import com.sakena.property.domain.model.BuildingId
-import com.sakena.residency.domain.ResidencyRepository
-import com.sakena.residency.domain.model.Residency
-import com.sakena.residency.domain.model.TenancyType
 import com.sakena.shared.domain.DomainConflictException
 import com.sakena.shared.domain.DomainForbiddenException
 import com.sakena.shared.domain.DomainValidationException
@@ -36,14 +33,12 @@ class ChatServiceTest {
     private val messageRepository = mockk<ChatMessageRepository>()
     private val attachmentStorage = mockk<ChatAttachmentStorage>()
     private val buildingRepository = mockk<BuildingRepository>()
-    private val residencyRepository = mockk<ResidencyRepository>()
-    private val apartmentRepository = mockk<ApartmentRepository>()
+    private val buildingAccess = mockk<BuildingAccess>()
     private val service = ChatService(
         messageRepository,
         attachmentStorage,
         buildingRepository,
-        residencyRepository,
-        apartmentRepository,
+        buildingAccess,
     )
 
     private val buildingId = BuildingId.new()
@@ -60,24 +55,27 @@ class ChatServiceTest {
     private val manager = user(Role.MANAGER)
 
     private fun givenBuildingExists() {
-        every { buildingRepository.existsById(buildingId) } returns true
+        every { buildingRepository.findById(buildingId) } returns
+            Building.create("Tower", "Main Street", manager.id)
     }
 
-    /** The resident lives in [buildingId] — every membership check should pass. */
+    private fun givenManagerManagesHere() {
+        justRun { buildingAccess.requireManagerAccess(buildingId, manager.id) }
+    }
+
+    private fun givenStaffWorksHere(staff: User) {
+        justRun { buildingAccess.requireStaffAccess(buildingId, staff.id) }
+    }
+
+    /** Configures whether the resident may access [buildingId]. */
     private fun givenResidentLivesHere(resident: User, inBuildingId: BuildingId = buildingId) {
-        val apartmentId = ApartmentId.new()
-        every { residencyRepository.findActiveByResident(resident.id) } returns Residency.start(
-            apartmentId = apartmentId,
-            residentId = resident.id,
-            tenancy = TenancyType.OWNER_OCCUPIER,
-        )
-        every { apartmentRepository.findById(apartmentId) } returns Apartment.create(
-            buildingId = inBuildingId,
-            unitNumber = "1",
-            floorNumber = 1,
-            areaSquareMeters = java.math.BigDecimal.TEN,
-            bedrooms = 1,
-        )
+        if (inBuildingId == buildingId) {
+            justRun { buildingAccess.requireResidentAccess(buildingId, resident.id) }
+        } else {
+            every {
+                buildingAccess.requireResidentAccess(buildingId, resident.id)
+            } throws DomainForbiddenException("You are not a resident of this building")
+        }
     }
 
     @Test
@@ -95,7 +93,7 @@ class ChatServiceTest {
 
     @Test
     fun `sending into an unknown building is rejected`() {
-        every { buildingRepository.existsById(buildingId) } returns false
+        every { buildingRepository.findById(buildingId) } returns null
 
         assertFailsWith<EntityNotFoundException> {
             service.sendText(buildingId, SendTextMessageCommand("Hello"), author)
@@ -178,10 +176,12 @@ class ChatServiceTest {
     @Test
     fun `edit delegates the author check to the aggregate`() {
         val message = ChatMessage.text(buildingId, author.id, "First")
+        givenBuildingExists()
+        givenResidentLivesHere(author)
         every { messageRepository.findById(message.id) } returns message
         every { messageRepository.save(any()) } answers { firstArg() }
 
-        val edited = service.edit(message.id, EditMessageCommand("Second"), author)
+        val edited = service.edit(buildingId, message.id, EditMessageCommand("Second"), author)
 
         assertEquals("Second", edited.body)
         assertTrue(edited.edited)
@@ -191,11 +191,26 @@ class ChatServiceTest {
     fun `a neighbour cannot edit someone else's message`() {
         val message = ChatMessage.text(buildingId, author.id, "First")
         val neighbour = user(Role.RESIDENT)
+        givenBuildingExists()
+        givenResidentLivesHere(neighbour)
         every { messageRepository.findById(message.id) } returns message
 
         assertFailsWith<DomainConflictException> {
-            service.edit(message.id, EditMessageCommand("Hijacked"), neighbour)
+            service.edit(buildingId, message.id, EditMessageCommand("Hijacked"), neighbour)
         }
+    }
+
+    @Test
+    fun `message must belong to the building in the request path`() {
+        val message = ChatMessage.text(BuildingId.new(), author.id, "Elsewhere")
+        givenBuildingExists()
+        givenResidentLivesHere(author)
+        every { messageRepository.findById(message.id) } returns message
+
+        assertFailsWith<ChatMessageNotFoundException> {
+            service.edit(buildingId, message.id, EditMessageCommand("Changed"), author)
+        }
+        verify(exactly = 0) { messageRepository.save(any()) }
     }
 
     @Test
@@ -212,14 +227,30 @@ class ChatServiceTest {
             ),
             caption = null,
         )
+        givenBuildingExists()
+        givenManagerManagesHere()
         every { messageRepository.findById(message.id) } returns message
         every { messageRepository.save(any()) } answers { firstArg() }
         justRun { attachmentStorage.delete("chat/key.png") }
 
-        val deleted = service.delete(message.id, manager)
+        val deleted = service.delete(buildingId, message.id, manager)
 
         assertTrue(deleted.deleted)
         verify(exactly = 1) { attachmentStorage.delete("chat/key.png") }
+    }
+
+    @Test
+    fun `a manager cannot delete a message from another building`() {
+        val message = ChatMessage.text(buildingId, author.id, "Protected")
+        givenBuildingExists()
+        every { messageRepository.findById(message.id) } returns message
+        every {
+            buildingAccess.requireManagerAccess(buildingId, manager.id)
+        } throws DomainForbiddenException("You do not manage this building")
+
+        assertFailsWith<DomainForbiddenException> { service.delete(buildingId, message.id, manager) }
+        verify(exactly = 0) { messageRepository.findById(any()) }
+        verify(exactly = 0) { messageRepository.save(any()) }
     }
 
     @Test
@@ -233,6 +264,7 @@ class ChatServiceTest {
     @Test
     fun `the page size is clamped to the maximum`() {
         givenBuildingExists()
+        givenManagerManagesHere()
         every {
             messageRepository.findPage(buildingId, null, ChatService.MAX_PAGE_SIZE)
         } returns emptyList()
@@ -243,13 +275,53 @@ class ChatServiceTest {
     }
 
     @Test
-    fun `a manager can read and post in any building's chat`() {
+    fun `a manager can read the chat of their managed building`() {
         givenBuildingExists()
+        givenManagerManagesHere()
         every { messageRepository.findPage(buildingId, null, ChatService.DEFAULT_PAGE_SIZE) } returns emptyList()
 
         service.getPage(buildingId, before = null, limit = null, viewer = manager)
 
         verify { messageRepository.findPage(buildingId, null, ChatService.DEFAULT_PAGE_SIZE) }
+    }
+
+    @Test
+    fun `a manager cannot read another building's chat`() {
+        givenBuildingExists()
+        every {
+            buildingAccess.requireManagerAccess(buildingId, manager.id)
+        } throws DomainForbiddenException("You do not manage this building")
+
+        assertFailsWith<DomainForbiddenException> {
+            service.getPage(buildingId, before = null, limit = null, viewer = manager)
+        }
+        verify(exactly = 0) { messageRepository.findPage(any(), any(), any()) }
+    }
+
+    @Test
+    fun `staff can read the chat of their assigned building`() {
+        val staff = user(Role.STAFF)
+        givenBuildingExists()
+        givenStaffWorksHere(staff)
+        every { messageRepository.findPage(buildingId, null, ChatService.DEFAULT_PAGE_SIZE) } returns emptyList()
+
+        service.getPage(buildingId, before = null, limit = null, viewer = staff)
+
+        verify { messageRepository.findPage(buildingId, null, ChatService.DEFAULT_PAGE_SIZE) }
+    }
+
+    @Test
+    fun `staff cannot read another building's chat`() {
+        val staff = user(Role.STAFF)
+        givenBuildingExists()
+        every {
+            buildingAccess.requireStaffAccess(buildingId, staff.id)
+        } throws DomainForbiddenException("You are not assigned to this building")
+
+        assertFailsWith<DomainForbiddenException> {
+            service.getPage(buildingId, before = null, limit = null, viewer = staff)
+        }
+        verify(exactly = 0) { messageRepository.findPage(any(), any(), any()) }
     }
 
     @Test
@@ -289,7 +361,9 @@ class ChatServiceTest {
     @Test
     fun `a resident with no active residency cannot reach any building's chat`() {
         givenBuildingExists()
-        every { residencyRepository.findActiveByResident(author.id) } returns null
+        every {
+            buildingAccess.requireResidentAccess(buildingId, author.id)
+        } throws DomainForbiddenException("You are not a resident of any building")
 
         assertFailsWith<DomainForbiddenException> {
             service.getPage(buildingId, before = null, limit = null, viewer = author)

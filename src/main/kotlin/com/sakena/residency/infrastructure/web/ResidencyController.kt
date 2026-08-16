@@ -53,17 +53,23 @@ class ResidencyController(
 
     @Operation(
         summary = "Active residencies — one row per occupied unit (manager)",
-        description = "Scoped to one building when buildingId is given, or every building when it's omitted.",
+        description = "Scoped to the signed-in manager's building.",
     )
     @GetMapping
     @PreAuthorize("hasRole('MANAGER')")
     fun listByBuilding(@RequestParam(required = false) buildingId: String?): List<ResidencyResponse> =
-        toResponses(residencyService.getActiveByBuilding(buildingId?.let(BuildingId::from)))
+        toResponses(
+            residencyService.getActiveByBuilding(
+                buildingId?.let(BuildingId::from),
+                getCurrentUserId(),
+            ),
+        )
 
     @Operation(summary = "Occupancy history of a unit, newest first")
     @GetMapping("/apartments/{apartmentId}")
+    @PreAuthorize("hasRole('MANAGER')")
     fun history(@PathVariable apartmentId: String): List<ResidencyResponse> =
-        toResponses(residencyService.getHistory(ApartmentId.from(apartmentId)))
+        toResponses(residencyService.getHistory(ApartmentId.from(apartmentId), getCurrentUserId()))
 
     @Operation(summary = "Assign a resident to a unit (manager)")
     @PostMapping("/apartments/{apartmentId}")
@@ -73,13 +79,19 @@ class ResidencyController(
         @PathVariable apartmentId: String,
         @Valid @RequestBody request: StartResidencyRequest,
     ): ResidencyResponse =
-        toResponse(residencyService.start(ApartmentId.from(apartmentId), request.toCommand()))
+        toResponse(
+            residencyService.start(
+                ApartmentId.from(apartmentId),
+                request.toCommand(),
+                getCurrentUserId(),
+            ),
+        )
 
     @Operation(summary = "Move the current resident out, leaving the unit vacant (manager)")
     @DeleteMapping("/apartments/{apartmentId}")
     @PreAuthorize("hasRole('MANAGER')")
     fun endCurrent(@PathVariable apartmentId: String): ResidencyResponse =
-        toResponse(residencyService.endCurrent(ApartmentId.from(apartmentId)))
+        toResponse(residencyService.endCurrent(ApartmentId.from(apartmentId), getCurrentUserId()))
 
     private fun toResponse(residency: Residency): ResidencyResponse =
         toResponses(listOf(residency)).first()
