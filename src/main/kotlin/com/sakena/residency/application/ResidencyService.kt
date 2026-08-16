@@ -92,6 +92,7 @@ class ResidencyService(
         return ResidencyDetails(
             residency = residency,
             unitNumber = apartment?.unitNumber,
+            buildingId = apartment?.buildingId,
             buildingName = building?.name,
             floorNumber = apartment?.floorNumber,
             areaSquareMeters = apartment?.areaSquareMeters,
@@ -104,6 +105,7 @@ class ResidencyService(
 data class ResidencyDetails(
     val residency: Residency,
     val unitNumber: String?,
+    val buildingId: BuildingId?,
     val buildingName: String?,
     val floorNumber: Int?,
     val areaSquareMeters: BigDecimal?,
