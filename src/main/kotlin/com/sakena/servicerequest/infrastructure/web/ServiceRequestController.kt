@@ -106,7 +106,7 @@ class ServiceRequestController(
             updatedFrom = updatedFrom,
             updatedTo = updatedTo
         )
-        val requests = serviceRequestService.getRequests(filters)
+        val requests = serviceRequestService.getManagerRequests(filters, getCurrentUserId())
         return requests.map { ServiceRequestResponse.fromDomain(it) }
     }
 
