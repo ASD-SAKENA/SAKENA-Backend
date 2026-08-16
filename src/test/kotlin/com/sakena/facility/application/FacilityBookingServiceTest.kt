@@ -8,6 +8,7 @@ import com.sakena.facility.domain.model.BookingRules
 import com.sakena.facility.domain.model.Facility
 import com.sakena.facility.domain.model.FacilityBooking
 import com.sakena.shared.domain.DomainConflictException
+import com.sakena.property.domain.model.BuildingId
 import com.sakena.user.domain.Role
 import com.sakena.user.domain.User
 import com.sakena.user.domain.UserId
@@ -200,6 +201,7 @@ class FacilityBookingServiceTest {
         role = role,
         createdAt = Instant.now(),
         updatedAt = Instant.now(),
+        managedBuildingId = if (role == Role.MANAGER) BuildingId.new() else null,
     )
 
     private companion object {

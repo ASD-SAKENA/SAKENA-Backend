@@ -1,5 +1,6 @@
 package com.sakena.user.infrastructure.security
 
+import com.sakena.property.domain.model.BuildingId
 import com.sakena.user.application.JwtTokenProvider
 import com.sakena.user.domain.Role
 import com.sakena.user.domain.User
@@ -49,7 +50,8 @@ class JwtAuthenticationFilterTest {
             role = role,
             createdAt = Instant.now(),
             updatedAt = Instant.now(),
-            active = active
+            active = active,
+            managedBuildingId = if (role == Role.MANAGER) BuildingId.new() else null,
         )
     }
 

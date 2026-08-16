@@ -11,6 +11,7 @@ import com.sakena.shared.domain.DomainConflictException
 import com.sakena.shared.domain.DomainForbiddenException
 import com.sakena.shared.domain.DomainValidationException
 import com.sakena.shared.domain.EntityNotFoundException
+import com.sakena.property.domain.model.BuildingId
 import com.sakena.user.domain.Role
 import com.sakena.user.domain.User
 import com.sakena.user.domain.UserId
@@ -290,6 +291,7 @@ class PaymentServiceTest {
             createdAt = now,
             updatedAt = now,
             active = true,
+            managedBuildingId = if (role == Role.MANAGER) BuildingId.new() else null,
         )
     }
 }

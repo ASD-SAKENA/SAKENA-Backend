@@ -59,18 +59,22 @@ class AuthControllerIntegrationTest(
 
     @Test
     fun `login with the registered email succeeds and reports the real username and role`() {
-        val suffix = UUID.randomUUID().toString()
-        val password = "valid-password"
-        val user = User.register(
-            username = "manager-$suffix",
-            email = "manager-$suffix@example.com",
-            rawPassword = password,
-            passwordEncoder = passwordEncoder::encode,
-            role = com.sakena.user.domain.Role.MANAGER,
-        )
-        userRepository.save(user)
+        val suffix = UUID.randomUUID().toString().take(8)
+        val username = "manager-$suffix"
+        val email = "$username@example.com"
+        val password = "password123"
 
-        val request = LoginRequest(username = user.email, password = password)
+        mockMvc.perform(
+            post(REGISTER_PATH)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        RegisterRequest(username = username, email = email, password = password, role = "MANAGER"),
+                    ),
+                ),
+        ).andExpect(status().isCreated)
+
+        val request = LoginRequest(username = email, password = password)
 
         mockMvc.perform(
             post(LOGIN_PATH)
@@ -78,7 +82,7 @@ class AuthControllerIntegrationTest(
                 .content(objectMapper.writeValueAsString(request)),
         )
             .andExpect(status().isOk)
-            .andExpect(jsonPath("$.username").value(user.username))
+            .andExpect(jsonPath("$.username").value(username))
             .andExpect(jsonPath("$.role").value("MANAGER"))
             .andExpect(jsonPath("$.token").isNotEmpty)
     }
