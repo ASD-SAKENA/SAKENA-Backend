@@ -1,6 +1,10 @@
 package com.sakena.servicerequest.application
 
+import com.sakena.property.domain.ApartmentRepository
+import com.sakena.property.domain.BuildingAccess
+import com.sakena.property.domain.model.Apartment
 import com.sakena.property.domain.model.ApartmentId
+import com.sakena.property.domain.model.BuildingId
 import com.sakena.residency.domain.ResidencyRepository
 import com.sakena.residency.domain.model.Residency
 import com.sakena.residency.domain.model.TenancyType
@@ -22,19 +26,25 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import org.junit.jupiter.api.Test
+import java.math.BigDecimal
 import java.time.Instant
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 
 class ServiceRequestServiceTest {
 
+    private val buildingId = BuildingId.new()
     private val serviceRequestRepository = mockk<ServiceRequestRepository>()
     private val userRepository = mockk<UserRepository>()
     private val residencyRepository = mockk<ResidencyRepository>()
+    private val apartmentRepository = mockk<ApartmentRepository>()
+    private val buildingAccess = mockk<BuildingAccess>(relaxed = true)
     private val service = ServiceRequestService(
         serviceRequestRepository,
         userRepository,
         residencyRepository,
+        apartmentRepository,
+        buildingAccess,
     )
 
     @Test
@@ -57,15 +67,16 @@ class ServiceRequestServiceTest {
     }
 
     @Test
-    fun `create remains valid when the user has no active apartment`() {
+    fun `create rejects a user without an active building residency`() {
         val resident = user(Role.RESIDENT)
         every { userRepository.findById(resident.id) } returns resident
         every { residencyRepository.findActiveByResident(resident.id) } returns null
-        every { serviceRequestRepository.save(any()) } answers { firstArg() }
 
-        val result = service.create(createCommand(), resident.id)
+        assertFailsWith<DomainForbiddenException> {
+            service.create(createCommand(), resident.id)
+        }
 
-        assertEquals(null, result.requestingApartmentId)
+        verify(exactly = 0) { serviceRequestRepository.save(any()) }
     }
 
     @Test
@@ -97,6 +108,70 @@ class ServiceRequestServiceTest {
     }
 
     @Test
+    fun `manager list delegates filtering with only managed building apartments`() {
+        val manager = user(Role.MANAGER)
+        val unit = apartment(ApartmentId.new())
+        val filters = com.sakena.servicerequest.domain.ServiceRequestFilters(
+            status = ServiceRequestStatus.PENDING,
+        )
+        val request = serviceRequest(ServiceRequestStatus.PENDING, null)
+        every { buildingAccess.managedBuildingId(manager.id) } returns buildingId
+        every { apartmentRepository.findAllByBuildingId(buildingId) } returns listOf(unit)
+        every {
+            serviceRequestRepository.findAllByApartmentIdsAndFilters(setOf(unit.id), filters)
+        } returns listOf(request)
+
+        val result = service.getManagerRequests(filters, manager.id)
+
+        assertEquals(listOf(request), result)
+        verify(exactly = 0) { serviceRequestRepository.findAllByFilters(any()) }
+    }
+
+    @Test
+    fun `manager cannot approve a request from another building`() {
+        val manager = user(Role.MANAGER)
+        val request = serviceRequest(ServiceRequestStatus.PENDING, null)
+        val unit = apartment(request.requestingApartmentId!!)
+        every { serviceRequestRepository.findById(request.id) } returns request
+        every { apartmentRepository.findById(unit.id) } returns unit
+        every {
+            buildingAccess.requireManagerAccess(buildingId, manager.id)
+        } throws DomainForbiddenException("You do not manage this building")
+
+        assertFailsWith<DomainForbiddenException> {
+            service.approveRequest(ApproveServiceRequestCommand(request.id, manager.id))
+        }
+
+        verify(exactly = 0) { serviceRequestRepository.save(any()) }
+    }
+
+    @Test
+    fun `manager cannot assign staff from another building`() {
+        val manager = user(Role.MANAGER)
+        val staff = user(Role.STAFF)
+        val request = serviceRequest(ServiceRequestStatus.APPROVED, null)
+        val unit = apartment(request.requestingApartmentId!!)
+        every { serviceRequestRepository.findById(request.id) } returns request
+        every { apartmentRepository.findById(unit.id) } returns unit
+        every { userRepository.findById(staff.id) } returns staff
+        every {
+            buildingAccess.requireStaffAccess(buildingId, staff.id)
+        } throws DomainForbiddenException("You do not manage this staff member")
+
+        assertFailsWith<DomainForbiddenException> {
+            service.assignRequest(
+                AssignServiceRequestCommand(
+                    serviceRequestId = request.id.value.toString(),
+                    workerId = staff.id,
+                    userId = manager.id,
+                ),
+            )
+        }
+
+        verify(exactly = 0) { serviceRequestRepository.save(any()) }
+    }
+
+    @Test
     fun `updateRequest fails for an unknown service request`() {
         val resident = user(Role.RESIDENT)
         val requestId = ServiceRequestId.generate()
@@ -116,6 +191,8 @@ class ServiceRequestServiceTest {
         val command = command(request.id, manager.id)
         every { userRepository.findById(manager.id) } returns manager
         every { serviceRequestRepository.findById(request.id) } returns request
+        every { apartmentRepository.findById(request.requestingApartmentId!!) } returns
+            apartment(request.requestingApartmentId!!)
         every { serviceRequestRepository.save(any()) } answers { firstArg() }
 
         val result = service.assignCostResponsibility(command)
@@ -173,6 +250,8 @@ class ServiceRequestServiceTest {
         val request = serviceRequest(status = ServiceRequestStatus.IN_PROGRESS, completionCost = 250.0)
         every { userRepository.findById(manager.id) } returns manager
         every { serviceRequestRepository.findById(request.id) } returns request
+        every { apartmentRepository.findById(request.requestingApartmentId!!) } returns
+            apartment(request.requestingApartmentId!!)
 
         assertFailsWith<DomainValidationException> {
             service.assignCostResponsibility(command(request.id, manager.id))
@@ -249,4 +328,15 @@ class ServiceRequestServiceTest {
             requestingApartmentId = ApartmentId.new(),
         )
     }
+
+    private fun apartment(id: ApartmentId): Apartment = Apartment.reconstitute(
+        id = id,
+        buildingId = buildingId,
+        unitNumber = "101",
+        floorNumber = 1,
+        areaSquareMeters = BigDecimal("80.00"),
+        bedrooms = 2,
+        createdAt = Instant.parse("2026-01-15T10:00:00Z"),
+        updatedAt = Instant.parse("2026-01-15T10:00:00Z"),
+    )
 }

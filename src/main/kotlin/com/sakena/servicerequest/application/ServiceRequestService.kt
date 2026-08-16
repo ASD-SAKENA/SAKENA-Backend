@@ -1,5 +1,8 @@
 package com.sakena.servicerequest.application
 
+import com.sakena.property.domain.ApartmentRepository
+import com.sakena.property.domain.BuildingAccess
+import com.sakena.property.domain.model.BuildingId
 import com.sakena.residency.domain.ResidencyRepository
 import com.sakena.servicerequest.domain.ServiceCategoryGroup
 import com.sakena.servicerequest.domain.ServiceRequest
@@ -22,12 +25,15 @@ class ServiceRequestService(
     private val serviceRequestRepository: ServiceRequestRepository,
     private val userRepository: UserRepository,
     private val residencyRepository: ResidencyRepository,
+    private val apartmentRepository: ApartmentRepository,
+    private val buildingAccess: BuildingAccess,
 ) {
 
     fun create(command: CreateServiceRequestCommand, currentUserId: UserId): ServiceRequest {
         userRepository.findById(currentUserId)
             ?: throw IllegalArgumentException("User not found with id: $currentUserId")
         val requestingApartmentId = residencyRepository.findActiveByResident(currentUserId)?.apartmentId
+            ?: throw DomainForbiddenException("You must belong to a building to create a service request")
 
         val request = ServiceRequest.create(
             title = command.title,
@@ -49,8 +55,14 @@ class ServiceRequestService(
         return serviceRequestRepository.findAllByFilters(filters)
     }
 
-    fun getRequestById(id: ServiceRequestId): ServiceRequest? {
-        return serviceRequestRepository.findById(id)
+    @Transactional(readOnly = true)
+    fun getManagerRequests(
+        filters: ServiceRequestFilters,
+        managerId: UserId,
+    ): List<ServiceRequest> {
+        val buildingId = buildingAccess.managedBuildingId(managerId)
+        val apartmentIds = apartmentRepository.findAllByBuildingId(buildingId).map { it.id }.toSet()
+        return serviceRequestRepository.findAllByApartmentIdsAndFilters(apartmentIds, filters)
     }
 
     fun updateRequest(command: UpdateServiceRequestCommand): ServiceRequest {
@@ -76,6 +88,8 @@ class ServiceRequestService(
         val request = serviceRequestRepository.findById(command.serviceRequestId)
             ?: throw EntityNotFoundException("Service request not found")
 
+        requireManagerAccess(request, command.userId)
+
         val approved = request.approve(command.userId)
         return serviceRequestRepository.save(approved)
     }
@@ -83,6 +97,8 @@ class ServiceRequestService(
     fun rejectRequest(command: RejectServiceRequestCommand): ServiceRequest {
         val request = serviceRequestRepository.findById(command.serviceRequestId)
             ?: throw EntityNotFoundException("Service request not found")
+
+        requireManagerAccess(request, command.userId)
 
         val rejected = request.reject(command.userId)
         return serviceRequestRepository.save(rejected)
@@ -92,8 +108,15 @@ class ServiceRequestService(
         val request = serviceRequestRepository.findById(ServiceRequestId.fromString(command.serviceRequestId))
             ?: throw EntityNotFoundException("Service request not found")
 
+        val buildingId = buildingIdOf(request)
+        buildingAccess.requireManagerAccess(buildingId, command.userId)
+
         val worker = userRepository.findById(command.workerId)
             ?: throw IllegalArgumentException("Worker not found with id: ${command.workerId}")
+        if (worker.role != Role.STAFF) {
+            throw DomainForbiddenException("Service requests can only be assigned to staff")
+        }
+        buildingAccess.requireStaffAccess(buildingId, worker.id)
 
         val assigned = request.assignTo(worker.id, command.userId)
         return serviceRequestRepository.save(assigned)
@@ -137,6 +160,8 @@ class ServiceRequestService(
         val request = serviceRequestRepository.findById(command.serviceRequestId)
             ?: throw EntityNotFoundException("Service request not found")
 
+        requireManagerAccess(request, command.managerId)
+
         val updated = request.assignCostResponsibility(
             responsibility = command.responsibility,
             userId = command.managerId,
@@ -171,5 +196,16 @@ class ServiceRequestService(
         }
 
         return CategoryOptionsResult(categories = categories)
+    }
+
+    private fun requireManagerAccess(request: ServiceRequest, managerId: UserId) {
+        buildingAccess.requireManagerAccess(buildingIdOf(request), managerId)
+    }
+
+    private fun buildingIdOf(request: ServiceRequest): BuildingId {
+        val apartmentId = request.requestingApartmentId
+            ?: throw DomainForbiddenException("This legacy request is not assigned to a building")
+        return apartmentRepository.findById(apartmentId)?.buildingId
+            ?: throw EntityNotFoundException("Requesting apartment with id '$apartmentId' was not found")
     }
 }
