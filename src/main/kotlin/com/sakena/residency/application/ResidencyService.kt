@@ -8,6 +8,7 @@ import com.sakena.residency.application.command.StartResidencyCommand
 import com.sakena.residency.domain.ResidencyRepository
 import com.sakena.residency.domain.model.Residency
 import com.sakena.shared.domain.DomainConflictException
+import com.sakena.shared.domain.DomainForbiddenException
 import com.sakena.shared.domain.EntityNotFoundException
 import com.sakena.user.domain.Role
 import com.sakena.user.domain.UserId
@@ -30,10 +31,14 @@ class ResidencyService(
     private val userRepository: UserRepository,
 ) {
 
-    fun start(apartmentId: ApartmentId, command: StartResidencyCommand): Residency {
-        if (!apartmentRepository.existsById(apartmentId)) {
-            throw EntityNotFoundException("Apartment with id '$apartmentId' was not found")
-        }
+    fun start(
+        apartmentId: ApartmentId,
+        command: StartResidencyCommand,
+        requesterManagedBuildingId: BuildingId?,
+    ): Residency {
+        val apartment = apartmentRepository.findById(apartmentId)
+            ?: throw EntityNotFoundException("Apartment with id '$apartmentId' was not found")
+        requireOwnedBuilding(apartment.buildingId, requesterManagedBuildingId)
         val resident = userRepository.findById(command.residentId)
             ?: throw EntityNotFoundException("User with id '${command.residentId}' was not found")
         if (resident.role == Role.STAFF) {
@@ -52,7 +57,10 @@ class ResidencyService(
     }
 
     /** Moves the current resident out, leaving the unit vacant. */
-    fun endCurrent(apartmentId: ApartmentId): Residency {
+    fun endCurrent(apartmentId: ApartmentId, requesterManagedBuildingId: BuildingId?): Residency {
+        val apartment = apartmentRepository.findById(apartmentId)
+            ?: throw EntityNotFoundException("Apartment with id '$apartmentId' was not found")
+        requireOwnedBuilding(apartment.buildingId, requesterManagedBuildingId)
         val residency = residencyRepository.findActiveByApartment(apartmentId)
             ?: throw EntityNotFoundException("Unit '$apartmentId' has no current resident")
         residency.end()
@@ -67,14 +75,20 @@ class ResidencyService(
     fun getHistory(apartmentId: ApartmentId): List<Residency> =
         residencyRepository.findAllByApartment(apartmentId)
 
-    /** Active residencies of one building, or of every building when [buildingId] is null. */
+    /**
+     * Active residencies of the building the requesting manager administers.
+     * An explicit [buildingId] must match that building; omitting it defaults
+     * to it. A manager never sees another building's residents this way.
+     */
     @Transactional(readOnly = true)
-    fun getActiveByBuilding(buildingId: BuildingId?): List<Residency> =
-        if (buildingId != null) {
-            residencyRepository.findActiveByBuilding(buildingId)
-        } else {
-            residencyRepository.findAllActive()
-        }
+    fun getActiveByBuilding(buildingId: BuildingId?, requesterManagedBuildingId: BuildingId?): List<Residency> {
+        val target = buildingId ?: requesterManagedBuildingId
+        requireOwnedBuilding(
+            target ?: throw DomainForbiddenException("You do not manage a building"),
+            requesterManagedBuildingId,
+        )
+        return residencyRepository.findActiveByBuilding(target)
+    }
 
     /** The unit the signed-in resident occupies, or null while none is assigned. */
     @Transactional(readOnly = true)
@@ -98,6 +112,15 @@ class ResidencyService(
             areaSquareMeters = apartment?.areaSquareMeters,
             bedrooms = apartment?.bedrooms,
         )
+    }
+
+    private fun requireOwnedBuilding(id: BuildingId, requesterManagedBuildingId: BuildingId?) {
+        if (requesterManagedBuildingId != id) {
+            throw DomainForbiddenException("You do not manage building '$id'")
+        }
+        if (!buildingRepository.existsById(id)) {
+            throw EntityNotFoundException("Building with id '$id' was not found")
+        }
     }
 }
 

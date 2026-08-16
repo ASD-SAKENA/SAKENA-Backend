@@ -6,12 +6,15 @@ import com.sakena.membership.domain.InvitationNotifier
 import com.sakena.membership.domain.InvitationRepository
 import com.sakena.membership.domain.model.BuildingInvitation
 import com.sakena.membership.domain.model.InvitationId
+import com.sakena.property.domain.ApartmentRepository
 import com.sakena.property.domain.BuildingRepository
 import com.sakena.property.domain.model.BuildingId
 import com.sakena.residency.application.ResidencyService
 import com.sakena.residency.application.command.StartResidencyCommand
 import com.sakena.residency.domain.model.TenancyType
 import com.sakena.shared.domain.DomainConflictException
+import com.sakena.shared.domain.DomainForbiddenException
+import com.sakena.shared.domain.DomainValidationException
 import com.sakena.shared.domain.EntityNotFoundException
 import com.sakena.user.domain.User
 import com.sakena.user.domain.UserId
@@ -33,6 +36,7 @@ import java.time.Instant
 class InvitationService(
     private val invitationRepository: InvitationRepository,
     private val buildingRepository: BuildingRepository,
+    private val apartmentRepository: ApartmentRepository,
     private val residencyService: ResidencyService,
     private val notifier: InvitationNotifier,
     @Value("\${app.frontend-url:http://localhost:3000}")
@@ -45,9 +49,20 @@ class InvitationService(
         buildingId: BuildingId,
         command: CreateInvitationCommand,
         invitedBy: UserId,
+        requesterManagedBuildingId: BuildingId?,
     ): BuildingInvitation {
         val building = buildingRepository.findById(buildingId)
             ?: throw EntityNotFoundException("Building with id '$buildingId' was not found")
+        if (requesterManagedBuildingId != buildingId) {
+            throw DomainForbiddenException("You do not manage building '$buildingId'")
+        }
+        command.apartmentId?.let { apartmentId ->
+            val apartment = apartmentRepository.findById(apartmentId)
+                ?: throw EntityNotFoundException("Apartment with id '$apartmentId' was not found")
+            if (apartment.buildingId != buildingId) {
+                throw DomainValidationException("Apartment '$apartmentId' does not belong to building '$buildingId'")
+            }
+        }
 
         val invitation = invitationRepository.save(
             BuildingInvitation.create(
@@ -94,27 +109,38 @@ class InvitationService(
         invitation.accept(user.id)
 
         invitation.apartmentId?.let { apartmentId ->
+            // The invitation itself is the authorization for this move-in — it
+            // was only ever created by that building's own manager (see
+            // create() below) — so the requester "is" that building here.
             residencyService.start(
                 apartmentId,
                 StartResidencyCommand(
                     residentId = user.id,
                     tenancy = invitation.tenancy ?: TenancyType.TENANT,
                 ),
+                requesterManagedBuildingId = invitation.buildingId,
             )
         }
         return invitationRepository.save(invitation)
     }
 
-    fun revoke(id: InvitationId): BuildingInvitation {
+    fun revoke(id: InvitationId, requesterManagedBuildingId: BuildingId?): BuildingInvitation {
         val invitation = invitationRepository.findById(id)
             ?: throw InvitationNotFoundException(id)
+        if (requesterManagedBuildingId != invitation.buildingId) {
+            throw DomainForbiddenException("You do not manage building '${invitation.buildingId}'")
+        }
         invitation.revoke()
         return invitationRepository.save(invitation)
     }
 
     @Transactional(readOnly = true)
-    fun getAll(buildingId: BuildingId): List<BuildingInvitation> =
-        invitationRepository.findAllByBuilding(buildingId)
+    fun getAll(buildingId: BuildingId, requesterManagedBuildingId: BuildingId?): List<BuildingInvitation> {
+        if (requesterManagedBuildingId != buildingId) {
+            throw DomainForbiddenException("You do not manage building '$buildingId'")
+        }
+        return invitationRepository.findAllByBuilding(buildingId)
+    }
 
     /** The link handed to the invitee; the token is the only secret in it. */
     fun acceptUrlOf(invitation: BuildingInvitation): String =

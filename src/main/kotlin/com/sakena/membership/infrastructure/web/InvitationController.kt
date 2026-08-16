@@ -70,14 +70,14 @@ class InvitationController(
     fun accept(@RequestParam token: String): InvitationResponse =
         toResponse(invitationService.accept(token, currentUser()))
 
-    @Operation(summary = "Invitations issued for a building, newest first (manager)")
+    @Operation(summary = "Invitations issued for the building the requesting manager administers")
     @GetMapping
     @SecurityRequirement(name = "bearerAuth")
     @PreAuthorize("hasRole('MANAGER')")
     fun list(@RequestParam buildingId: String): List<InvitationResponse> =
-        invitationService.getAll(BuildingId.from(buildingId)).map(::toResponse)
+        invitationService.getAll(BuildingId.from(buildingId), currentUser().managedBuildingId).map(::toResponse)
 
-    @Operation(summary = "Invite someone by email, phone or an open link (manager)")
+    @Operation(summary = "Invite someone into the building the requesting manager administers")
     @PostMapping("/buildings/{buildingId}")
     @ResponseStatus(HttpStatus.CREATED)
     @SecurityRequirement(name = "bearerAuth")
@@ -85,21 +85,24 @@ class InvitationController(
     fun create(
         @PathVariable buildingId: String,
         @Valid @RequestBody request: CreateInvitationRequest,
-    ): InvitationResponse =
-        toResponse(
+    ): InvitationResponse {
+        val manager = currentUser()
+        return toResponse(
             invitationService.create(
                 BuildingId.from(buildingId),
                 request.toCommand(),
-                currentUser().id,
+                manager.id,
+                manager.managedBuildingId,
             ),
         )
+    }
 
-    @Operation(summary = "Revoke a pending invitation (manager)")
+    @Operation(summary = "Revoke a pending invitation issued for the requesting manager's own building")
     @DeleteMapping("/{id}")
     @SecurityRequirement(name = "bearerAuth")
     @PreAuthorize("hasRole('MANAGER')")
     fun revoke(@PathVariable id: String): InvitationResponse =
-        toResponse(invitationService.revoke(InvitationId.from(id)))
+        toResponse(invitationService.revoke(InvitationId.from(id), currentUser().managedBuildingId))
 
     private fun toResponse(invitation: BuildingInvitation): InvitationResponse =
         InvitationResponse.from(invitation, invitationService.acceptUrlOf(invitation))

@@ -9,6 +9,7 @@ import com.sakena.property.domain.BuildingRepository
 import com.sakena.property.domain.model.Apartment
 import com.sakena.property.domain.model.ApartmentId
 import com.sakena.property.domain.model.BuildingId
+import com.sakena.shared.domain.DomainForbiddenException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 
@@ -19,8 +20,8 @@ class ApartmentService(
     private val buildingRepository: BuildingRepository,
 ) {
 
-    fun create(command: CreateApartmentCommand): Apartment {
-        requireBuilding(command.buildingId)
+    fun create(command: CreateApartmentCommand, requesterManagedBuildingId: BuildingId?): Apartment {
+        requireOwnedBuilding(command.buildingId, requesterManagedBuildingId)
         val apartment = Apartment.create(
             buildingId = command.buildingId,
             unitNumber = command.unitNumber,
@@ -31,9 +32,11 @@ class ApartmentService(
         return apartmentRepository.save(apartment)
     }
 
-    fun update(id: ApartmentId, command: UpdateApartmentCommand): Apartment {
-        requireBuilding(command.buildingId)
+    fun update(id: ApartmentId, command: UpdateApartmentCommand, requesterManagedBuildingId: BuildingId?): Apartment {
         val apartment = requireApartment(id)
+        requireOwnedBuilding(apartment.buildingId, requesterManagedBuildingId)
+        // A manager may never move a unit into a building they don't administer either.
+        requireOwnedBuilding(command.buildingId, requesterManagedBuildingId)
         apartment.updateDetails(
             newBuildingId = command.buildingId,
             newUnitNumber = command.unitNumber,
@@ -44,8 +47,9 @@ class ApartmentService(
         return apartmentRepository.save(apartment)
     }
 
-    fun delete(id: ApartmentId) {
-        if (!apartmentRepository.existsById(id)) throw ApartmentNotFoundException(id)
+    fun delete(id: ApartmentId, requesterManagedBuildingId: BuildingId?) {
+        val apartment = requireApartment(id)
+        requireOwnedBuilding(apartment.buildingId, requesterManagedBuildingId)
         apartmentRepository.deleteById(id)
     }
 
@@ -66,5 +70,12 @@ class ApartmentService(
 
     private fun requireBuilding(id: BuildingId) {
         if (!buildingRepository.existsById(id)) throw BuildingNotFoundException(id)
+    }
+
+    private fun requireOwnedBuilding(id: BuildingId, requesterManagedBuildingId: BuildingId?) {
+        if (requesterManagedBuildingId != id) {
+            throw DomainForbiddenException("You do not manage building '$id'")
+        }
+        requireBuilding(id)
     }
 }
