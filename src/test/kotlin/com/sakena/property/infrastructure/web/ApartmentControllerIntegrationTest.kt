@@ -2,7 +2,6 @@ package com.sakena.property.infrastructure.web
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.sakena.IntegrationTest
-import com.sakena.property.infrastructure.web.dto.CreateBuildingRequest
 import com.sakena.support.TestAuth
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -26,15 +25,17 @@ class ApartmentControllerIntegrationTest(
 ) : IntegrationTest() {
 
     private lateinit var managerToken: String
+    private lateinit var buildingId: String
 
     @BeforeEach
     fun registerManager() {
-        managerToken = TestAuth.register(mockMvc, objectMapper, role = "MANAGER", usernamePrefix = "apt-mgr")
+        val manager = TestAuth.registerManagerWithBuilding(mockMvc, objectMapper, usernamePrefix = "apt-mgr")
+        managerToken = manager.token
+        buildingId = manager.buildingId
     }
 
     @Test
     fun `full apartment lifecycle over HTTP`() {
-        val buildingId = createBuilding("Tower C", "Third Street")
         val created = createApartment(buildingId, "301")
         val apartmentId = objectMapper.readTree(created.response.contentAsString).get("id").asText()
 
@@ -92,7 +93,6 @@ class ApartmentControllerIntegrationTest(
 
     @Test
     fun `creating an apartment with invalid area returns 400 with field errors`() {
-        val buildingId = createBuilding("Tower D", "Fourth Street")
         val body = apartmentJson(buildingId, "401", 4, "0.00", 1)
 
         mockMvc.perform(
@@ -103,20 +103,6 @@ class ApartmentControllerIntegrationTest(
         )
             .andExpect(status().isBadRequest)
             .andExpect(jsonPath("$.fieldErrors[0].field").value("areaSquareMeters"))
-    }
-
-    private fun createBuilding(name: String, address: String): String {
-        val body = objectMapper.writeValueAsString(CreateBuildingRequest(name, address))
-        val created = mockMvc.perform(
-            post("/api/v1/buildings")
-                .header(HttpHeaders.AUTHORIZATION, TestAuth.bearer(managerToken))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(body),
-        )
-            .andExpect(status().isCreated)
-            .andReturn()
-
-        return objectMapper.readTree(created.response.contentAsString).get("id").asText()
     }
 
     private fun createApartment(buildingId: String, unitNumber: String) =

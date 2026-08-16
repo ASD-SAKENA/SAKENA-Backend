@@ -1,5 +1,6 @@
 package com.sakena.user.application
 
+import com.sakena.property.application.BuildingService
 import com.sakena.user.domain.PasswordResetToken
 import com.sakena.user.domain.PasswordResetTokenRepository
 import com.sakena.user.domain.Role
@@ -18,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional
 @Transactional
 class AuthService(
     private val userRepository: UserRepository,
+    private val buildingService: BuildingService,
     private val passwordEncoder: PasswordEncoder,
     private val jwtTokenProvider: JwtTokenProvider,
     private val passwordResetTokenRepository: PasswordResetTokenRepository,
@@ -28,6 +30,13 @@ class AuthService(
     private var resetTokenExpMinutes: Long
 ) {
 
+    /**
+     * A manager administers exactly one building, created here and never
+     * chosen by the registering user — letting a signup pick an existing
+     * buildingId would let anyone declare themselves the manager of a
+     * building they have no relationship to. The manager renames/re-addresses
+     * it afterward via `PUT /buildings/{id}`.
+     */
     fun register(command: RegisterCommand): User {
         if (userRepository.existsByUsername(command.username)) {
             throw UserAlreadyExistsException("username", command.username)
@@ -38,12 +47,22 @@ class AuthService(
 
         val role = command.role?.let(Role::from) ?: Role.RESIDENT
 
+        val managedBuildingId = if (role == Role.MANAGER) {
+            buildingService.create(
+                name = "ساختمان ${command.username}",
+                address = "آدرس ثبت نشده",
+            ).id
+        } else {
+            null
+        }
+
         val user = User.register(
             username = command.username,
             email = command.email,
             rawPassword = command.password,
             passwordEncoder = { passwordEncoder.encode(it) },
-            role = role
+            role = role,
+            managedBuildingId = managedBuildingId
         )
 
         return userRepository.save(user)

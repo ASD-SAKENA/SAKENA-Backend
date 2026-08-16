@@ -1,5 +1,7 @@
 package com.sakena.user.application
 
+import com.sakena.property.application.BuildingService
+import com.sakena.property.domain.model.Building
 import com.sakena.user.domain.*
 import com.sakena.user.domain.exceptions.InactiveAccountException
 import com.sakena.user.domain.exceptions.InvalidCredentialsException
@@ -17,6 +19,7 @@ import java.time.Instant
 class AuthServiceTest {
 
     private lateinit var userRepository: UserRepository
+    private lateinit var buildingService: BuildingService
     private lateinit var passwordEncoder: PasswordEncoder
     private lateinit var jwtTokenProvider: JwtTokenProvider
     private lateinit var resetTokenRepository: PasswordResetTokenRepository
@@ -29,12 +32,14 @@ class AuthServiceTest {
     @BeforeEach
     fun setup() {
         userRepository = mockk()
+        buildingService = mockk()
         passwordEncoder = mockk()
         jwtTokenProvider = mockk()
         resetTokenRepository = mockk()
         emailSender = mockk()
         authService = AuthService(
             userRepository,
+            buildingService,
             passwordEncoder,
             jwtTokenProvider,
             resetTokenRepository,
@@ -67,11 +72,13 @@ class AuthServiceTest {
     // ===== REGISTER TESTS =====
 
     @Test
-    fun `register should save and return user when username and email are unique`() {
+    fun `register creates and assigns a building when the role is manager`() {
         val command = RegisterCommand("john", "john@example.com", "password123", "MANAGER")
+        val building = Building.create("ساختمان john", "آدرس ثبت نشده")
 
         every { userRepository.existsByUsername(command.username) } returns false
         every { userRepository.existsByEmail(command.email) } returns false
+        every { buildingService.create(any(), any()) } returns building
         every { passwordEncoder.encode(command.password) } returns "encodedPassword"
 
         val savedUserSlot = slot<User>()
@@ -83,6 +90,7 @@ class AuthServiceTest {
         assertEquals("john@example.com", result.email)
         assertEquals("encodedPassword", result.passwordHash)
         assertEquals(Role.MANAGER, result.role)
+        assertEquals(building.id, result.managedBuildingId)
         assertTrue(result.active)
 
         verify(exactly = 1) { userRepository.save(any()) }
@@ -90,6 +98,22 @@ class AuthServiceTest {
         assertEquals("john", savedUser.username)
         assertEquals("encodedPassword", savedUser.passwordHash)
         assertEquals(Role.MANAGER, savedUser.role)
+        assertEquals(building.id, savedUser.managedBuildingId)
+    }
+
+    @Test
+    fun `register does not create a building for a resident`() {
+        val command = RegisterCommand("jane", "jane@example.com", "password123", "RESIDENT")
+
+        every { userRepository.existsByUsername(command.username) } returns false
+        every { userRepository.existsByEmail(command.email) } returns false
+        every { passwordEncoder.encode(command.password) } returns "encodedPassword"
+        every { userRepository.save(any()) } answers { firstArg() }
+
+        val result = authService.register(command)
+
+        assertEquals(null, result.managedBuildingId)
+        verify(exactly = 0) { buildingService.create(any(), any()) }
     }
 
     @Test

@@ -1,5 +1,6 @@
 package com.sakena.user.application
 
+import com.sakena.property.domain.model.BuildingId
 import com.sakena.shared.domain.EntityNotFoundException
 import com.sakena.user.domain.Role
 import com.sakena.user.domain.User
@@ -40,7 +41,8 @@ class UserAdminServiceTest {
             role = role,
             createdAt = Instant.now(),
             updatedAt = Instant.now(),
-            active = active
+            active = active,
+            managedBuildingId = if (role == Role.MANAGER) BuildingId.new() else null,
         )
     }
 
