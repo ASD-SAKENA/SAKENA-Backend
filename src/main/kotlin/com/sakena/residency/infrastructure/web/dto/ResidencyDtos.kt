@@ -6,6 +6,7 @@ import com.sakena.residency.domain.model.Residency
 import com.sakena.residency.domain.model.TenancyType
 import com.sakena.user.domain.UserId
 import jakarta.validation.constraints.NotNull
+import java.math.BigDecimal
 import java.time.Instant
 import java.util.UUID
 
@@ -33,6 +34,9 @@ data class ResidencyResponse(
     val residentName: String,
     val unitNumber: String?,
     val buildingName: String?,
+    val floorNumber: Int?,
+    val areaSquareMeters: BigDecimal?,
+    val bedrooms: Int?,
     val tenancy: TenancyType,
     val movedInAt: Instant,
     val movedOutAt: Instant?,
@@ -51,6 +55,9 @@ data class ResidencyResponse(
             residentName = residentName,
             unitNumber = details.unitNumber,
             buildingName = details.buildingName,
+            floorNumber = details.floorNumber,
+            areaSquareMeters = details.areaSquareMeters,
+            bedrooms = details.bedrooms,
             tenancy = residency.tenancy,
             movedInAt = residency.movedInAt,
             movedOutAt = residency.movedOutAt,

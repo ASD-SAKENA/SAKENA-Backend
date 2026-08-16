@@ -14,6 +14,7 @@ import com.sakena.user.domain.UserId
 import com.sakena.user.domain.UserRepository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.math.BigDecimal
 
 /**
  * Application service linking residents to the units they occupy. Guards the
@@ -81,7 +82,7 @@ class ResidencyService(
         residencyRepository.findActiveByResident(residentId)?.let(::describe)
 
     /**
-     * Enriches a residency with the unit number and building name, so clients
+     * Enriches a residency with the unit details and building name, so clients
      * can show "unit 12 — Niloufar tower" instead of raw identifiers.
      */
     @Transactional(readOnly = true)
@@ -92,6 +93,9 @@ class ResidencyService(
             residency = residency,
             unitNumber = apartment?.unitNumber,
             buildingName = building?.name,
+            floorNumber = apartment?.floorNumber,
+            areaSquareMeters = apartment?.areaSquareMeters,
+            bedrooms = apartment?.bedrooms,
         )
     }
 }
@@ -101,4 +105,7 @@ data class ResidencyDetails(
     val residency: Residency,
     val unitNumber: String?,
     val buildingName: String?,
+    val floorNumber: Int?,
+    val areaSquareMeters: BigDecimal?,
+    val bedrooms: Int?,
 )
