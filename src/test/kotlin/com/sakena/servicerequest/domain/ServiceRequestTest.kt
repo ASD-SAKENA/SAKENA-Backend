@@ -245,6 +245,78 @@ class ServiceRequestTest {
         assertEquals("Location cannot be blank when provided", exception.message)
     }
 
+    // --- Update Tests ---
+    @Test
+    fun `updateDetails should change content while PENDING and set updatedBy`() {
+        val request = createTestRequest(status = ServiceRequestStatus.PENDING)
+        val editorId = UserId.generate()
+
+        val updated = request.updateDetails(
+            title = "  Updated title  ",
+            description = "  Updated description  ",
+            location = "  New location  ",
+            categoryGroup = ServiceCategoryGroup.GENERAL,
+            subCategory = ServiceSubCategory.GENERAL,
+            userId = editorId,
+        )
+
+        assertEquals("Updated title", updated.title)
+        assertEquals("Updated description", updated.description)
+        assertEquals("New location", updated.location)
+        assertEquals(ServiceCategoryGroup.GENERAL, updated.categoryGroup)
+        assertEquals(ServiceSubCategory.GENERAL, updated.subCategory)
+        assertEquals(editorId, updated.updatedBy)
+        assertEquals(ServiceRequestStatus.PENDING, updated.status)
+        assertTrue(updated.updatedAt > request.updatedAt)
+    }
+
+    @Test
+    fun `updateDetails should fail when status is not PENDING`() {
+        val nonPendingStatuses = ServiceRequestStatus.entries - ServiceRequestStatus.PENDING
+
+        nonPendingStatuses.forEach { status ->
+            val request = createTestRequest(status = status)
+
+            assertThrows<DomainValidationException> {
+                request.updateDetails(
+                    title = "Updated title",
+                    description = "Updated description",
+                    location = null,
+                    categoryGroup = ServiceCategoryGroup.GENERAL,
+                    subCategory = ServiceSubCategory.GENERAL,
+                    userId = UserId.generate(),
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `updateDetails should validate the new content`() {
+        val request = createTestRequest(status = ServiceRequestStatus.PENDING)
+
+        assertThrows<DomainValidationException> {
+            request.updateDetails(
+                title = "   ",
+                description = "Valid description",
+                location = null,
+                categoryGroup = ServiceCategoryGroup.GENERAL,
+                subCategory = ServiceSubCategory.GENERAL,
+                userId = UserId.generate(),
+            )
+        }
+
+        assertThrows<DomainValidationException> {
+            request.updateDetails(
+                title = "Valid title",
+                description = "Valid description",
+                location = null,
+                categoryGroup = ServiceCategoryGroup.FACILITIES,
+                subCategory = ServiceSubCategory.GARDEN,
+                userId = UserId.generate(),
+            )
+        }
+    }
+
     // --- Status Transition Tests ---
     @Test
     fun `approve should change status from PENDING to APPROVED`() {
