@@ -9,7 +9,10 @@ import com.sakena.facility.domain.model.BookingId
 import com.sakena.facility.domain.model.Facility
 import com.sakena.facility.domain.model.FacilityBooking
 import com.sakena.facility.domain.model.FacilityId
+import com.sakena.property.domain.BuildingAccess
+import com.sakena.property.domain.model.BuildingId
 import com.sakena.shared.domain.DomainConflictException
+import com.sakena.shared.domain.DomainForbiddenException
 import com.sakena.user.domain.Role
 import com.sakena.user.domain.User
 import com.sakena.user.domain.UserId
@@ -27,6 +30,7 @@ import java.time.temporal.TemporalAdjusters
 class FacilityBookingService(
     private val facilityRepository: FacilityRepository,
     private val bookingRepository: FacilityBookingRepository,
+    private val buildingAccess: BuildingAccess,
     @Value("\${app.timezone:Asia/Tehran}")
     private val timezone: String,
 ) {
@@ -36,13 +40,16 @@ class FacilityBookingService(
     fun book(
         facilityId: FacilityId,
         command: BookFacilityCommand,
-        bookedBy: UserId,
+        requestedBy: User,
     ): FacilityBooking {
-        val facility = facilityRepository.findById(facilityId)
-            ?: throw FacilityNotFoundException(facilityId)
+        if (requestedBy.role != Role.RESIDENT) {
+            throw DomainForbiddenException("Only residents can book facilities")
+        }
+        val buildingId = buildingAccess.residentBuildingId(requestedBy.id)
+        val facility = requireFacility(facilityId, buildingId)
 
         facility.rules.validateSlot(command.startsAt, command.endsAt, zone, Instant.now())
-        requireWeeklyQuota(facility, command.startsAt, bookedBy)
+        requireWeeklyQuota(facility, command.startsAt, requestedBy.id)
 
         val overlapping =
             bookingRepository.countOverlapping(facilityId, command.startsAt, command.endsAt)
@@ -54,7 +61,7 @@ class FacilityBookingService(
 
         val booking = FacilityBooking.create(
             facilityId = facilityId,
-            bookedBy = bookedBy,
+            bookedBy = requestedBy.id,
             startsAt = command.startsAt,
             endsAt = command.endsAt,
         )
@@ -63,6 +70,7 @@ class FacilityBookingService(
 
     /** The owner cancels their own booking; a manager may cancel any. */
     fun cancel(facilityId: FacilityId, bookingId: BookingId, requestedBy: User) {
+        requireFacility(facilityId, accessibleBuildingId(requestedBy))
         val booking = bookingRepository.findById(bookingId)
             ?: throw BookingNotFoundException(bookingId)
         if (booking.facilityId != facilityId) throw BookingNotFoundException(bookingId)
@@ -79,23 +87,44 @@ class FacilityBookingService(
         facilityId: FacilityId,
         from: Instant,
         to: Instant,
+        requestedBy: User,
     ): List<FacilityBooking> {
-        if (!facilityRepository.existsById(facilityId)) throw FacilityNotFoundException(facilityId)
+        requireFacility(facilityId, accessibleBuildingId(requestedBy))
         return bookingRepository.findAllForFacilityBetween(facilityId, from, to)
     }
 
-    /** A resident's own upcoming bookings across every facility. */
+    /** A resident's own upcoming bookings in their current building. */
     @Transactional(readOnly = true)
-    fun getUpcomingFor(residentId: UserId): List<FacilityBooking> =
-        bookingRepository.findUpcomingByResident(residentId, Instant.now())
+    fun getUpcomingFor(requestedBy: User): List<FacilityBooking> {
+        if (requestedBy.role != Role.RESIDENT) {
+            throw DomainForbiddenException("Only residents can view their bookings")
+        }
+        val buildingId = buildingAccess.residentBuildingId(requestedBy.id)
+        return bookingRepository.findUpcomingByResidentInBuilding(requestedBy.id, buildingId, Instant.now())
+    }
 
     /** What the slot would cost, so the client shows a price before booking. */
     @Transactional(readOnly = true)
-    fun quote(facilityId: FacilityId, startsAt: Instant, endsAt: Instant): BigDecimal {
-        val facility = facilityRepository.findById(facilityId)
-            ?: throw FacilityNotFoundException(facilityId)
+    fun quote(
+        facilityId: FacilityId,
+        startsAt: Instant,
+        endsAt: Instant,
+        requestedBy: User,
+    ): BigDecimal {
+        val facility = requireFacility(facilityId, accessibleBuildingId(requestedBy))
         return facility.rules.priceFor(startsAt, endsAt)
     }
+
+    private fun requireFacility(facilityId: FacilityId, buildingId: BuildingId): Facility =
+        facilityRepository.findByIdAndBuildingId(facilityId, buildingId)
+            ?: throw FacilityNotFoundException(facilityId)
+
+    private fun accessibleBuildingId(requestedBy: User): BuildingId =
+        when (requestedBy.role) {
+            Role.MANAGER -> buildingAccess.managedBuildingId(requestedBy.id)
+            Role.RESIDENT -> buildingAccess.residentBuildingId(requestedBy.id)
+            Role.STAFF -> throw DomainForbiddenException("Staff cannot access facility bookings")
+        }
 
     private fun requireWeeklyQuota(facility: Facility, startsAt: Instant, bookedBy: UserId) {
         val rules = facility.rules

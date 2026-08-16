@@ -1,10 +1,17 @@
 package com.sakena.facility.domain.model
 
+import com.sakena.property.domain.model.BuildingId
 import com.sakena.shared.domain.DomainValidationException
 import java.time.Instant
 
 class Facility private constructor(
     val id: FacilityId,
+    /**
+     * The building that owns this facility. Rows created before building
+     * isolation was introduced may remain unassigned and are intentionally
+     * invisible through building-scoped application use cases.
+     */
+    val buildingId: BuildingId?,
     name: String,
     icon: String?,
     capacity: Int,
@@ -51,6 +58,7 @@ class Facility private constructor(
         const val MAX_CAPACITY = 1_000
 
         fun create(
+            buildingId: BuildingId,
             name: String,
             icon: String?,
             capacity: Int = DEFAULT_CAPACITY,
@@ -59,6 +67,7 @@ class Facility private constructor(
             val now = Instant.now()
             return Facility(
                 id = FacilityId.new(),
+                buildingId = buildingId,
                 name = validateName(name),
                 icon = validateIcon(icon),
                 capacity = validateCapacity(capacity),
@@ -70,13 +79,14 @@ class Facility private constructor(
 
         fun reconstitute(
             id: FacilityId,
+            buildingId: BuildingId?,
             name: String,
             icon: String?,
             capacity: Int,
             rules: BookingRules,
             createdAt: Instant,
             updatedAt: Instant,
-        ): Facility = Facility(id, name, icon, capacity, rules, createdAt, updatedAt)
+        ): Facility = Facility(id, buildingId, name, icon, capacity, rules, createdAt, updatedAt)
 
         private fun validateName(name: String): String {
             val trimmed = name.trim()
