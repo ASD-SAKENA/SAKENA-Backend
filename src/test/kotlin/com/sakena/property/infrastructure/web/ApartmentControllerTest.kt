@@ -6,6 +6,10 @@ import com.sakena.property.domain.BuildingNotFoundException
 import com.sakena.property.domain.model.Apartment
 import com.sakena.property.domain.model.BuildingId
 import com.sakena.shared.web.GlobalExceptionHandler
+import com.sakena.user.application.ProfileService
+import com.sakena.user.domain.Role
+import com.sakena.user.domain.User
+import com.sakena.user.domain.UserId
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -21,14 +25,20 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.test.web.servlet.setup.MockMvcBuilders
 import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean
 import java.math.BigDecimal
+import java.security.Principal
 import java.util.UUID
 
 class ApartmentControllerTest {
 
+    private val managerId = UserId.generate()
+    private val principal = Principal { "manager" }
     private val apartmentService = mockk<ApartmentService>()
+    private val profileService = mockk<ProfileService> {
+        every { getUserByUsername(principal.name) } returns manager()
+    }
     private val objectMapper = jacksonObjectMapper()
     private val mockMvc: MockMvc = MockMvcBuilders
-        .standaloneSetup(ApartmentController(apartmentService))
+        .standaloneSetup(ApartmentController(apartmentService, profileService))
         .setControllerAdvice(GlobalExceptionHandler())
         .setValidator(validator())
         .build()
@@ -46,10 +56,16 @@ class ApartmentControllerTest {
                         it.areaSquareMeters == BigDecimal("80.50") &&
                         it.bedrooms == 2
                 },
+                managerId,
             )
         } returns apartment
 
-        mockMvc.perform(post("/api/v1/apartments").contentType(MediaType.APPLICATION_JSON).content(apartmentJson(buildingId.value)))
+        mockMvc.perform(
+            post("/api/v1/apartments")
+                .principal(principal)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(apartmentJson(buildingId.value)),
+        )
             .andExpect(status().isCreated)
             .andExpect(jsonPath("$.id").value(apartment.id.value.toString()))
             .andExpect(jsonPath("$.buildingId").value(buildingId.value.toString()))
@@ -69,10 +85,16 @@ class ApartmentControllerTest {
                         it.floorNumber == 2 &&
                         it.bedrooms == 3
                 },
+                managerId,
             )
         } returns apartment
 
-        mockMvc.perform(put("/api/v1/apartments/${apartment.id}").contentType(MediaType.APPLICATION_JSON).content(apartmentJson(buildingId.value, "202", 2, "95.25", 3)))
+        mockMvc.perform(
+            put("/api/v1/apartments/${apartment.id}")
+                .principal(principal)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(apartmentJson(buildingId.value, "202", 2, "95.25", 3)),
+        )
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.unitNumber").value("202"))
             .andExpect(jsonPath("$.bedrooms").value(3))
@@ -81,20 +103,25 @@ class ApartmentControllerTest {
     @Test
     fun `list maps optional building filter`() {
         val buildingId = BuildingId.new()
-        every { apartmentService.getAll(buildingId) } returns emptyList()
+        every { apartmentService.getAll(buildingId, managerId) } returns emptyList()
 
-        mockMvc.perform(get("/api/v1/apartments?buildingId=$buildingId"))
+        mockMvc.perform(get("/api/v1/apartments?buildingId=$buildingId").principal(principal))
             .andExpect(status().isOk)
 
-        verify(exactly = 1) { apartmentService.getAll(buildingId) }
+        verify(exactly = 1) { apartmentService.getAll(buildingId, managerId) }
     }
 
     @Test
     fun `missing building is translated to 404`() {
         val buildingId = BuildingId.new()
-        every { apartmentService.create(any()) } throws BuildingNotFoundException(buildingId)
+        every { apartmentService.create(any(), managerId) } throws BuildingNotFoundException(buildingId)
 
-        mockMvc.perform(post("/api/v1/apartments").contentType(MediaType.APPLICATION_JSON).content(apartmentJson(buildingId.value)))
+        mockMvc.perform(
+            post("/api/v1/apartments")
+                .principal(principal)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(apartmentJson(buildingId.value)),
+        )
             .andExpect(status().isNotFound)
     }
 
@@ -102,7 +129,12 @@ class ApartmentControllerTest {
     fun `invalid area returns validation error`() {
         val body = apartmentJson(BuildingId.new().value, areaSquareMeters = "0.00")
 
-        mockMvc.perform(post("/api/v1/apartments").contentType(MediaType.APPLICATION_JSON).content(body))
+        mockMvc.perform(
+            post("/api/v1/apartments")
+                .principal(principal)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body),
+        )
             .andExpect(status().isBadRequest)
             .andExpect(jsonPath("$.fieldErrors[0].field").value("areaSquareMeters"))
     }
@@ -110,13 +142,21 @@ class ApartmentControllerTest {
     @Test
     fun `delete maps apartment id`() {
         val apartment = Apartment.create(BuildingId.new(), "303", 3, BigDecimal("70.00"), 1)
-        every { apartmentService.delete(apartment.id) } returns Unit
+        every { apartmentService.delete(apartment.id, managerId) } returns Unit
 
-        mockMvc.perform(delete("/api/v1/apartments/${apartment.id}"))
+        mockMvc.perform(delete("/api/v1/apartments/${apartment.id}").principal(principal))
             .andExpect(status().isNoContent)
 
-        verify(exactly = 1) { apartmentService.delete(apartment.id) }
+        verify(exactly = 1) { apartmentService.delete(apartment.id, managerId) }
     }
+
+    private fun manager(): User = User.register(
+        username = principal.name,
+        email = "manager@example.com",
+        rawPassword = "password123",
+        passwordEncoder = { it },
+        role = Role.MANAGER,
+    ).copy(id = managerId)
 
     private fun apartmentJson(
         buildingId: UUID,

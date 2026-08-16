@@ -5,6 +5,9 @@ import com.sakena.property.domain.model.BuildingId
 import com.sakena.property.infrastructure.web.dto.BuildingResponse
 import com.sakena.property.infrastructure.web.dto.CreateBuildingRequest
 import com.sakena.property.infrastructure.web.dto.UpdateBuildingRequest
+import com.sakena.shared.domain.EntityNotFoundException
+import com.sakena.user.application.ProfileService
+import com.sakena.user.domain.UserId
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.tags.Tag
 import jakarta.validation.Valid
@@ -22,23 +25,25 @@ import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.util.UriComponentsBuilder
 import java.net.URI
+import java.security.Principal
 
 @RestController
 @RequestMapping("/api/v1/buildings")
 @Tag(name = "Buildings", description = "Create, read, update and delete buildings")
 class BuildingController(
     private val buildingService: BuildingService,
+    private val profileService: ProfileService,
 ) {
 
     @Operation(summary = "List all buildings")
     @GetMapping
-    fun list(): List<BuildingResponse> =
-        buildingService.getAll().map(BuildingResponse::from)
+    fun list(principal: Principal): List<BuildingResponse> =
+        buildingService.getAll(currentManagerId(principal)).map(BuildingResponse::from)
 
     @Operation(summary = "Get a building by id")
     @GetMapping("/{id}")
-    fun getById(@PathVariable id: String): BuildingResponse =
-        BuildingResponse.from(buildingService.getById(BuildingId.from(id)))
+    fun getById(@PathVariable id: String, principal: Principal): BuildingResponse =
+        BuildingResponse.from(buildingService.getById(BuildingId.from(id), currentManagerId(principal)))
 
     @PreAuthorize("hasRole('MANAGER')")
     @Operation(summary = "Create a new building")
@@ -46,8 +51,9 @@ class BuildingController(
     fun create(
         @Valid @RequestBody request: CreateBuildingRequest,
         uriBuilder: UriComponentsBuilder,
+        principal: Principal,
     ): ResponseEntity<BuildingResponse> {
-        val building = buildingService.create(request.toCommand())
+        val building = buildingService.create(request.toCommand(), currentManagerId(principal))
         val location: URI = uriBuilder.path("/api/v1/buildings/{id}").build(building.id.value)
         return ResponseEntity.created(location).body(BuildingResponse.from(building))
     }
@@ -58,13 +64,20 @@ class BuildingController(
     fun update(
         @PathVariable id: String,
         @Valid @RequestBody request: UpdateBuildingRequest,
+        principal: Principal,
     ): BuildingResponse =
-        BuildingResponse.from(buildingService.update(BuildingId.from(id), request.toCommand()))
+        BuildingResponse.from(
+            buildingService.update(BuildingId.from(id), request.toCommand(), currentManagerId(principal)),
+        )
 
     @PreAuthorize("hasRole('MANAGER')")
     @Operation(summary = "Delete a building")
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    fun delete(@PathVariable id: String) =
-        buildingService.delete(BuildingId.from(id))
+    fun delete(@PathVariable id: String, principal: Principal) =
+        buildingService.delete(BuildingId.from(id), currentManagerId(principal))
+
+    private fun currentManagerId(principal: Principal): UserId =
+        profileService.getUserByUsername(principal.name)?.id
+            ?: throw EntityNotFoundException("Signed-in manager was not found")
 }
