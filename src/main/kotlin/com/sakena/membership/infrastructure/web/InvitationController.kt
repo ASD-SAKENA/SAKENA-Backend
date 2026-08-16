@@ -13,6 +13,7 @@ import com.sakena.property.domain.model.BuildingId
 import com.sakena.shared.domain.EntityNotFoundException
 import com.sakena.user.application.ProfileService
 import com.sakena.user.domain.User
+import com.sakena.user.domain.UserId
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.security.SecurityRequirement
 import io.swagger.v3.oas.annotations.tags.Tag
@@ -75,7 +76,7 @@ class InvitationController(
     @SecurityRequirement(name = "bearerAuth")
     @PreAuthorize("hasRole('MANAGER')")
     fun list(@RequestParam buildingId: String): List<InvitationResponse> =
-        invitationService.getAll(BuildingId.from(buildingId)).map(::toResponse)
+        invitationService.getAll(BuildingId.from(buildingId), currentUserId()).map(::toResponse)
 
     @Operation(summary = "Invite someone by email, phone or an open link (manager)")
     @PostMapping("/buildings/{buildingId}")
@@ -99,7 +100,7 @@ class InvitationController(
     @SecurityRequirement(name = "bearerAuth")
     @PreAuthorize("hasRole('MANAGER')")
     fun revoke(@PathVariable id: String): InvitationResponse =
-        toResponse(invitationService.revoke(InvitationId.from(id)))
+        toResponse(invitationService.revoke(InvitationId.from(id), currentUserId()))
 
     private fun toResponse(invitation: BuildingInvitation): InvitationResponse =
         InvitationResponse.from(invitation, invitationService.acceptUrlOf(invitation))
@@ -126,4 +127,6 @@ class InvitationController(
         return profileService.getUserByUsername(username)
             ?: throw EntityNotFoundException("Signed-in user was not found")
     }
+
+    private fun currentUserId(): UserId = currentUser().id
 }

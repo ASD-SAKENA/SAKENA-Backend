@@ -10,11 +10,9 @@ import com.sakena.chat.domain.model.ChatAttachment
 import com.sakena.chat.domain.model.ChatMessage
 import com.sakena.chat.domain.model.ChatMessageId
 import com.sakena.chat.domain.model.ChatMessageKind
-import com.sakena.property.domain.ApartmentRepository
+import com.sakena.property.domain.BuildingAccess
 import com.sakena.property.domain.BuildingRepository
 import com.sakena.property.domain.model.BuildingId
-import com.sakena.residency.domain.ResidencyRepository
-import com.sakena.shared.domain.DomainForbiddenException
 import com.sakena.shared.domain.DomainValidationException
 import com.sakena.shared.domain.EntityNotFoundException
 import com.sakena.user.domain.Role
@@ -34,8 +32,7 @@ class ChatService(
     private val messageRepository: ChatMessageRepository,
     private val attachmentStorage: ChatAttachmentStorage,
     private val buildingRepository: BuildingRepository,
-    private val residencyRepository: ResidencyRepository,
-    private val apartmentRepository: ApartmentRepository,
+    private val buildingAccess: BuildingAccess,
 ) {
 
     companion object {
@@ -83,8 +80,14 @@ class ChatService(
         return messageRepository.save(message)
     }
 
-    fun edit(id: ChatMessageId, command: EditMessageCommand, editor: User): ChatMessage {
-        val message = requireMessage(id)
+    fun edit(
+        buildingId: BuildingId,
+        id: ChatMessageId,
+        command: EditMessageCommand,
+        editor: User,
+    ): ChatMessage {
+        requireMembership(buildingId, editor)
+        val message = requireMessageInBuilding(id, buildingId)
         message.editBody(command.body, editor.id)
         return messageRepository.save(message)
     }
@@ -93,8 +96,9 @@ class ChatService(
      * Soft-deletes the message. The stored object is removed too, since a
      * deleted attachment must not stay reachable through a presigned URL.
      */
-    fun delete(id: ChatMessageId, requester: User): ChatMessage {
-        val message = requireMessage(id)
+    fun delete(buildingId: BuildingId, id: ChatMessageId, requester: User): ChatMessage {
+        requireMembership(buildingId, requester)
+        val message = requireMessageInBuilding(id, buildingId)
         message.delete(requester.id, requester.role == Role.MANAGER)
         val deleted = messageRepository.save(message)
         message.attachment?.let { attachmentStorage.delete(it.storageKey) }
@@ -137,24 +141,24 @@ class ChatService(
     }
 
     /**
-     * Managers and staff work across every building, matching how they're
-     * authorized elsewhere in the app. A resident may only reach the chat of
-     * the building they actually live in.
+     * Every role may only reach the building assigned through its own trusted
+     * ownership or membership relation.
      */
     private fun requireMembership(buildingId: BuildingId, user: User) {
-        if (!buildingRepository.existsById(buildingId)) {
+        if (buildingRepository.findById(buildingId) == null) {
             throw EntityNotFoundException("Building with id '$buildingId' was not found")
         }
-        if (user.role != Role.RESIDENT) return
-
-        val residency = residencyRepository.findActiveByResident(user.id)
-            ?: throw DomainForbiddenException("You are not a resident of any building")
-        val residentBuildingId = apartmentRepository.findById(residency.apartmentId)?.buildingId
-        if (residentBuildingId != buildingId) {
-            throw DomainForbiddenException("You are not a resident of this building")
+        when (user.role) {
+            Role.MANAGER -> buildingAccess.requireManagerAccess(buildingId, user.id)
+            Role.RESIDENT -> buildingAccess.requireResidentAccess(buildingId, user.id)
+            Role.STAFF -> buildingAccess.requireStaffAccess(buildingId, user.id)
         }
     }
 
     private fun requireMessage(id: ChatMessageId): ChatMessage =
         messageRepository.findById(id) ?: throw ChatMessageNotFoundException(id)
+
+    private fun requireMessageInBuilding(id: ChatMessageId, buildingId: BuildingId): ChatMessage =
+        requireMessage(id).takeIf { it.buildingId == buildingId }
+            ?: throw ChatMessageNotFoundException(id)
 }
