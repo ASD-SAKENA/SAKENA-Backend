@@ -8,6 +8,7 @@ import com.sakena.poll.domain.model.PollOption
 import com.sakena.poll.domain.model.PollOptionId
 import com.sakena.poll.domain.model.PollVote
 import com.sakena.poll.domain.model.PollVoteId
+import com.sakena.property.domain.model.BuildingId
 import com.sakena.user.domain.UserId
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Component
@@ -26,6 +27,7 @@ class PollRepositoryAdapter(
         pollJpaRepository.save(
             PollEntity(
                 id = poll.id.value,
+                buildingId = poll.buildingId?.value,
                 question = poll.question,
                 createdBy = poll.createdBy.value,
                 createdAt = poll.createdAt,
@@ -54,8 +56,8 @@ class PollRepositoryAdapter(
         return toDomain(entity, options)
     }
 
-    override fun findAllNewestFirst(): List<Poll> {
-        val polls = pollJpaRepository.findAllByOrderByCreatedAtDesc()
+    override fun findAllByBuildingNewestFirst(buildingId: BuildingId): List<Poll> {
+        val polls = pollJpaRepository.findAllByBuildingIdOrderByCreatedAtDesc(buildingId.value)
         if (polls.isEmpty()) return emptyList()
         val optionsByPoll = optionJpaRepository
             .findAllByPollIdInOrderByPosition(polls.map { it.id })
@@ -66,6 +68,7 @@ class PollRepositoryAdapter(
     private fun toDomain(entity: PollEntity, options: List<PollOptionEntity>): Poll =
         Poll.reconstitute(
             id = PollId(entity.id),
+            buildingId = entity.buildingId?.let(::BuildingId),
             question = entity.question,
             options = options.map {
                 PollOption.reconstitute(PollOptionId(it.id), it.label, it.position)

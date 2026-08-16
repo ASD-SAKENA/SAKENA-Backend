@@ -2,6 +2,7 @@ package com.sakena.announcement.infrastructure.persistence
 
 import com.sakena.announcement.domain.AnnouncementRepository
 import com.sakena.announcement.domain.model.Announcement
+import com.sakena.property.domain.model.BuildingId
 import org.springframework.stereotype.Component
 
 /**
@@ -19,6 +20,7 @@ class AnnouncementRepositoryAdapter(
         return AnnouncementEntityMapper.toDomain(saved)
     }
 
-    override fun findAllNewestFirst(): List<Announcement> =
-        jpaRepository.findAllByOrderByCreatedAtDesc().map(AnnouncementEntityMapper::toDomain)
+    override fun findAllByBuildingNewestFirst(buildingId: BuildingId): List<Announcement> =
+        jpaRepository.findAllByBuildingIdOrderByCreatedAtDesc(buildingId.value)
+            .map(AnnouncementEntityMapper::toDomain)
 }
