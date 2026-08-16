@@ -1,5 +1,7 @@
 package com.sakena.servicerequest.application
 
+import com.sakena.property.domain.ApartmentRepository
+import com.sakena.property.domain.model.BuildingId
 import com.sakena.residency.domain.ResidencyRepository
 import com.sakena.servicerequest.domain.ServiceCategoryGroup
 import com.sakena.servicerequest.domain.ServiceRequest
@@ -11,6 +13,7 @@ import com.sakena.shared.domain.DomainForbiddenException
 import com.sakena.shared.domain.DomainValidationException
 import com.sakena.shared.domain.EntityNotFoundException
 import com.sakena.user.domain.Role
+import com.sakena.user.domain.User
 import com.sakena.user.domain.UserId
 import com.sakena.user.domain.UserRepository
 import org.springframework.stereotype.Service
@@ -22,7 +25,35 @@ class ServiceRequestService(
     private val serviceRequestRepository: ServiceRequestRepository,
     private val userRepository: UserRepository,
     private val residencyRepository: ResidencyRepository,
+    private val apartmentRepository: ApartmentRepository,
 ) {
+
+    /**
+     * A request tied to a resident's apartment belongs to that apartment's
+     * building, and only its manager may act on it. A request with no
+     * apartment (filed by staff, or a resident with no unit assigned) has no
+     * building to scope to, so every manager can still act on those — same
+     * as before this check existed.
+     */
+    private fun requireBuildingOwnership(request: ServiceRequest, manager: User) {
+        val apartmentId = request.requestingApartmentId ?: return
+        val apartment = apartmentRepository.findById(apartmentId) ?: return
+        if (manager.managedBuildingId != apartment.buildingId) {
+            throw DomainForbiddenException("You do not manage the building this request belongs to")
+        }
+    }
+
+    private fun requireManagerCanAct(request: ServiceRequest, managerId: UserId) {
+        val manager = userRepository.findById(managerId)
+            ?: throw EntityNotFoundException("User with id '$managerId' was not found")
+        if (manager.role != Role.MANAGER) {
+            throw DomainForbiddenException("Only a manager can perform this action")
+        }
+        requireBuildingOwnership(request, manager)
+    }
+
+    private fun buildingOf(request: ServiceRequest): BuildingId? =
+        request.requestingApartmentId?.let { apartmentRepository.findById(it)?.buildingId }
 
     fun create(command: CreateServiceRequestCommand, currentUserId: UserId): ServiceRequest {
         userRepository.findById(currentUserId)
@@ -47,6 +78,21 @@ class ServiceRequestService(
      */
     fun getRequests(filters: ServiceRequestFilters): List<ServiceRequest> {
         return serviceRequestRepository.findAllByFilters(filters)
+    }
+
+    /**
+     * The manager admin queue, scoped to the requester's own building: a
+     * request tied to an apartment is only visible to that apartment's
+     * building's manager; a request with no apartment (staff-filed, or an
+     * unassigned resident) stays visible to every manager, as it always was.
+     */
+    fun getRequestsForManager(filters: ServiceRequestFilters, managerId: UserId): List<ServiceRequest> {
+        val manager = userRepository.findById(managerId)
+            ?: throw EntityNotFoundException("User with id '$managerId' was not found")
+        return serviceRequestRepository.findAllByFilters(filters).filter { request ->
+            val buildingId = buildingOf(request) ?: return@filter true
+            buildingId == manager.managedBuildingId
+        }
     }
 
     fun getRequestById(id: ServiceRequestId): ServiceRequest? {
@@ -75,6 +121,7 @@ class ServiceRequestService(
     fun approveRequest(command: ApproveServiceRequestCommand): ServiceRequest {
         val request = serviceRequestRepository.findById(command.serviceRequestId)
             ?: throw EntityNotFoundException("Service request not found")
+        requireManagerCanAct(request, command.userId)
 
         val approved = request.approve(command.userId)
         return serviceRequestRepository.save(approved)
@@ -83,6 +130,7 @@ class ServiceRequestService(
     fun rejectRequest(command: RejectServiceRequestCommand): ServiceRequest {
         val request = serviceRequestRepository.findById(command.serviceRequestId)
             ?: throw EntityNotFoundException("Service request not found")
+        requireManagerCanAct(request, command.userId)
 
         val rejected = request.reject(command.userId)
         return serviceRequestRepository.save(rejected)
@@ -91,6 +139,7 @@ class ServiceRequestService(
     fun assignRequest(command: AssignServiceRequestCommand): ServiceRequest {
         val request = serviceRequestRepository.findById(ServiceRequestId.fromString(command.serviceRequestId))
             ?: throw EntityNotFoundException("Service request not found")
+        requireManagerCanAct(request, command.userId)
 
         val worker = userRepository.findById(command.workerId)
             ?: throw IllegalArgumentException("Worker not found with id: ${command.workerId}")
@@ -136,6 +185,7 @@ class ServiceRequestService(
 
         val request = serviceRequestRepository.findById(command.serviceRequestId)
             ?: throw EntityNotFoundException("Service request not found")
+        requireBuildingOwnership(request, manager)
 
         val updated = request.assignCostResponsibility(
             responsibility = command.responsibility,

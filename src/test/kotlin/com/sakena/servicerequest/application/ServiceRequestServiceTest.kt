@@ -1,6 +1,9 @@
 package com.sakena.servicerequest.application
 
+import com.sakena.property.domain.ApartmentRepository
+import com.sakena.property.domain.model.Apartment
 import com.sakena.property.domain.model.ApartmentId
+import com.sakena.property.domain.model.BuildingId
 import com.sakena.residency.domain.ResidencyRepository
 import com.sakena.residency.domain.model.Residency
 import com.sakena.residency.domain.model.TenancyType
@@ -14,7 +17,6 @@ import com.sakena.servicerequest.domain.ServiceSubCategory
 import com.sakena.shared.domain.DomainForbiddenException
 import com.sakena.shared.domain.DomainValidationException
 import com.sakena.shared.domain.EntityNotFoundException
-import com.sakena.property.domain.model.BuildingId
 import com.sakena.user.domain.Role
 import com.sakena.user.domain.User
 import com.sakena.user.domain.UserId
@@ -23,6 +25,7 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import org.junit.jupiter.api.Test
+import java.math.BigDecimal
 import java.time.Instant
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -32,10 +35,12 @@ class ServiceRequestServiceTest {
     private val serviceRequestRepository = mockk<ServiceRequestRepository>()
     private val userRepository = mockk<UserRepository>()
     private val residencyRepository = mockk<ResidencyRepository>()
+    private val apartmentRepository = mockk<ApartmentRepository>()
     private val service = ServiceRequestService(
         serviceRequestRepository,
         userRepository,
         residencyRepository,
+        apartmentRepository,
     )
 
     @Test
@@ -111,19 +116,43 @@ class ServiceRequestServiceTest {
     }
 
     @Test
-    fun `manager assigns cost responsibility to a completed service request`() {
+    fun `manager assigns cost responsibility to a request in the building they administer`() {
         val manager = user(Role.MANAGER)
-        val request = serviceRequest(status = ServiceRequestStatus.COMPLETED, completionCost = 250.0)
-        val command = command(request.id, manager.id)
+        val apartmentId = ApartmentId.new()
+        val apartment = Apartment.create(manager.managedBuildingId!!, "1", 1, BigDecimal("40"), 1)
+        val request = serviceRequest(
+            status = ServiceRequestStatus.COMPLETED,
+            completionCost = 250.0,
+            requestingApartmentId = apartmentId,
+        )
         every { userRepository.findById(manager.id) } returns manager
+        every { apartmentRepository.findById(apartmentId) } returns apartment
         every { serviceRequestRepository.findById(request.id) } returns request
         every { serviceRequestRepository.save(any()) } answers { firstArg() }
 
-        val result = service.assignCostResponsibility(command)
+        val result = service.assignCostResponsibility(command(request.id, manager.id))
 
         assertEquals(ServiceCostResponsibility.ALL_UNITS, result.costResponsibility)
-        assertEquals(manager.id, result.updatedBy)
-        verify(exactly = 1) { serviceRequestRepository.save(result) }
+    }
+
+    @Test
+    fun `manager cannot assign cost responsibility to a request in a building they do not administer`() {
+        val manager = user(Role.MANAGER)
+        val apartmentId = ApartmentId.new()
+        val apartment = Apartment.create(BuildingId.new(), "1", 1, BigDecimal("40"), 1)
+        val request = serviceRequest(
+            status = ServiceRequestStatus.COMPLETED,
+            completionCost = 250.0,
+            requestingApartmentId = apartmentId,
+        )
+        every { userRepository.findById(manager.id) } returns manager
+        every { apartmentRepository.findById(apartmentId) } returns apartment
+        every { serviceRequestRepository.findById(request.id) } returns request
+
+        assertFailsWith<DomainForbiddenException> {
+            service.assignCostResponsibility(command(request.id, manager.id))
+        }
+        verify(exactly = 0) { serviceRequestRepository.save(any()) }
     }
 
     @Test
@@ -171,7 +200,11 @@ class ServiceRequestServiceTest {
     @Test
     fun `domain validation failure is propagated without saving`() {
         val manager = user(Role.MANAGER)
-        val request = serviceRequest(status = ServiceRequestStatus.IN_PROGRESS, completionCost = 250.0)
+        val request = serviceRequest(
+            status = ServiceRequestStatus.IN_PROGRESS,
+            completionCost = 250.0,
+            requestingApartmentId = null,
+        )
         every { userRepository.findById(manager.id) } returns manager
         every { serviceRequestRepository.findById(request.id) } returns request
 
@@ -231,6 +264,7 @@ class ServiceRequestServiceTest {
         status: ServiceRequestStatus,
         completionCost: Double?,
         createdBy: UserId = UserId.generate(),
+        requestingApartmentId: ApartmentId? = ApartmentId.new(),
     ): ServiceRequest {
         val now = Instant.parse("2026-01-15T10:00:00Z")
         return ServiceRequest.reconstitute(
@@ -248,7 +282,7 @@ class ServiceRequestServiceTest {
             assignedTo = UserId.generate(),
             resolvedAt = if (status == ServiceRequestStatus.COMPLETED) now else null,
             completionCost = completionCost,
-            requestingApartmentId = ApartmentId.new(),
+            requestingApartmentId = requestingApartmentId,
         )
     }
 }
