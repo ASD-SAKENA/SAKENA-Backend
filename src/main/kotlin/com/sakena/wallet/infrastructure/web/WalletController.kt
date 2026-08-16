@@ -55,12 +55,12 @@ class WalletController(
     @Operation(summary = "Shared building account balance (manager)")
     @GetMapping("/building")
     fun buildingWallet(): WalletResponse =
-        WalletResponse.from(walletService.getBuildingWallet())
+        WalletResponse.from(walletService.getBuildingWallet(getCurrentUserId()))
 
     @Operation(summary = "Building account ledger — income and expenses, newest first (manager)")
     @GetMapping("/building/transactions")
     fun buildingTransactions(): List<WalletTransactionResponse> =
-        walletService.getBuildingLedger().map(WalletTransactionResponse::from)
+        walletService.getBuildingLedger(getCurrentUserId()).map(WalletTransactionResponse::from)
 
     @Operation(summary = "Record income or an expense on the building account (manager)")
     @PostMapping("/building/transactions")
@@ -68,7 +68,9 @@ class WalletController(
     fun recordBuildingTransaction(
         @Valid @RequestBody request: RecordBuildingTransactionRequest,
     ): WalletResponse =
-        WalletResponse.from(walletService.recordBuildingTransaction(request.toCommand()))
+        WalletResponse.from(
+            walletService.recordBuildingTransaction(request.toCommand(), getCurrentUserId()),
+        )
 
     @Operation(summary = "Settle a completed service request's wage (manager)")
     @PostMapping("/settle/{serviceRequestId}")

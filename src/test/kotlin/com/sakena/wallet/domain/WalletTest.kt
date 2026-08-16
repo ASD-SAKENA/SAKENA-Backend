@@ -2,6 +2,7 @@ package com.sakena.wallet.domain
 
 import com.sakena.shared.domain.DomainConflictException
 import com.sakena.shared.domain.DomainValidationException
+import com.sakena.property.domain.model.BuildingId
 import com.sakena.user.domain.UserId
 import com.sakena.wallet.domain.model.Wallet
 import org.junit.jupiter.api.Test
@@ -32,7 +33,7 @@ class WalletTest {
 
     @Test
     fun `the building wallet may run a deficit`() {
-        val wallet = Wallet.createBuilding()
+        val wallet = Wallet.createBuilding(BuildingId.new())
 
         wallet.debit(BigDecimal("300000"))
 
@@ -41,7 +42,7 @@ class WalletTest {
 
     @Test
     fun `non-positive amounts are rejected`() {
-        val wallet = Wallet.createBuilding()
+        val wallet = Wallet.createBuilding(BuildingId.new())
 
         assertFailsWith<DomainValidationException> { wallet.credit(BigDecimal.ZERO) }
         assertFailsWith<DomainValidationException> { wallet.debit(BigDecimal("-1")) }

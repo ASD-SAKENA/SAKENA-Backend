@@ -4,6 +4,7 @@ import com.sakena.billing.domain.ServiceChargeRepository
 import com.sakena.billing.domain.model.ServiceCharge
 import com.sakena.billing.domain.model.ServiceChargeTarget
 import com.sakena.property.domain.ApartmentRepository
+import com.sakena.property.domain.BuildingAccess
 import com.sakena.property.domain.model.Apartment
 import com.sakena.property.domain.model.ApartmentId
 import com.sakena.property.domain.model.BuildingId
@@ -44,6 +45,7 @@ class WalletServiceTest {
     private val apartmentRepository = mockk<ApartmentRepository>(relaxed = true)
     private val serviceChargeRepository = mockk<ServiceChargeRepository>(relaxed = true)
     private val userRepository = mockk<UserRepository>(relaxed = true)
+    private val buildingAccess = mockk<BuildingAccess>(relaxed = true)
     private val service = WalletService(
         walletRepository,
         transactionRepository,
@@ -51,8 +53,10 @@ class WalletServiceTest {
         apartmentRepository,
         serviceChargeRepository,
         userRepository,
+        buildingAccess,
     )
 
+    private val buildingId = BuildingId.new()
     private val manager = UserId.generate()
     private val worker = UserId.generate()
 
@@ -79,9 +83,11 @@ class WalletServiceTest {
     @Test
     fun `settle debits the building, credits the worker and marks the request settled`() {
         val request = completedRequest()
-        val building = Wallet.createBuilding()
+        val apartment = apartment(request.requestingApartmentId!!)
+        val building = Wallet.createBuilding(apartment.buildingId)
         every { serviceRequestRepository.findById(request.id) } returns request
-        every { walletRepository.findBuildingWallet() } returns building
+        every { apartmentRepository.findById(apartment.id) } returns apartment
+        every { walletRepository.findOrCreateBuildingWallet(apartment.buildingId) } returns building
         every { walletRepository.findByOwner(worker) } returns null
         val savedWallets = mutableListOf<Wallet>()
         every { walletRepository.save(capture(savedWallets)) } answers { savedWallets.last() }
@@ -99,9 +105,11 @@ class WalletServiceTest {
     @Test
     fun `settle writes a ledger line on both wallets`() {
         val request = completedRequest()
-        val building = Wallet.createBuilding()
+        val apartment = apartment(request.requestingApartmentId!!)
+        val building = Wallet.createBuilding(apartment.buildingId)
         every { serviceRequestRepository.findById(request.id) } returns request
-        every { walletRepository.findBuildingWallet() } returns building
+        every { apartmentRepository.findById(apartment.id) } returns apartment
+        every { walletRepository.findOrCreateBuildingWallet(apartment.buildingId) } returns building
         every { walletRepository.findByOwner(worker) } returns null
         every { walletRepository.save(any()) } answers { firstArg() }
         val ledger = mutableListOf<com.sakena.wallet.domain.model.WalletTransaction>()
@@ -122,8 +130,9 @@ class WalletServiceTest {
 
     @Test
     fun `recording a building expense debits the account and logs it`() {
-        val building = Wallet.createBuilding()
-        every { walletRepository.findBuildingWallet() } returns building
+        val building = Wallet.createBuilding(buildingId)
+        every { buildingAccess.managedBuildingId(manager) } returns buildingId
+        every { walletRepository.findOrCreateBuildingWallet(buildingId) } returns building
         every { walletRepository.save(any()) } answers { firstArg() }
         val ledger = slot<com.sakena.wallet.domain.model.WalletTransaction>()
         every { transactionRepository.save(capture(ledger)) } answers { ledger.captured }
@@ -135,6 +144,7 @@ class WalletServiceTest {
                 amount = BigDecimal("400000"),
                 description = "Boiler room service",
             ),
+            manager,
         )
 
         assertEquals(BigDecimal("-400000"), building.balance)
@@ -152,6 +162,7 @@ class WalletServiceTest {
                     amount = BigDecimal("400000"),
                     description = "Invalid building top-up",
                 ),
+                manager,
             )
         }
 
@@ -224,6 +235,7 @@ class WalletServiceTest {
 
     @Test
     fun `settle rejects a request that is not completed`() {
+        val apartmentId = ApartmentId.new()
         val request = ServiceRequest.create(
             title = "Fix lamp",
             description = "Stairway lamp is broken",
@@ -231,8 +243,10 @@ class WalletServiceTest {
             createdBy = UserId.generate(),
             categoryGroup = ServiceCategoryGroup.FACILITIES,
             subCategory = ServiceSubCategory.ELECTRICAL,
+            requestingApartmentId = apartmentId,
         )
         every { serviceRequestRepository.findById(request.id) } returns request
+        every { apartmentRepository.findById(apartmentId) } returns apartment(apartmentId)
 
         assertFailsWith<DomainValidationException> {
             service.settleServiceRequest(request.id, manager)
@@ -269,10 +283,10 @@ class WalletServiceTest {
     fun `all-units settlement queues the building cost and pays the worker`() {
         val request = completedRequest(ServiceCostResponsibility.ALL_UNITS)
         val apartment = apartment(request.requestingApartmentId!!)
-        val buildingWallet = Wallet.createBuilding()
+        val buildingWallet = Wallet.createBuilding(apartment.buildingId)
         every { serviceRequestRepository.findById(request.id) } returns request
         every { apartmentRepository.findById(apartment.id) } returns apartment
-        every { walletRepository.findBuildingWallet() } returns buildingWallet
+        every { walletRepository.findOrCreateBuildingWallet(apartment.buildingId) } returns buildingWallet
         every { walletRepository.findByOwner(worker) } returns null
         every { walletRepository.save(any()) } answers { firstArg() }
         every { serviceRequestRepository.save(any()) } answers { firstArg() }
@@ -310,10 +324,10 @@ class WalletServiceTest {
     fun `requesting-unit settlement queues a targeted cost and pays the worker`() {
         val request = completedRequest(ServiceCostResponsibility.REQUESTING_UNIT)
         val apartment = apartment(request.requestingApartmentId!!)
-        val buildingWallet = Wallet.createBuilding()
+        val buildingWallet = Wallet.createBuilding(apartment.buildingId)
         every { serviceRequestRepository.findById(request.id) } returns request
         every { apartmentRepository.findById(apartment.id) } returns apartment
-        every { walletRepository.findBuildingWallet() } returns buildingWallet
+        every { walletRepository.findOrCreateBuildingWallet(apartment.buildingId) } returns buildingWallet
         every { walletRepository.findByOwner(worker) } returns null
         every { walletRepository.save(any()) } answers { firstArg() }
         every { serviceRequestRepository.save(any()) } answers { firstArg() }
@@ -333,7 +347,7 @@ class WalletServiceTest {
 
     private fun apartment(id: ApartmentId): Apartment = Apartment.reconstitute(
         id = id,
-        buildingId = BuildingId.new(),
+        buildingId = buildingId,
         unitNumber = "12",
         floorNumber = 1,
         areaSquareMeters = BigDecimal("90"),
