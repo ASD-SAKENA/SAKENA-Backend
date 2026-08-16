@@ -78,9 +78,9 @@ class ApartmentControllerIntegrationTest(
     }
 
     @Test
-    fun `creating an apartment for a missing building returns 404`() {
-        val missingBuildingId = UUID.randomUUID().toString()
-        val body = apartmentJson(missingBuildingId, "404", 4, "70.00", 1)
+    fun `creating an apartment for a building the manager does not administer returns 403`() {
+        val someOtherBuildingId = UUID.randomUUID().toString()
+        val body = apartmentJson(someOtherBuildingId, "404", 4, "70.00", 1)
 
         mockMvc.perform(
             post("/api/v1/apartments")
@@ -88,7 +88,7 @@ class ApartmentControllerIntegrationTest(
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body),
         )
-            .andExpect(status().isNotFound)
+            .andExpect(status().isForbidden)
     }
 
     @Test
