@@ -62,7 +62,7 @@ class ServiceRequestCostResponsibilityIntegrationTest(
         val resident = register("resident-$suffix", "RESIDENT")
         val staff = register("staff-$suffix", "STAFF")
         val manager = register("manager-$suffix", "MANAGER")
-        val requestingApartmentId = startResidency(resident, suffix)
+        val requestingApartmentId = startResidency(resident, suffix, manager.managedBuildingId!!)
         val requestId = completeServiceRequest(
             resident,
             staff,
@@ -168,7 +168,7 @@ class ServiceRequestCostResponsibilityIntegrationTest(
         val resident = register("resident-$suffix", "RESIDENT")
         val staff = register("staff-$suffix", "STAFF")
         val manager = register("manager-$suffix", "MANAGER")
-        val requestingApartmentId = startResidency(resident, suffix)
+        val requestingApartmentId = startResidency(resident, suffix, manager.managedBuildingId!!)
         val requestId = completeServiceRequest(
             resident,
             staff,
@@ -344,13 +344,11 @@ class ServiceRequestCostResponsibilityIntegrationTest(
     private fun startResidency(
         resident: AuthenticatedUser,
         suffix: String,
+        buildingId: com.sakena.property.domain.model.BuildingId,
     ): ApartmentId {
-        val building = buildingRepository.save(
-            Building.create("Building $suffix", "Address $suffix"),
-        )
         val apartment = apartmentRepository.save(
             Apartment.create(
-                buildingId = building.id,
+                buildingId = buildingId,
                 unitNumber = "UNIT-$suffix",
                 floorNumber = 1,
                 areaSquareMeters = BigDecimal("90"),
@@ -395,9 +393,9 @@ class ServiceRequestCostResponsibilityIntegrationTest(
             .andExpect(status().isCreated)
             .andReturn()
         val token = objectMapper.readTree(result.response.contentAsString).get("token").asText()
-        val userId = userRepository.findByUsername(username)?.id
+        val user = userRepository.findByUsername(username)
             ?: error("Registered user '$username' was not persisted")
-        return AuthenticatedUser(token, userId)
+        return AuthenticatedUser(token, user.id, user.managedBuildingId)
     }
 
     private fun bearer(token: String) = "Bearer $token"
@@ -405,6 +403,7 @@ class ServiceRequestCostResponsibilityIntegrationTest(
     private data class AuthenticatedUser(
         val token: String,
         val id: UserId,
+        val managedBuildingId: com.sakena.property.domain.model.BuildingId? = null,
     )
 
     private data class IssuedPeriod(

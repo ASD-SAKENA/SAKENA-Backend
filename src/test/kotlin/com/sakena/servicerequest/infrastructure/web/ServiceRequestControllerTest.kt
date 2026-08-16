@@ -497,8 +497,9 @@ class ServiceRequestControllerTest {
 
             every { profileService.getUserByUsername(testUsername) } returns testUser
             every {
-                serviceRequestService.getRequests(
-                    ServiceRequestFilters()
+                serviceRequestService.getRequestsForManager(
+                    ServiceRequestFilters(),
+                    testUserId,
                 )
             } returns requests
 
@@ -522,8 +523,9 @@ class ServiceRequestControllerTest {
 
             every { profileService.getUserByUsername(testUsername) } returns testUser
             every {
-                serviceRequestService.getRequests(
-                    ServiceRequestFilters(assignedTo = workerId)
+                serviceRequestService.getRequestsForManager(
+                    ServiceRequestFilters(assignedTo = workerId),
+                    testUserId,
                 )
             } returns requests
 
