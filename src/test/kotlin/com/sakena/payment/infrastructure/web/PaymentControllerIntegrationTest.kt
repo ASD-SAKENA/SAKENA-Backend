@@ -8,6 +8,8 @@ import com.sakena.payment.domain.PaymentReceiptStorage
 import com.sakena.payment.infrastructure.persistence.PaymentJpaRepository
 import com.sakena.payment.infrastructure.web.dto.RecordPaymentRequest
 import com.sakena.payment.infrastructure.web.dto.RejectPaymentRequest
+import com.sakena.property.infrastructure.web.dto.CreateBuildingRequest
+import com.sakena.user.domain.UserRepository
 import com.sakena.user.infrastructure.web.RegisterRequest
 import io.mockk.every
 import io.mockk.verify
@@ -32,6 +34,7 @@ class PaymentControllerIntegrationTest(
     @Autowired private val mockMvc: MockMvc,
     @Autowired private val objectMapper: ObjectMapper,
     @Autowired private val paymentJpaRepository: PaymentJpaRepository,
+    @Autowired private val userRepository: UserRepository,
 ) : IntegrationTest() {
 
     @MockkBean
@@ -43,6 +46,9 @@ class PaymentControllerIntegrationTest(
         val residentToken = register("resident-$suffix", "RESIDENT")
         val otherResidentToken = register("other-$suffix", "RESIDENT")
         val managerToken = register("manager-$suffix", "MANAGER")
+        val otherManagerToken = register("other-manager-$suffix", "MANAGER")
+        createBuildingWithResident(managerToken, "resident-$suffix", suffix)
+        createBuilding(otherManagerToken, "Other building $suffix", "Other address $suffix")
         val confirmedReference = "TX-CONFIRM-$suffix"
         val rejectedReference = "TX-REJECT-$suffix"
         val objectKey = "payment-receipts/$suffix/receipt.png"
@@ -76,6 +82,18 @@ class PaymentControllerIntegrationTest(
         mockMvc.perform(authorizedGet("/api/v1/payments/pending", managerToken))
             .andExpect(status().isOk)
             .andExpect(jsonPath("$[?(@.id == '$paymentId')]").exists())
+
+        mockMvc.perform(authorizedGet("/api/v1/payments/pending", otherManagerToken))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$[?(@.id == '$paymentId')]").doesNotExist())
+
+        mockMvc.perform(authorizedGet("/api/v1/payments/$paymentId/receipt", otherManagerToken))
+            .andExpect(status().isForbidden)
+
+        mockMvc.perform(
+            patch("/api/v1/payments/$paymentId/confirm")
+                .header(HttpHeaders.AUTHORIZATION, bearer(otherManagerToken)),
+        ).andExpect(status().isForbidden)
 
         mockMvc.perform(authorizedGet("/api/v1/payments/$paymentId/receipt", managerToken))
             .andExpect(status().isOk)
@@ -149,6 +167,58 @@ class PaymentControllerIntegrationTest(
             .andExpect(status().isCreated)
             .andReturn()
         return objectMapper.readTree(result.response.contentAsString).get("token").asText()
+    }
+
+    private fun createBuildingWithResident(
+        managerToken: String,
+        residentUsername: String,
+        suffix: String,
+    ) {
+        val buildingId = createBuilding(
+            managerToken,
+            "Payment building $suffix",
+            "Payment address $suffix",
+        )
+        val apartmentBody = mapOf(
+            "buildingId" to buildingId,
+            "unitNumber" to "P-$suffix",
+            "floorNumber" to 1,
+            "areaSquareMeters" to BigDecimal("80.00"),
+            "bedrooms" to 2,
+        )
+        val apartment = mockMvc.perform(
+            post("/api/v1/apartments")
+                .header(HttpHeaders.AUTHORIZATION, bearer(managerToken))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsBytes(apartmentBody)),
+        )
+            .andExpect(status().isCreated)
+            .andReturn()
+        val apartmentId = objectMapper.readTree(apartment.response.contentAsString).get("id").asText()
+        val residentId = userRepository.findByUsername(residentUsername)?.id
+            ?: error("Test resident was not persisted")
+        val residencyBody = mapOf(
+            "residentId" to residentId.value,
+            "tenancy" to "TENANT",
+        )
+        mockMvc.perform(
+            post("/api/v1/residencies/apartments/$apartmentId")
+                .header(HttpHeaders.AUTHORIZATION, bearer(managerToken))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsBytes(residencyBody)),
+        ).andExpect(status().isCreated)
+    }
+
+    private fun createBuilding(token: String, name: String, address: String): String {
+        val result = mockMvc.perform(
+            post("/api/v1/buildings")
+                .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsBytes(CreateBuildingRequest(name, address))),
+        )
+            .andExpect(status().isCreated)
+            .andReturn()
+        return objectMapper.readTree(result.response.contentAsString).get("id").asText()
     }
 
     private fun submitPayment(token: String, reference: String, receipt: MockMultipartFile?): String {
