@@ -5,6 +5,11 @@ import com.sakena.billing.domain.model.UnitInvoiceId
 import com.sakena.billing.infrastructure.web.dto.RegisterInvoicePaymentRequest
 import com.sakena.billing.infrastructure.web.dto.UnitInvoiceResponse
 import com.sakena.property.domain.model.ApartmentId
+import com.sakena.shared.domain.DomainForbiddenException
+import com.sakena.shared.domain.EntityNotFoundException
+import com.sakena.user.application.ProfileService
+import com.sakena.user.domain.Role
+import com.sakena.user.domain.User
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.security.SecurityRequirement
 import io.swagger.v3.oas.annotations.tags.Tag
@@ -16,6 +21,7 @@ import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
+import java.security.Principal
 
 /**
  * REST adapter for issued invoices: the manager's building-wide payment
@@ -27,20 +33,41 @@ import org.springframework.web.bind.annotation.RestController
 @SecurityRequirement(name = "bearerAuth")
 class InvoiceController(
     private val invoiceService: InvoiceService,
+    private val profileService: ProfileService,
 ) {
 
     @Operation(summary = "Invoices of a single unit, newest first")
     @GetMapping
-    fun listByApartment(@RequestParam apartmentId: String): List<UnitInvoiceResponse> =
-        invoiceService.getByApartment(ApartmentId.from(apartmentId)).map(UnitInvoiceResponse::from)
+    fun listByApartment(
+        @RequestParam apartmentId: String,
+        principal: Principal,
+    ): List<UnitInvoiceResponse> {
+        val id = ApartmentId.from(apartmentId)
+        val user = currentUser(principal)
+        val invoices = when (user.role) {
+            Role.MANAGER -> invoiceService.getByApartment(id, user.id)
+            Role.RESIDENT -> invoiceService.getOwnApartment(id, user.id)
+            Role.STAFF -> throw DomainForbiddenException("Staff may not access apartment invoices")
+        }
+        return invoices.map(UnitInvoiceResponse::from)
+    }
 
     @Operation(summary = "Register a payment against an invoice (manager)")
     @PostMapping("/{id}/payments")
     fun registerPayment(
         @PathVariable id: String,
         @Valid @RequestBody request: RegisterInvoicePaymentRequest,
+        principal: Principal,
     ): UnitInvoiceResponse =
         UnitInvoiceResponse.from(
-            invoiceService.registerPayment(UnitInvoiceId.from(id), request.toCommand()),
+            invoiceService.registerPayment(
+                UnitInvoiceId.from(id),
+                request.toCommand(),
+                currentUser(principal).id,
+            ),
         )
+
+    private fun currentUser(principal: Principal): User =
+        profileService.getUserByUsername(principal.name)
+            ?: throw EntityNotFoundException("Signed-in user was not found")
 }
