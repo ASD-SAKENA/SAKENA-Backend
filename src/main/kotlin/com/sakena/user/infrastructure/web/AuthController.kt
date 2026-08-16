@@ -29,17 +29,15 @@ class AuthController(
             role = request.role
         )
         val user = authService.register(command)
-        val token = authService.login(LoginCommand(user.username, request.password))
-        return AuthResponse(token, user.username, user.role.name)
+        val result = authService.login(LoginCommand(user.username, request.password))
+        return AuthResponse(result.token, result.user.username, result.user.role.name)
     }
 
     @PostMapping("/login")
     @Operation(summary = "login")
     fun login(@RequestBody @Valid request: LoginRequest): AuthResponse {
-        val command = LoginCommand(request.username, request.password)
-        val token = authService.login(command)
-        val role = authService.findByUsername(request.username)?.role?.name ?: "RESIDENT"
-        return AuthResponse(token, request.username, role)
+        val result = authService.login(LoginCommand(request.username, request.password))
+        return AuthResponse(result.token, result.user.username, result.user.role.name)
     }
 
     @PostMapping("/forgot-password")
