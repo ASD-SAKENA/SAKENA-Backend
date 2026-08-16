@@ -10,8 +10,10 @@ import com.sakena.facility.domain.FacilityRepository
 import com.sakena.facility.domain.model.Facility
 import com.sakena.facility.domain.model.FacilityBooking
 import com.sakena.property.domain.ApartmentRepository
+import com.sakena.property.domain.BuildingAccess
 import com.sakena.property.domain.BuildingRepository
 import com.sakena.property.domain.model.Apartment
+import com.sakena.property.domain.model.ApartmentId
 import com.sakena.property.domain.model.Building
 import com.sakena.residency.domain.ResidencyRepository
 import com.sakena.residency.domain.model.Residency
@@ -26,6 +28,7 @@ import com.sakena.wallet.domain.WalletRepository
 import com.sakena.wallet.domain.model.Wallet
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import org.junit.jupiter.api.Test
 import java.math.BigDecimal
 import java.time.Instant
@@ -39,6 +42,7 @@ class DashboardServiceTest {
     private val residencyRepository = mockk<ResidencyRepository>()
     private val apartmentRepository = mockk<ApartmentRepository>()
     private val buildingRepository = mockk<BuildingRepository>()
+    private val buildingAccess = mockk<BuildingAccess>()
     private val walletRepository = mockk<WalletRepository>()
     private val invoiceRepository = mockk<UnitInvoiceRepository>()
     private val chargePeriodRepository = mockk<ChargePeriodRepository>()
@@ -50,6 +54,7 @@ class DashboardServiceTest {
         residencyRepository,
         apartmentRepository,
         buildingRepository,
+        buildingAccess,
         walletRepository,
         invoiceRepository,
         chargePeriodRepository,
@@ -59,7 +64,8 @@ class DashboardServiceTest {
     )
 
     private val resident = UserId.generate()
-    private val building = Building.create("برج ساکنا", "تهران، ونک")
+    private val manager = UserId.generate()
+    private val building = Building.create("برج ساکنا", "تهران، ونک", manager)
     private val apartment = Apartment.create(building.id, "12", 4, BigDecimal("125.5"), 3)
 
     @Test
@@ -67,7 +73,7 @@ class DashboardServiceTest {
         val period = issuedPeriod("شارژ تیر")
         val invoice = UnitInvoice.issue(period.id, apartment.id, BigDecimal("850000"))
         invoice.registerPayment(BigDecimal("350000"))
-        val facility = Facility.create("سالن ورزش", "fitness_center")
+        val facility = Facility.create(building.id, "سالن ورزش", "fitness_center")
         val start = Instant.now().plus(2, ChronoUnit.DAYS)
 
         every { residencyRepository.findActiveByResident(resident) } returns
@@ -79,8 +85,10 @@ class DashboardServiceTest {
         every { chargePeriodRepository.findById(period.id) } returns period
         every { serviceRequestRepository.findAllByFilters(any()) } returns
             listOf(openRequest(), settledRequest())
-        every { facilityRepository.findAll() } returns listOf(facility)
-        every { bookingRepository.findUpcomingByResident(resident, any()) } returns
+        every { facilityRepository.findAllByBuildingId(building.id) } returns listOf(facility)
+        every {
+            bookingRepository.findUpcomingByResidentInBuilding(resident, building.id, any())
+        } returns
             listOf(
                 FacilityBooking.create(
                     facility.id,
@@ -107,8 +115,6 @@ class DashboardServiceTest {
         every { residencyRepository.findActiveByResident(resident) } returns null
         every { walletRepository.findByOwner(resident) } returns null
         every { serviceRequestRepository.findAllByFilters(any()) } returns emptyList()
-        every { facilityRepository.findAll() } returns emptyList()
-        every { bookingRepository.findUpcomingByResident(resident, any()) } returns emptyList()
 
         val dashboard = service.forResident(resident)
 
@@ -128,19 +134,24 @@ class DashboardServiceTest {
             .apply { registerPayment(BigDecimal("500")) }
         val unpaid = UnitInvoice.issue(current.id, apartment.id, BigDecimal("1000"))
 
-        every { apartmentRepository.findAll() } returns listOf(apartment)
+        every { buildingAccess.managedBuildingId(manager) } returns building.id
+        every { apartmentRepository.findAllByBuildingId(building.id) } returns listOf(apartment)
         every { residencyRepository.findActiveByApartment(apartment.id) } returns
             Residency.start(apartment.id, resident, TenancyType.TENANT)
         // findAll() is newest first, so the service reverses it for the chart.
-        every { chargePeriodRepository.findAll(null) } returns listOf(current, previous)
+        every { chargePeriodRepository.findAll(building.id) } returns listOf(current, previous)
         every { invoiceRepository.findAllByPeriod(current.id) } returns
             listOf(paid, partial, unpaid)
         every { invoiceRepository.findAllByPeriod(previous.id) } returns
             listOf(UnitInvoice.issue(previous.id, apartment.id, BigDecimal("1000")))
-        every { serviceRequestRepository.findAll() } returns
-            listOf(openRequest(), openRequest(), settledRequest())
+        every { serviceRequestRepository.findAllByApartmentIds(setOf(apartment.id)) } returns
+            listOf(
+                openRequest(apartment.id),
+                openRequest(apartment.id),
+                settledRequest(apartment.id),
+            )
 
-        val dashboard = service.forManager()
+        val dashboard = service.forManager(manager)
 
         assertEquals(1, dashboard.totalUnits)
         assertEquals(1, dashboard.occupiedUnits)
@@ -153,6 +164,11 @@ class DashboardServiceTest {
         assertEquals(1, dashboard.invoiceBreakdown.paid)
         assertEquals(1, dashboard.invoiceBreakdown.partiallyPaid)
         assertEquals(1, dashboard.invoiceBreakdown.unpaid)
+        verify(exactly = 1) { apartmentRepository.findAllByBuildingId(building.id) }
+        verify(exactly = 1) { chargePeriodRepository.findAll(building.id) }
+        verify(exactly = 1) {
+            serviceRequestRepository.findAllByApartmentIds(setOf(apartment.id))
+        }
     }
 
     private fun issuedPeriod(title: String): ChargePeriod =
@@ -167,16 +183,17 @@ class DashboardServiceTest {
     private fun wallet(balance: BigDecimal): Wallet =
         Wallet.createForUser(resident).apply { credit(balance) }
 
-    private fun openRequest(): ServiceRequest = ServiceRequest.create(
+    private fun openRequest(apartmentId: ApartmentId? = null): ServiceRequest = ServiceRequest.create(
         title = "چکه کردن شیر",
         description = "شیر آشپزخانه چکه می‌کند",
         location = "واحد ۱۲",
         createdBy = resident,
         categoryGroup = ServiceCategoryGroup.FACILITIES,
         subCategory = ServiceSubCategory.PLUMBING,
+        requestingApartmentId = apartmentId,
     )
 
-    private fun settledRequest(): ServiceRequest = openRequest().copy(
+    private fun settledRequest(apartmentId: ApartmentId? = null): ServiceRequest = openRequest(apartmentId).copy(
         status = ServiceRequestStatus.SETTLED,
     )
 }

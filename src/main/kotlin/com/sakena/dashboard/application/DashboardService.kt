@@ -16,6 +16,7 @@ import com.sakena.dashboard.domain.model.UpcomingBooking
 import com.sakena.facility.domain.FacilityBookingRepository
 import com.sakena.facility.domain.FacilityRepository
 import com.sakena.property.domain.ApartmentRepository
+import com.sakena.property.domain.BuildingAccess
 import com.sakena.property.domain.BuildingRepository
 import com.sakena.property.domain.model.ApartmentId
 import com.sakena.residency.domain.ResidencyRepository
@@ -40,6 +41,7 @@ class DashboardService(
     private val residencyRepository: ResidencyRepository,
     private val apartmentRepository: ApartmentRepository,
     private val buildingRepository: BuildingRepository,
+    private val buildingAccess: BuildingAccess,
     private val walletRepository: WalletRepository,
     private val invoiceRepository: UnitInvoiceRepository,
     private val chargePeriodRepository: ChargePeriodRepository,
@@ -70,9 +72,19 @@ class DashboardService(
             .findAllByFilters(ServiceRequestFilters(createdBy = residentId))
             .count { it.status.isOpen() }
 
-        val facilities = facilityRepository.findAll().associateBy { it.id }
-        val bookings = bookingRepository
-            .findUpcomingByResident(residentId, Instant.now())
+        val facilities = building
+            ?.let { facilityRepository.findAllByBuildingId(it.id) }
+            .orEmpty()
+            .associateBy { it.id }
+        val bookings = building
+            ?.let {
+                bookingRepository.findUpcomingByResidentInBuilding(
+                    residentId,
+                    it.id,
+                    Instant.now(),
+                )
+            }
+            .orEmpty()
             .mapNotNull { booking ->
                 facilities[booking.facilityId]?.let {
                     UpcomingBooking(it.name, booking.startsAt, booking.endsAt)
@@ -88,21 +100,24 @@ class DashboardService(
         )
     }
 
-    fun forManager(): ManagerDashboard {
-        val apartments = apartmentRepository.findAll()
+    fun forManager(managerId: UserId): ManagerDashboard {
+        val buildingId = buildingAccess.managedBuildingId(managerId)
+        val apartments = apartmentRepository.findAllByBuildingId(buildingId)
         val occupied = apartments.count {
             residencyRepository.findActiveByApartment(it.id) != null
         }
 
         // Oldest first, so the chart reads left to right like a timeline.
         val periods = chargePeriodRepository
-            .findAll(null)
+            .findAll(buildingId)
             .filter { it.status != ChargePeriodStatus.DRAFT }
             .take(CHART_PERIODS)
             .reversed()
         val collections = periods.map(::collectionOf)
 
-        val requests = serviceRequestRepository.findAll()
+        val requests = serviceRequestRepository.findAllByApartmentIds(
+            apartments.mapTo(mutableSetOf()) { it.id },
+        )
 
         val latestPeriod = periods.lastOrNull()
         val latestInvoices = latestPeriod

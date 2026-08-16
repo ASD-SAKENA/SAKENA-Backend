@@ -32,6 +32,12 @@ class ServiceRequestRepositoryImpl(
         return jpa.findAll().map { toDomain(it) }
     }
 
+    override fun findAllByApartmentIds(apartmentIds: Set<ApartmentId>): List<ServiceRequest> {
+        if (apartmentIds.isEmpty()) return emptyList()
+        return jpa.findAllByRequestingApartmentIdIn(apartmentIds.mapTo(mutableSetOf()) { it.value })
+            .map { toDomain(it) }
+    }
+
     override fun findAllByFilters(filters: ServiceRequestFilters): List<ServiceRequest> {
         val spec = org.springframework.data.jpa.domain.Specification<ServiceRequestJpaEntity> { root, _, cb ->
             val predicates = mutableListOf<Predicate>()
