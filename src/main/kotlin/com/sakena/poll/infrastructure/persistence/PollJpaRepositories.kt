@@ -6,7 +6,7 @@ import org.springframework.data.repository.query.Param
 import java.util.UUID
 
 interface PollJpaRepository : JpaRepository<PollEntity, UUID> {
-    fun findAllByOrderByCreatedAtDesc(): List<PollEntity>
+    fun findAllByBuildingIdOrderByCreatedAtDesc(buildingId: UUID): List<PollEntity>
 }
 
 interface PollOptionJpaRepository : JpaRepository<PollOptionEntity, UUID> {

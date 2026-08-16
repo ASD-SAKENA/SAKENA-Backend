@@ -4,6 +4,7 @@ import com.sakena.poll.domain.model.Poll
 import com.sakena.poll.domain.model.PollId
 import com.sakena.poll.domain.model.PollOptionId
 import com.sakena.poll.domain.model.PollVote
+import com.sakena.property.domain.model.BuildingId
 import com.sakena.shared.domain.EntityNotFoundException
 import com.sakena.user.domain.UserId
 
@@ -16,8 +17,8 @@ interface PollRepository {
 
     fun findById(id: PollId): Poll?
 
-    /** All polls, newest first — open ones are surfaced on every dashboard. */
-    fun findAllNewestFirst(): List<Poll>
+    /** One building's polls, newest first. */
+    fun findAllByBuildingNewestFirst(buildingId: BuildingId): List<Poll>
 }
 
 interface PollVoteRepository {

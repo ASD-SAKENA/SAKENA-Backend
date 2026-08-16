@@ -3,6 +3,7 @@ package com.sakena.poll.domain
 import com.sakena.poll.domain.model.Poll
 import com.sakena.poll.domain.model.PollOptionId
 import com.sakena.poll.domain.model.PollResults
+import com.sakena.property.domain.model.BuildingId
 import com.sakena.shared.domain.DomainConflictException
 import com.sakena.shared.domain.DomainValidationException
 import com.sakena.user.domain.UserId
@@ -15,8 +16,9 @@ import kotlin.test.assertTrue
 class PollTest {
 
     private val manager = UserId.generate()
+    private val buildingId = BuildingId.new()
 
-    private fun poll() = Poll.create("Replace the lobby carpet?", listOf(" Yes ", "No"), manager)
+    private fun poll() = Poll.create("Replace the lobby carpet?", listOf(" Yes ", "No"), manager, buildingId)
 
     @Test
     fun `create trims options and keeps their order`() {
@@ -30,14 +32,14 @@ class PollTest {
     @Test
     fun `create rejects fewer than two options`() {
         assertFailsWith<DomainValidationException> {
-            Poll.create("Only one?", listOf("Yes"), manager)
+            Poll.create("Only one?", listOf("Yes"), manager, buildingId)
         }
     }
 
     @Test
     fun `create rejects duplicate options`() {
         assertFailsWith<DomainValidationException> {
-            Poll.create("Twice?", listOf("Yes", "Yes"), manager)
+            Poll.create("Twice?", listOf("Yes", "Yes"), manager, buildingId)
         }
     }
 
