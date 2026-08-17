@@ -178,5 +178,6 @@ class DashboardService(
 /** A request still needing someone's attention. */
 private fun ServiceRequestStatus.isOpen(): Boolean =
     this != ServiceRequestStatus.COMPLETED &&
+        this != ServiceRequestStatus.CONFIRMED &&
         this != ServiceRequestStatus.SETTLED &&
         this != ServiceRequestStatus.REJECTED

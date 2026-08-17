@@ -183,9 +183,9 @@ class ServiceRequestService(
             ?: throw EntityNotFoundException("Service request not found")
 
         val confirmed = request.confirmCompletion(command.userId)
+        val staffId = confirmed.assignedTo
+            ?: throw DomainValidationException("Service request has no assigned staff member to rate")
         val saved = serviceRequestRepository.save(confirmed)
-        val staffId = saved.assignedTo
-            ?: throw EntityNotFoundException("Service request has no assigned staff member to rate")
         ratingService.rate(saved.id, staffId, command.userId, command.score)
         return saved
     }
