@@ -78,16 +78,49 @@ class BuildingControllerTest {
     }
 
     @Test
-    fun `list returns building responses`() {
+    fun `list returns every building for a caller who does not manage one`() {
         val building = Building.create("Tower D", "Fourth Street")
-        every { buildingService.getAll() } returns listOf(building)
+        authenticateResident()
+        every { buildingService.getAll(null) } returns listOf(building)
 
         mockMvc.perform(get("/api/v1/buildings"))
             .andExpect(status().isOk)
             .andExpect(jsonPath("$[0].id").value(building.id.value.toString()))
             .andExpect(jsonPath("$[0].name").value("Tower D"))
 
-        verify(exactly = 1) { buildingService.getAll() }
+        verify(exactly = 1) { buildingService.getAll(null) }
+    }
+
+    @Test
+    fun `list scopes to the requesting manager's own building`() {
+        val building = Building.create("Tower E", "Fifth Street")
+        val manager = authenticateManager(building.id)
+        every { buildingService.getAll(manager.managedBuildingId) } returns listOf(building)
+
+        mockMvc.perform(get("/api/v1/buildings"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$[0].id").value(building.id.value.toString()))
+
+        verify(exactly = 1) { buildingService.getAll(manager.managedBuildingId) }
+    }
+
+    private fun authenticateResident(): User {
+        val now = Instant.now()
+        val resident = User.reconstitute(
+            id = UserId.generate(),
+            username = "resident",
+            email = "resident@example.com",
+            passwordHash = "hash",
+            role = Role.RESIDENT,
+            createdAt = now,
+            updatedAt = now,
+            active = true,
+            managedBuildingId = null,
+        )
+        SecurityContextHolder.getContext().authentication =
+            UsernamePasswordAuthenticationToken(resident.username, null)
+        every { profileService.getUserByUsername(resident.username) } returns resident
+        return resident
     }
 
     private fun authenticateManager(managedBuildingId: BuildingId): User {

@@ -56,14 +56,25 @@ class ApartmentService(
     @Transactional(readOnly = true)
     fun getById(id: ApartmentId): Apartment = requireApartment(id)
 
+    /**
+     * A manager is always scoped to the building they administer, regardless
+     * of what [buildingId] filter they pass — asking for another building's
+     * units returns nothing rather than leaking that building's data. Callers
+     * with no managed building (residents, staff) filter freely or see all.
+     */
     @Transactional(readOnly = true)
-    fun getAll(buildingId: BuildingId?): List<Apartment> =
-        if (buildingId == null) {
+    fun getAll(buildingId: BuildingId?, requesterManagedBuildingId: BuildingId?): List<Apartment> {
+        if (requesterManagedBuildingId != null) {
+            if (buildingId != null && buildingId != requesterManagedBuildingId) return emptyList()
+            return apartmentRepository.findAllByBuildingId(requesterManagedBuildingId)
+        }
+        return if (buildingId == null) {
             apartmentRepository.findAll()
         } else {
             requireBuilding(buildingId)
             apartmentRepository.findAllByBuildingId(buildingId)
         }
+    }
 
     private fun requireApartment(id: ApartmentId): Apartment =
         apartmentRepository.findById(id) ?: throw ApartmentNotFoundException(id)

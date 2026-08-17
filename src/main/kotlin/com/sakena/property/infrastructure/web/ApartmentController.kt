@@ -36,10 +36,11 @@ class ApartmentController(
     private val profileService: ProfileService,
 ) {
 
-    @Operation(summary = "List all apartments")
+    @Operation(summary = "List apartments — every building, or just the one the requester manages")
     @GetMapping
     fun list(@RequestParam(required = false) buildingId: String?): List<ApartmentResponse> =
-        apartmentService.getAll(buildingId?.let(BuildingId::from)).map(ApartmentResponse::from)
+        apartmentService.getAll(buildingId?.let(BuildingId::from), currentUser().managedBuildingId)
+            .map(ApartmentResponse::from)
 
     @Operation(summary = "Get an apartment by id")
     @GetMapping("/{id}")

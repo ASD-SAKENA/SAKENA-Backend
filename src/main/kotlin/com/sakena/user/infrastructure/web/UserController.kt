@@ -30,16 +30,6 @@ class UserController(
     fun list(@RequestParam(required = false) role: Role?): List<UserSummaryResponse> =
         userAdminService.getUsers(role).map(UserSummaryResponse::from)
 
-    @PatchMapping("/{id}/status")
-    @Operation(summary = "Activate or deactivate a user account")
-    fun changeStatus(
-        @PathVariable id: String,
-        @Valid @RequestBody request: UpdateUserStatusRequest
-    ): UserSummaryResponse =
-        UserSummaryResponse.from(
-            userAdminService.changeActiveStatus(UserId.fromString(id), request.active)
-        )
-
     @PatchMapping("/{id}/specialty")
     @Operation(summary = "Set or clear a user's specialty")
     fun changeSpecialty(

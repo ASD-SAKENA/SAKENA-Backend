@@ -36,8 +36,18 @@ class BuildingService(
     @Transactional(readOnly = true)
     fun getById(id: BuildingId): Building = requireBuilding(id)
 
+    /**
+     * A manager only ever administers one building, so their list is scoped
+     * to it. Everyone else (residents joining, staff, etc.) still sees every
+     * building — there is no membership check to scope by yet.
+     */
     @Transactional(readOnly = true)
-    fun getAll(): List<Building> = buildingRepository.findAll()
+    fun getAll(requesterManagedBuildingId: BuildingId?): List<Building> =
+        if (requesterManagedBuildingId != null) {
+            listOfNotNull(buildingRepository.findById(requesterManagedBuildingId))
+        } else {
+            buildingRepository.findAll()
+        }
 
     private fun requireBuilding(id: BuildingId): Building =
         buildingRepository.findById(id) ?: throw BuildingNotFoundException(id)

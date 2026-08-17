@@ -31,10 +31,10 @@ class BuildingController(
     private val profileService: ProfileService,
 ) {
 
-    @Operation(summary = "List all buildings")
+    @Operation(summary = "List buildings — every building, or just the one the requester manages")
     @GetMapping
     fun list(): List<BuildingResponse> =
-        buildingService.getAll().map(BuildingResponse::from)
+        buildingService.getAll(currentUser().managedBuildingId).map(BuildingResponse::from)
 
     @Operation(summary = "Get a building by id")
     @GetMapping("/{id}")
