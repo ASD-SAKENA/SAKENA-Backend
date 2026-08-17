@@ -1,5 +1,6 @@
 package com.sakena.user.infrastructure.web
 
+import com.sakena.property.domain.model.BuildingId
 import com.sakena.user.application.UserAdminService
 import com.sakena.user.domain.Role
 import com.sakena.user.domain.UserId
@@ -57,12 +58,19 @@ class UserController(
         )
 
     @PatchMapping("/{id}/role")
-    @Operation(summary = "Change a user's role (not supported for/from MANAGER)")
+    @Operation(
+        summary = "Change a user's role, including granting or revoking MANAGER of a building " +
+            "(a building may have several managers, or none)",
+    )
     fun changeRole(
         @PathVariable id: String,
         @Valid @RequestBody request: UpdateUserRoleRequest
     ): UserSummaryResponse =
         UserSummaryResponse.from(
-            userAdminService.changeRole(UserId.fromString(id), Role.from(request.role))
+            userAdminService.changeRole(
+                UserId.fromString(id),
+                Role.from(request.role),
+                request.managedBuildingId?.let(BuildingId::from),
+            ),
         )
 }

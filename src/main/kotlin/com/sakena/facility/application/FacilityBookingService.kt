@@ -9,6 +9,7 @@ import com.sakena.facility.domain.model.BookingId
 import com.sakena.facility.domain.model.Facility
 import com.sakena.facility.domain.model.FacilityBooking
 import com.sakena.facility.domain.model.FacilityId
+import com.sakena.residency.application.ResidencyService
 import com.sakena.shared.domain.DomainConflictException
 import com.sakena.user.domain.Role
 import com.sakena.user.domain.User
@@ -27,6 +28,7 @@ import java.time.temporal.TemporalAdjusters
 class FacilityBookingService(
     private val facilityRepository: FacilityRepository,
     private val bookingRepository: FacilityBookingRepository,
+    private val residencyService: ResidencyService,
     @Value("\${app.timezone:Asia/Tehran}")
     private val timezone: String,
 ) {
@@ -38,6 +40,7 @@ class FacilityBookingService(
         command: BookFacilityCommand,
         bookedBy: UserId,
     ): FacilityBooking {
+        residencyService.requireActiveResidency(bookedBy)
         val facility = facilityRepository.findById(facilityId)
             ?: throw FacilityNotFoundException(facilityId)
 

@@ -63,15 +63,15 @@ class ServiceRequestServiceTest {
     }
 
     @Test
-    fun `create remains valid when the user has no active apartment`() {
+    fun `create rejects a resident with no active apartment`() {
         val resident = user(Role.RESIDENT)
         every { userRepository.findById(resident.id) } returns resident
         every { residencyRepository.findActiveByResident(resident.id) } returns null
-        every { serviceRequestRepository.save(any()) } answers { firstArg() }
 
-        val result = service.create(createCommand(), resident.id)
-
-        assertEquals(null, result.requestingApartmentId)
+        assertFailsWith<DomainForbiddenException> {
+            service.create(createCommand(), resident.id)
+        }
+        verify(exactly = 0) { serviceRequestRepository.save(any()) }
     }
 
     @Test

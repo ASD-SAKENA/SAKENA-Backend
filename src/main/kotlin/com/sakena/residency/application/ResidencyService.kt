@@ -96,6 +96,16 @@ class ResidencyService(
         residencyRepository.findActiveByResident(residentId)?.let(::describe)
 
     /**
+     * Guards resident actions (voting, booking, filing a request) that only
+     * make sense once a resident actually occupies a unit — a person who
+     * hasn't been moved into an apartment yet isn't a building member.
+     */
+    @Transactional(readOnly = true)
+    fun requireActiveResidency(residentId: UserId): Residency =
+        residencyRepository.findActiveByResident(residentId)
+            ?: throw DomainForbiddenException("You must be an active resident of a unit to do this")
+
+    /**
      * Enriches a residency with the unit details and building name, so clients
      * can show "unit 12 — Niloufar tower" instead of raw identifiers.
      */

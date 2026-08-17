@@ -7,7 +7,12 @@ import com.sakena.poll.domain.PollVoteRepository
 import com.sakena.poll.domain.model.AlreadyVotedException
 import com.sakena.poll.domain.model.Poll
 import com.sakena.poll.domain.model.PollVote
+import com.sakena.residency.application.ResidencyService
+import com.sakena.residency.domain.model.Residency
+import com.sakena.residency.domain.model.TenancyType
+import com.sakena.property.domain.model.ApartmentId
 import com.sakena.shared.domain.DomainConflictException
+import com.sakena.shared.domain.DomainForbiddenException
 import com.sakena.user.domain.UserId
 import io.mockk.every
 import io.mockk.mockk
@@ -22,10 +27,16 @@ class PollServiceTest {
 
     private val pollRepository = mockk<PollRepository>(relaxed = true)
     private val voteRepository = mockk<PollVoteRepository>(relaxed = true)
-    private val service = PollService(pollRepository, voteRepository)
+    private val residencyService = mockk<ResidencyService>()
+    private val service = PollService(pollRepository, voteRepository, residencyService)
 
     private val manager = UserId.generate()
     private val resident = UserId.generate()
+
+    init {
+        every { residencyService.requireActiveResidency(resident) } returns
+            Residency.start(ApartmentId.new(), resident, TenancyType.TENANT)
+    }
 
     private fun poll() = Poll.create("Replace the carpet?", listOf("Yes", "No"), manager)
 
@@ -80,5 +91,19 @@ class PollServiceTest {
         assertFailsWith<DomainConflictException> {
             service.vote(poll.id, CastVoteCommand(yes), resident)
         }
+    }
+
+    @Test
+    fun `a resident with no active residency cannot vote`() {
+        val poll = poll()
+        val yes = poll.options.first().id
+        val outsider = UserId.generate()
+        every { residencyService.requireActiveResidency(outsider) } throws
+            DomainForbiddenException("You must be an active resident of a unit to do this")
+
+        assertFailsWith<DomainForbiddenException> {
+            service.vote(poll.id, CastVoteCommand(yes), outsider)
+        }
+        verify(exactly = 0) { voteRepository.save(any()) }
     }
 }

@@ -7,7 +7,12 @@ import com.sakena.facility.domain.FacilityRepository
 import com.sakena.facility.domain.model.BookingRules
 import com.sakena.facility.domain.model.Facility
 import com.sakena.facility.domain.model.FacilityBooking
+import com.sakena.residency.application.ResidencyService
+import com.sakena.residency.domain.model.Residency
+import com.sakena.residency.domain.model.TenancyType
+import com.sakena.property.domain.model.ApartmentId
 import com.sakena.shared.domain.DomainConflictException
+import com.sakena.shared.domain.DomainForbiddenException
 import com.sakena.property.domain.model.BuildingId
 import com.sakena.user.domain.Role
 import com.sakena.user.domain.User
@@ -30,11 +35,17 @@ class FacilityBookingServiceTest {
 
     private val facilityRepository = mockk<FacilityRepository>()
     private val bookingRepository = mockk<FacilityBookingRepository>()
+    private val residencyService = mockk<ResidencyService>()
     private val zone = ZoneId.of(TIMEZONE)
-    private val service = FacilityBookingService(facilityRepository, bookingRepository, TIMEZONE)
+    private val service = FacilityBookingService(facilityRepository, bookingRepository, residencyService, TIMEZONE)
 
     private val resident = user(Role.RESIDENT)
     private val manager = user(Role.MANAGER)
+
+    init {
+        every { residencyService.requireActiveResidency(resident.id) } returns
+            Residency.start(ApartmentId.new(), resident.id, TenancyType.TENANT)
+    }
 
     /** Tomorrow 10:00–11:00 local time — inside the default 08–22 window. */
     private val start: Instant = Instant.now()
@@ -122,6 +133,20 @@ class FacilityBookingServiceTest {
         service.book(facility.id, BookFacilityCommand(start, end), resident.id)
 
         verify(exactly = 1) { bookingRepository.save(any()) }
+    }
+
+    @Test
+    fun `book rejects a resident with no active residency`() {
+        val facility = facility(capacity = 10)
+        val outsider = user(Role.RESIDENT)
+        every { facilityRepository.findById(facility.id) } returns facility
+        every { residencyService.requireActiveResidency(outsider.id) } throws
+            DomainForbiddenException("You must be an active resident of a unit to do this")
+
+        assertFailsWith<DomainForbiddenException> {
+            service.book(facility.id, BookFacilityCommand(start, end), outsider.id)
+        }
+        verify(exactly = 0) { bookingRepository.save(any()) }
     }
 
     @Test

@@ -1,5 +1,7 @@
 package com.sakena.user.application
 
+import com.sakena.property.domain.BuildingRepository
+import com.sakena.property.domain.model.BuildingId
 import com.sakena.shared.domain.DomainValidationException
 import com.sakena.shared.domain.EntityNotFoundException
 import com.sakena.user.domain.Role
@@ -13,7 +15,8 @@ import org.springframework.transaction.annotation.Transactional
 @Service
 @Transactional
 class UserAdminService(
-    private val userRepository: UserRepository
+    private val userRepository: UserRepository,
+    private val buildingRepository: BuildingRepository,
 ) {
 
     @Transactional(readOnly = true)
@@ -36,16 +39,22 @@ class UserAdminService(
     }
 
     /**
-     * Reassigns a user's role. MANAGER is excluded here because promoting to
-     * it must also provision a building and its wallet — that only happens
-     * through registration today. Demoting an existing manager is excluded
-     * for the same reason: it would orphan the building they administer.
+     * Reassigns a user's role. The superuser is the only one who can hand out
+     * or revoke MANAGER, since doing so decides who administers a building —
+     * a building can end up with several managers or none, both intentional
+     * (e.g. temporarily covering for an absent manager, or freeing a building
+     * to be reassigned later).
      */
-    fun changeRole(userId: UserId, role: Role): User {
+    fun changeRole(userId: UserId, role: Role, managedBuildingId: BuildingId?): User {
         val user = userRepository.findById(userId)
             ?: throw EntityNotFoundException("User not found: ${userId.value}")
-        if (role == Role.MANAGER || user.role == Role.MANAGER) {
-            throw DomainValidationException("Manager role changes are not supported through this endpoint")
+        if (role == Role.MANAGER) {
+            val buildingId = managedBuildingId
+                ?: throw DomainValidationException("managedBuildingId is required when assigning the MANAGER role")
+            if (!buildingRepository.existsById(buildingId)) {
+                throw EntityNotFoundException("Building not found: ${buildingId.value}")
+            }
+            return userRepository.save(user.withRole(role, managedBuildingId = buildingId))
         }
         return userRepository.save(user.withRole(role, managedBuildingId = null))
     }
