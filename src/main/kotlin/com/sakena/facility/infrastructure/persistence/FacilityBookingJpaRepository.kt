@@ -40,8 +40,20 @@ interface FacilityBookingJpaRepository : JpaRepository<FacilityBookingEntity, UU
         to: Instant,
     ): Long
 
-    fun findAllByBookedByAndStartsAtGreaterThanEqualOrderByStartsAt(
-        bookedBy: UUID,
-        from: Instant,
+    @Query(
+        """
+        SELECT b FROM FacilityBookingEntity b
+        WHERE b.bookedBy = :bookedBy
+          AND b.startsAt >= :from
+          AND b.facilityId IN (
+              SELECT f.id FROM FacilityEntity f WHERE f.buildingId = :buildingId
+          )
+        ORDER BY b.startsAt
+        """
+    )
+    fun findUpcomingByResidentInBuilding(
+        @Param("bookedBy") bookedBy: UUID,
+        @Param("buildingId") buildingId: UUID,
+        @Param("from") from: Instant,
     ): List<FacilityBookingEntity>
 }

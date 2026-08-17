@@ -14,5 +14,8 @@ interface PaymentJpaRepository : JpaRepository<PaymentEntity, UUID> {
 
     fun findAllByPayerIdOrderByPaidAtDesc(payerId: UUID): List<PaymentEntity>
 
-    fun findAllByStatusOrderByPaidAtDesc(status: PaymentStatus): List<PaymentEntity>
+    fun findAllByBuildingIdAndStatusOrderByPaidAtDesc(
+        buildingId: UUID,
+        status: PaymentStatus,
+    ): List<PaymentEntity>
 }

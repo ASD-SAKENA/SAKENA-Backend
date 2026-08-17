@@ -18,8 +18,12 @@ class UserRepositoryAdapter(
         return toDomain(saved)
     }
 
-    override fun findAll(): List<User> {
-        return jpaRepo.findAll().map { toDomain(it) }
+    override fun findAll(): List<User> =
+        jpaRepo.findAll().map(::toDomain)
+
+    override fun findAllByIds(ids: Set<UserId>): List<User> {
+        if (ids.isEmpty()) return emptyList()
+        return jpaRepo.findAllById(ids.map { it.value }).map { toDomain(it) }
     }
 
     override fun findByUsername(username: String): User? {

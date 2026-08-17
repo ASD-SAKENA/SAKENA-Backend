@@ -4,5 +4,5 @@ import org.springframework.data.jpa.repository.JpaRepository
 import java.util.UUID
 
 interface AnnouncementJpaRepository : JpaRepository<AnnouncementEntity, UUID> {
-    fun findAllByOrderByCreatedAtDesc(): List<AnnouncementEntity>
+    fun findAllByBuildingIdOrderByCreatedAtDesc(buildingId: UUID): List<AnnouncementEntity>
 }

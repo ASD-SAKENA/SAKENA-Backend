@@ -6,4 +6,6 @@ import java.util.UUID
 
 interface JpaServiceRequestRepository : JpaRepository<ServiceRequestJpaEntity, UUID>, JpaSpecificationExecutor<ServiceRequestJpaEntity> {
     fun findAllByCreatedBy(createdBy: UUID): List<ServiceRequestJpaEntity>
+
+    fun findAllByRequestingApartmentIdIn(apartmentIds: Set<UUID>): List<ServiceRequestJpaEntity>
 }

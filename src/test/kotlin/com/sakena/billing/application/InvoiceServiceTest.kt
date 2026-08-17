@@ -14,12 +14,17 @@ import com.sakena.billing.domain.model.CostAllocation
 import com.sakena.billing.domain.model.UnitInvoice
 import com.sakena.billing.domain.model.ServiceCharge
 import com.sakena.billing.domain.model.ServiceChargeTarget
+import com.sakena.property.domain.BuildingAccess
 import com.sakena.property.domain.ApartmentRepository
 import com.sakena.property.domain.model.Apartment
 import com.sakena.property.domain.model.BuildingId
+import com.sakena.residency.domain.ResidencyRepository
+import com.sakena.residency.domain.model.Residency
+import com.sakena.residency.domain.model.TenancyType
 import com.sakena.servicerequest.domain.ServiceRequestId
 import com.sakena.shared.domain.DomainConflictException
 import com.sakena.shared.domain.DomainForbiddenException
+import com.sakena.user.domain.UserId
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
@@ -37,14 +42,19 @@ class InvoiceServiceTest {
     private val invoiceRepository = mockk<UnitInvoiceRepository>()
     private val apartmentRepository = mockk<ApartmentRepository>()
     private val serviceChargeRepository = mockk<ServiceChargeRepository>()
+    private val buildingAccess = mockk<BuildingAccess>()
+    private val residencyRepository = mockk<ResidencyRepository>()
     private val service = InvoiceService(
         periodRepository,
         itemRepository,
         invoiceRepository,
         apartmentRepository,
         serviceChargeRepository,
+        buildingAccess,
+        residencyRepository,
     )
 
+    private val managerId = UserId.generate()
     private val buildingId = BuildingId.new()
 
     private fun period() = ChargePeriod.create(
@@ -66,6 +76,7 @@ class InvoiceServiceTest {
     @Test
     fun `issue allocates every cost line across the building's units`() {
         val period = period()
+        allowManager(period)
         val units = listOf(apartment("1", "50"), apartment("2", "50"))
         every { periodRepository.findById(period.id) } returns period
         every { invoiceRepository.existsByPeriod(period.id) } returns false
@@ -83,7 +94,7 @@ class InvoiceServiceTest {
         val saved = slot<List<UnitInvoice>>()
         every { invoiceRepository.saveAll(capture(saved)) } answers { saved.captured }
 
-        val invoices = service.issue(period.id, requesterManagedBuildingId = buildingId)
+        val invoices = service.issue(period.id, managerId)
 
         assertEquals(2, invoices.size)
         assertEquals(BigDecimal("450000.00"), invoices.first().amount)
@@ -92,75 +103,60 @@ class InvoiceServiceTest {
     }
 
     @Test
-    fun `issue is rejected for a manager who does not administer the period's building`() {
-        val period = period()
-        every { periodRepository.findById(period.id) } returns period
-
-        assertFailsWith<DomainForbiddenException> {
-            service.issue(period.id, requesterManagedBuildingId = BuildingId.new())
-        }
-    }
-
-    @Test
     fun `issuing twice is rejected`() {
         val period = period()
+        allowManager(period)
         every { periodRepository.findById(period.id) } returns period
         every { invoiceRepository.existsByPeriod(period.id) } returns true
 
-        assertFailsWith<DomainConflictException> {
-            service.issue(period.id, requesterManagedBuildingId = buildingId)
-        }
+        assertFailsWith<DomainConflictException> { service.issue(period.id, managerId) }
     }
 
     @Test
     fun `issuing a period without cost lines is rejected`() {
         val period = period()
+        allowManager(period)
         every { periodRepository.findById(period.id) } returns period
         every { invoiceRepository.existsByPeriod(period.id) } returns false
         every { serviceChargeRepository.findPendingByBuilding(buildingId) } returns emptyList()
         every { itemRepository.findAllByPeriod(period.id) } returns emptyList()
 
-        assertFailsWith<DomainConflictException> {
-            service.issue(period.id, requesterManagedBuildingId = buildingId)
-        }
+        assertFailsWith<DomainConflictException> { service.issue(period.id, managerId) }
+    }
+
+    @Test
+    fun `issue rejects a period outside the manager's building`() {
+        val period = period()
+        every { periodRepository.findById(period.id) } returns period
+        every { buildingAccess.requireManagerAccess(buildingId, managerId) } throws
+            DomainForbiddenException("You do not manage this building")
+
+        assertFailsWith<DomainForbiddenException> { service.issue(period.id, managerId) }
+        verify(exactly = 0) { invoiceRepository.saveAll(any()) }
     }
 
     @Test
     fun `registerPayment settles the invoice through the aggregate`() {
         val period = period()
+        allowManager(period)
         val invoice = UnitInvoice.issue(period.id, apartment("1", "50").id, BigDecimal("500000"))
-        every { periodRepository.findById(period.id) } returns period
         every { invoiceRepository.findById(invoice.id) } returns invoice
+        every { periodRepository.findById(period.id) } returns period
         every { invoiceRepository.save(any()) } answers { firstArg() }
 
         val result = service.registerPayment(
             invoice.id,
             RegisterInvoicePaymentCommand(BigDecimal("500000")),
-            requesterManagedBuildingId = buildingId,
+            managerId,
         )
 
         assertEquals(BigDecimal("500000"), result.paidAmount)
     }
 
     @Test
-    fun `registerPayment is rejected for a manager who does not administer the invoice's building`() {
-        val period = period()
-        val invoice = UnitInvoice.issue(period.id, apartment("1", "50").id, BigDecimal("500000"))
-        every { periodRepository.findById(period.id) } returns period
-        every { invoiceRepository.findById(invoice.id) } returns invoice
-
-        assertFailsWith<DomainForbiddenException> {
-            service.registerPayment(
-                invoice.id,
-                RegisterInvoicePaymentCommand(BigDecimal("500000")),
-                requesterManagedBuildingId = BuildingId.new(),
-            )
-        }
-    }
-
-    @Test
     fun `issue imports pending shared and targeted service costs`() {
         val period = period()
+        allowManager(period)
         val units = listOf(apartment("1", "50"), apartment("2", "50"))
         val shared = serviceCharge(
             amount = "100",
@@ -183,7 +179,7 @@ class InvoiceServiceTest {
         val saved = slot<List<UnitInvoice>>()
         every { invoiceRepository.saveAll(capture(saved)) } answers { saved.captured }
 
-        val invoices = service.issue(period.id, requesterManagedBuildingId = buildingId).associateBy { it.apartmentId }
+        val invoices = service.issue(period.id, managerId).associateBy { it.apartmentId }
 
         assertEquals(BigDecimal("125.00"), invoices.getValue(units.first().id).amount)
         assertEquals(BigDecimal("50.00"), invoices.getValue(units.last().id).amount)
@@ -191,6 +187,36 @@ class InvoiceServiceTest {
         assertEquals(period.id, targeted.attachedPeriodId)
         verify(exactly = 2) { itemRepository.save(any()) }
         verify(exactly = 2) { serviceChargeRepository.save(any()) }
+    }
+
+    @Test
+    fun `manager apartment history rejects a unit in another building`() {
+        val unit = apartment("1", "50")
+        every { apartmentRepository.findById(unit.id) } returns unit
+        every { buildingAccess.requireManagerAccess(buildingId, managerId) } throws
+            DomainForbiddenException("You do not manage this building")
+
+        assertFailsWith<DomainForbiddenException> {
+            service.getByApartment(unit.id, managerId)
+        }
+        verify(exactly = 0) { invoiceRepository.findAllByApartment(any()) }
+    }
+
+    @Test
+    fun `resident apartment history is limited to their active unit`() {
+        val ownUnit = apartment("1", "50")
+        val anotherUnit = apartment("2", "50")
+        every { residencyRepository.findActiveByResident(managerId) } returns
+            Residency.start(ownUnit.id, managerId, TenancyType.TENANT)
+
+        assertFailsWith<DomainForbiddenException> {
+            service.getOwnApartment(anotherUnit.id, managerId)
+        }
+        verify(exactly = 0) { invoiceRepository.findAllByApartment(any()) }
+    }
+
+    private fun allowManager(period: ChargePeriod) {
+        every { buildingAccess.requireManagerAccess(period.buildingId, managerId) } returns Unit
     }
 
     private fun serviceCharge(
