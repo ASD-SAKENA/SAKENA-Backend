@@ -95,7 +95,8 @@ class ChatService(
      */
     fun delete(id: ChatMessageId, requester: User): ChatMessage {
         val message = requireMessage(id)
-        message.delete(requester.id, requester.role == Role.MANAGER)
+        val isBuildingManager = requester.role == Role.MANAGER && requester.managedBuildingId == message.buildingId
+        message.delete(requester.id, isBuildingManager)
         val deleted = messageRepository.save(message)
         message.attachment?.let { attachmentStorage.delete(it.storageKey) }
         return deleted
@@ -137,21 +138,31 @@ class ChatService(
     }
 
     /**
-     * Managers and staff work across every building, matching how they're
-     * authorized elsewhere in the app. A resident may only reach the chat of
-     * the building they actually live in.
+     * A building's chat is only for the people who actually live or work
+     * there: a resident of that specific unit, or the manager administering
+     * that specific building. Service staff have no building of their own —
+     * their work is filed through service requests, not chat — so they never
+     * get in.
      */
     private fun requireMembership(buildingId: BuildingId, user: User) {
         if (!buildingRepository.existsById(buildingId)) {
             throw EntityNotFoundException("Building with id '$buildingId' was not found")
         }
-        if (user.role != Role.RESIDENT) return
-
-        val residency = residencyRepository.findActiveByResident(user.id)
-            ?: throw DomainForbiddenException("You are not a resident of any building")
-        val residentBuildingId = apartmentRepository.findById(residency.apartmentId)?.buildingId
-        if (residentBuildingId != buildingId) {
-            throw DomainForbiddenException("You are not a resident of this building")
+        when (user.role) {
+            Role.MANAGER -> {
+                if (user.managedBuildingId != buildingId) {
+                    throw DomainForbiddenException("You do not manage this building")
+                }
+            }
+            Role.RESIDENT -> {
+                val residency = residencyRepository.findActiveByResident(user.id)
+                    ?: throw DomainForbiddenException("You are not a resident of any building")
+                val residentBuildingId = apartmentRepository.findById(residency.apartmentId)?.buildingId
+                if (residentBuildingId != buildingId) {
+                    throw DomainForbiddenException("You are not a resident of this building")
+                }
+            }
+            Role.STAFF, Role.ADMIN -> throw DomainForbiddenException("You do not have access to building chat")
         }
     }
 

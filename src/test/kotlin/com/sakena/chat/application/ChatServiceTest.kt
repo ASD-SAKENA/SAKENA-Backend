@@ -48,17 +48,19 @@ class ChatServiceTest {
 
     private val buildingId = BuildingId.new()
 
-    private fun user(role: Role) = User.register(
-        username = "u${role.name.lowercase()}",
-        email = "${role.name.lowercase()}@sakena.test",
+    private fun user(role: Role, managedBuildingId: BuildingId? = null) = User.register(
+        username = "u${role.name.lowercase()}-${(0..999999).random()}",
+        email = "${role.name.lowercase()}-${(0..999999).random()}@sakena.test",
         rawPassword = "password123",
         passwordEncoder = { it },
         role = role,
-        managedBuildingId = if (role == Role.MANAGER) BuildingId.new() else null,
+        managedBuildingId = managedBuildingId ?: if (role == Role.MANAGER) BuildingId.new() else null,
     )
 
     private val author = user(Role.RESIDENT)
-    private val manager = user(Role.MANAGER)
+
+    /** Manages [buildingId] specifically — every membership check should pass. */
+    private val manager = user(Role.MANAGER, managedBuildingId = buildingId)
 
     private fun givenBuildingExists() {
         every { buildingRepository.existsById(buildingId) } returns true
@@ -224,6 +226,17 @@ class ChatServiceTest {
     }
 
     @Test
+    fun `a manager of a different building cannot delete this building's message`() {
+        val otherManager = user(Role.MANAGER, managedBuildingId = BuildingId.new())
+        val message = ChatMessage.text(buildingId, author.id, "First")
+        every { messageRepository.findById(message.id) } returns message
+
+        assertFailsWith<DomainConflictException> {
+            service.delete(message.id, otherManager)
+        }
+    }
+
+    @Test
     fun `a deleted message exposes no attachment url`() {
         val message = ChatMessage.text(buildingId, author.id, "Bye")
         message.delete(author.id, requesterIsManager = false)
@@ -244,13 +257,43 @@ class ChatServiceTest {
     }
 
     @Test
-    fun `a manager can read and post in any building's chat`() {
+    fun `a manager can read and post in the building they administer`() {
         givenBuildingExists()
         every { messageRepository.findPage(buildingId, null, ChatService.DEFAULT_PAGE_SIZE) } returns emptyList()
 
         service.getPage(buildingId, before = null, limit = null, viewer = manager)
 
         verify { messageRepository.findPage(buildingId, null, ChatService.DEFAULT_PAGE_SIZE) }
+    }
+
+    @Test
+    fun `a manager of a different building cannot reach this building's chat`() {
+        val otherManager = user(Role.MANAGER, managedBuildingId = BuildingId.new())
+        givenBuildingExists()
+
+        assertFailsWith<DomainForbiddenException> {
+            service.getPage(buildingId, before = null, limit = null, viewer = otherManager)
+        }
+    }
+
+    @Test
+    fun `staff cannot reach any building's chat`() {
+        val staff = user(Role.STAFF)
+        givenBuildingExists()
+
+        assertFailsWith<DomainForbiddenException> {
+            service.getPage(buildingId, before = null, limit = null, viewer = staff)
+        }
+    }
+
+    @Test
+    fun `the admin cannot reach any building's chat`() {
+        val admin = user(Role.ADMIN)
+        givenBuildingExists()
+
+        assertFailsWith<DomainForbiddenException> {
+            service.getPage(buildingId, before = null, limit = null, viewer = admin)
+        }
     }
 
     @Test
