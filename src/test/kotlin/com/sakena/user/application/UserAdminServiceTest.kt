@@ -1,5 +1,6 @@
 package com.sakena.user.application
 
+import com.sakena.property.domain.BuildingRepository
 import com.sakena.property.domain.model.BuildingId
 import com.sakena.shared.domain.DomainValidationException
 import com.sakena.shared.domain.EntityNotFoundException
@@ -20,12 +21,14 @@ import java.time.Instant
 class UserAdminServiceTest {
 
     private lateinit var userRepository: UserRepository
+    private lateinit var buildingRepository: BuildingRepository
     private lateinit var userAdminService: UserAdminService
 
     @BeforeEach
     fun setup() {
         userRepository = mockk()
-        userAdminService = UserAdminService(userRepository)
+        buildingRepository = mockk()
+        userAdminService = UserAdminService(userRepository, buildingRepository)
     }
 
     private fun createUser(
@@ -151,7 +154,7 @@ class UserAdminServiceTest {
         val savedUserSlot = slot<User>()
         every { userRepository.save(capture(savedUserSlot)) } answers { savedUserSlot.captured }
 
-        val result = userAdminService.changeRole(user.id, Role.STAFF)
+        val result = userAdminService.changeRole(user.id, Role.STAFF, managedBuildingId = null)
 
         assertEquals(Role.STAFF, result.role)
         assertEquals(Role.STAFF, savedUserSlot.captured.role)
@@ -164,31 +167,76 @@ class UserAdminServiceTest {
         every { userRepository.findById(user.id) } returns user
         every { userRepository.save(any()) } answers { firstArg() }
 
-        val result = userAdminService.changeRole(user.id, Role.ADMIN)
+        val result = userAdminService.changeRole(user.id, Role.ADMIN, managedBuildingId = null)
 
         assertEquals(Role.ADMIN, result.role)
     }
 
     @Test
-    fun `changeRole should reject promoting to manager`() {
+    fun `changeRole should promote a resident to manager of the given building`() {
+        val user = createUser(role = Role.RESIDENT)
+        val buildingId = BuildingId.new()
+        every { userRepository.findById(user.id) } returns user
+        every { buildingRepository.existsById(buildingId) } returns true
+        val savedUserSlot = slot<User>()
+        every { userRepository.save(capture(savedUserSlot)) } answers { savedUserSlot.captured }
+
+        val result = userAdminService.changeRole(user.id, Role.MANAGER, buildingId)
+
+        assertEquals(Role.MANAGER, result.role)
+        assertEquals(buildingId, result.managedBuildingId)
+        assertEquals(buildingId, savedUserSlot.captured.managedBuildingId)
+    }
+
+    @Test
+    fun `changeRole should allow a second manager on a building that already has one`() {
+        val user = createUser(role = Role.RESIDENT)
+        val buildingId = BuildingId.new()
+        every { userRepository.findById(user.id) } returns user
+        every { buildingRepository.existsById(buildingId) } returns true
+        every { userRepository.save(any()) } answers { firstArg() }
+
+        val result = userAdminService.changeRole(user.id, Role.MANAGER, buildingId)
+
+        assertEquals(buildingId, result.managedBuildingId)
+    }
+
+    @Test
+    fun `changeRole should reject promoting to manager without a buildingId`() {
         val user = createUser(role = Role.RESIDENT)
         every { userRepository.findById(user.id) } returns user
 
         assertThrows<DomainValidationException> {
-            userAdminService.changeRole(user.id, Role.MANAGER)
+            userAdminService.changeRole(user.id, Role.MANAGER, managedBuildingId = null)
         }
         verify(exactly = 0) { userRepository.save(any()) }
     }
 
     @Test
-    fun `changeRole should reject demoting an existing manager`() {
-        val user = createUser(role = Role.MANAGER)
+    fun `changeRole should reject promoting to manager of a building that does not exist`() {
+        val user = createUser(role = Role.RESIDENT)
+        val buildingId = BuildingId.new()
         every { userRepository.findById(user.id) } returns user
+        every { buildingRepository.existsById(buildingId) } returns false
 
-        assertThrows<DomainValidationException> {
-            userAdminService.changeRole(user.id, Role.RESIDENT)
+        assertThrows<EntityNotFoundException> {
+            userAdminService.changeRole(user.id, Role.MANAGER, buildingId)
         }
         verify(exactly = 0) { userRepository.save(any()) }
+    }
+
+    @Test
+    fun `changeRole should demote an existing manager and clear their building, leaving it unmanaged`() {
+        val user = createUser(role = Role.MANAGER)
+        every { userRepository.findById(user.id) } returns user
+        val savedUserSlot = slot<User>()
+        every { userRepository.save(capture(savedUserSlot)) } answers { savedUserSlot.captured }
+
+        val result = userAdminService.changeRole(user.id, Role.RESIDENT, managedBuildingId = null)
+
+        assertEquals(Role.RESIDENT, result.role)
+        assertEquals(null, result.managedBuildingId)
+        assertEquals(null, savedUserSlot.captured.managedBuildingId)
     }
 
     @Test
@@ -197,7 +245,7 @@ class UserAdminServiceTest {
         every { userRepository.findById(userId) } returns null
 
         assertThrows<EntityNotFoundException> {
-            userAdminService.changeRole(userId, Role.STAFF)
+            userAdminService.changeRole(userId, Role.STAFF, managedBuildingId = null)
         }
         verify(exactly = 0) { userRepository.save(any()) }
     }

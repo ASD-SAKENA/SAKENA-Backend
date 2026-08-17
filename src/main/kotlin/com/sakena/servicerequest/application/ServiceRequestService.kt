@@ -31,9 +31,8 @@ class ServiceRequestService(
     /**
      * A request tied to a resident's apartment belongs to that apartment's
      * building, and only its manager may act on it. A request with no
-     * apartment (filed by staff, or a resident with no unit assigned) has no
-     * building to scope to, so every manager can still act on those — same
-     * as before this check existed.
+     * apartment (filed by staff before this check existed) has no building to
+     * scope to, so every manager can still act on those.
      */
     private fun requireBuildingOwnership(request: ServiceRequest, manager: User) {
         val apartmentId = request.requestingApartmentId ?: return
@@ -59,6 +58,7 @@ class ServiceRequestService(
         userRepository.findById(currentUserId)
             ?: throw IllegalArgumentException("User not found with id: $currentUserId")
         val requestingApartmentId = residencyRepository.findActiveByResident(currentUserId)?.apartmentId
+            ?: throw DomainForbiddenException("You must be an active resident of a unit to file a request")
 
         val request = ServiceRequest.create(
             title = command.title,

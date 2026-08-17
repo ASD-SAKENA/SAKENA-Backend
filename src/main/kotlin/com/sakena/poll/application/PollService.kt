@@ -11,6 +11,7 @@ import com.sakena.poll.domain.model.Poll
 import com.sakena.poll.domain.model.PollId
 import com.sakena.poll.domain.model.PollResults
 import com.sakena.poll.domain.model.PollVote
+import com.sakena.residency.application.ResidencyService
 import com.sakena.shared.domain.DomainConflictException
 import com.sakena.user.domain.UserId
 import org.springframework.stereotype.Service
@@ -25,6 +26,7 @@ import org.springframework.transaction.annotation.Transactional
 class PollService(
     private val pollRepository: PollRepository,
     private val voteRepository: PollVoteRepository,
+    private val residencyService: ResidencyService,
 ) {
 
     fun create(command: CreatePollCommand, createdBy: UserId): Poll {
@@ -40,6 +42,7 @@ class PollService(
 
     /** Records the vote and returns the tally the voter should see right away. */
     fun vote(id: PollId, command: CastVoteCommand, voterId: UserId): PollResults {
+        residencyService.requireActiveResidency(voterId)
         val poll = requirePoll(id)
         poll.requireOpenFor(command.optionId)
         if (voteRepository.findByPollAndVoter(id, voterId) != null) {

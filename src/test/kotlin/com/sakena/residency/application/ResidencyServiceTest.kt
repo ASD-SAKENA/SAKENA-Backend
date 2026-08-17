@@ -221,4 +221,23 @@ class ResidencyServiceTest {
             service.getActiveByBuilding(BuildingId.new(), requesterManagedBuildingId = buildingId)
         }
     }
+
+    @Test
+    fun `requireActiveResidency returns the active residency`() {
+        val resident = user()
+        val residency = Residency.start(apartmentId, resident.id, TenancyType.TENANT)
+        every { residencyRepository.findActiveByResident(resident.id) } returns residency
+
+        assertEquals(residency, service.requireActiveResidency(resident.id))
+    }
+
+    @Test
+    fun `requireActiveResidency rejects a resident with no active unit`() {
+        val resident = user()
+        every { residencyRepository.findActiveByResident(resident.id) } returns null
+
+        assertFailsWith<DomainForbiddenException> {
+            service.requireActiveResidency(resident.id)
+        }
+    }
 }
