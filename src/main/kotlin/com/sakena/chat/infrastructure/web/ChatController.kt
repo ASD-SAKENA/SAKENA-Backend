@@ -114,7 +114,12 @@ class ChatController(
         @Valid @RequestBody request: EditMessageRequest,
     ): ChatMessageResponse {
         val editor = currentUser()
-        val message = chatService.edit(ChatMessageId.from(messageId), request.toCommand(), editor)
+        val message = chatService.edit(
+            BuildingId.from(buildingId),
+            ChatMessageId.from(messageId),
+            request.toCommand(),
+            editor,
+        )
         return assembler.toResponse(message, editor.id)
     }
 
@@ -125,7 +130,11 @@ class ChatController(
         @PathVariable messageId: String,
     ): ChatMessageResponse {
         val requester = currentUser()
-        val message = chatService.delete(ChatMessageId.from(messageId), requester)
+        val message = chatService.delete(
+            BuildingId.from(buildingId),
+            ChatMessageId.from(messageId),
+            requester,
+        )
         return assembler.toResponse(message, requester.id)
     }
 

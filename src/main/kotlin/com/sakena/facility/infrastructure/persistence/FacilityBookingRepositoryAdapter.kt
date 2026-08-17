@@ -4,6 +4,7 @@ import com.sakena.facility.domain.FacilityBookingRepository
 import com.sakena.facility.domain.model.BookingId
 import com.sakena.facility.domain.model.FacilityBooking
 import com.sakena.facility.domain.model.FacilityId
+import com.sakena.property.domain.model.BuildingId
 import com.sakena.user.domain.UserId
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Component
@@ -46,9 +47,13 @@ class FacilityBookingRepositoryAdapter(
                 to,
             )
 
-    override fun findUpcomingByResident(residentId: UserId, from: Instant): List<FacilityBooking> =
+    override fun findUpcomingByResidentInBuilding(
+        residentId: UserId,
+        buildingId: BuildingId,
+        from: Instant,
+    ): List<FacilityBooking> =
         jpaRepository
-            .findAllByBookedByAndStartsAtGreaterThanEqualOrderByStartsAt(residentId.value, from)
+            .findUpcomingByResidentInBuilding(residentId.value, buildingId.value, from)
             .map(::toDomain)
 
     override fun deleteById(id: BookingId) =

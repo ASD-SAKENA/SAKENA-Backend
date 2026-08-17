@@ -4,6 +4,7 @@ import com.sakena.payment.domain.PaymentRepository
 import com.sakena.payment.domain.model.Payment
 import com.sakena.payment.domain.model.PaymentId
 import com.sakena.payment.domain.model.PaymentStatus
+import com.sakena.property.domain.model.BuildingId
 import com.sakena.user.domain.UserId
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Component
@@ -40,7 +41,10 @@ class PaymentRepositoryAdapter(
         jpaRepository.findAllByPayerIdOrderByPaidAtDesc(payerId.value)
             .map(PaymentEntityMapper::toDomain)
 
-    override fun findAllPendingNewestFirst(): List<Payment> =
-        jpaRepository.findAllByStatusOrderByPaidAtDesc(PaymentStatus.PENDING)
+    override fun findAllPendingByBuildingNewestFirst(buildingId: BuildingId): List<Payment> =
+        jpaRepository.findAllByBuildingIdAndStatusOrderByPaidAtDesc(
+            buildingId.value,
+            PaymentStatus.PENDING,
+        )
             .map(PaymentEntityMapper::toDomain)
 }

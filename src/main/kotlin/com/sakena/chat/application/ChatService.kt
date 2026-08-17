@@ -83,8 +83,14 @@ class ChatService(
         return messageRepository.save(message)
     }
 
-    fun edit(id: ChatMessageId, command: EditMessageCommand, editor: User): ChatMessage {
-        val message = requireMessage(id)
+    fun edit(
+        buildingId: BuildingId,
+        id: ChatMessageId,
+        command: EditMessageCommand,
+        editor: User,
+    ): ChatMessage {
+        requireMembership(buildingId, editor)
+        val message = requireMessageInBuilding(id, buildingId)
         message.editBody(command.body, editor.id)
         return messageRepository.save(message)
     }
@@ -93,10 +99,10 @@ class ChatService(
      * Soft-deletes the message. The stored object is removed too, since a
      * deleted attachment must not stay reachable through a presigned URL.
      */
-    fun delete(id: ChatMessageId, requester: User): ChatMessage {
-        val message = requireMessage(id)
-        val isBuildingManager = requester.role == Role.MANAGER && requester.managedBuildingId == message.buildingId
-        message.delete(requester.id, isBuildingManager)
+    fun delete(buildingId: BuildingId, id: ChatMessageId, requester: User): ChatMessage {
+        requireMembership(buildingId, requester)
+        val message = requireMessageInBuilding(id, buildingId)
+        message.delete(requester.id, requester.role == Role.MANAGER)
         val deleted = messageRepository.save(message)
         message.attachment?.let { attachmentStorage.delete(it.storageKey) }
         return deleted
@@ -168,4 +174,8 @@ class ChatService(
 
     private fun requireMessage(id: ChatMessageId): ChatMessage =
         messageRepository.findById(id) ?: throw ChatMessageNotFoundException(id)
+
+    private fun requireMessageInBuilding(id: ChatMessageId, buildingId: BuildingId): ChatMessage =
+        requireMessage(id).takeIf { it.buildingId == buildingId }
+            ?: throw ChatMessageNotFoundException(id)
 }

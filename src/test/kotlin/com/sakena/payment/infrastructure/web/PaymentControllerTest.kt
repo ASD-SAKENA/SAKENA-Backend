@@ -198,6 +198,7 @@ class PaymentControllerTest {
         receiptObjectKey: String? = null,
     ): Payment =
         Payment.submit(
+            buildingId = BuildingId.new(),
             payerId = payerId,
             title = "Monthly charge",
             amount = BigDecimal("500000"),

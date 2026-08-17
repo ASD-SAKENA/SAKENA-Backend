@@ -20,6 +20,9 @@ class AnnouncementEntity(
     @Column(name = "id", nullable = false, updatable = false)
     var id: UUID,
 
+    @Column(name = "building_id")
+    var buildingId: UUID?,
+
     @Column(name = "title", nullable = false, length = 200)
     var title: String,
 

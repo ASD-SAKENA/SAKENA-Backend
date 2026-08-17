@@ -4,7 +4,7 @@ import com.sakena.announcement.application.AnnouncementService
 import com.sakena.announcement.infrastructure.web.dto.AnnouncementResponse
 import com.sakena.announcement.infrastructure.web.dto.CreateAnnouncementRequest
 import com.sakena.user.application.ProfileService
-import com.sakena.user.domain.UserId
+import com.sakena.user.domain.User
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.security.SecurityRequirement
 import io.swagger.v3.oas.annotations.tags.Tag
@@ -35,20 +35,20 @@ class AnnouncementController(
     @Operation(summary = "List announcements, newest first")
     @GetMapping
     fun list(): List<AnnouncementResponse> =
-        announcementService.getAll().map(AnnouncementResponse::from)
+        announcementService.getAll(getCurrentUser()).map(AnnouncementResponse::from)
 
     @Operation(summary = "Publish a new announcement (manager)")
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     fun create(@Valid @RequestBody request: CreateAnnouncementRequest): AnnouncementResponse {
-        val announcement = announcementService.create(request.toCommand(), getCurrentUserId())
+        val announcement = announcementService.create(request.toCommand(), getCurrentUser())
         return AnnouncementResponse.from(announcement)
     }
 
-    private fun getCurrentUserId(): UserId {
+    private fun getCurrentUser(): User {
         val username = SecurityContextHolder.getContext().authentication.name
         val user = profileService.getUserByUsername(username)
             ?: throw RuntimeException("User not found")
-        return user.id
+        return user
     }
 }

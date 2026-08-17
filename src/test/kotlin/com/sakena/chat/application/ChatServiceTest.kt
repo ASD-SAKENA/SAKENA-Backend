@@ -181,10 +181,12 @@ class ChatServiceTest {
     @Test
     fun `edit delegates the author check to the aggregate`() {
         val message = ChatMessage.text(buildingId, author.id, "First")
+        givenBuildingExists()
+        givenResidentLivesHere(author)
         every { messageRepository.findById(message.id) } returns message
         every { messageRepository.save(any()) } answers { firstArg() }
 
-        val edited = service.edit(message.id, EditMessageCommand("Second"), author)
+        val edited = service.edit(message.buildingId, message.id, EditMessageCommand("Second"), author)
 
         assertEquals("Second", edited.body)
         assertTrue(edited.edited)
@@ -194,10 +196,12 @@ class ChatServiceTest {
     fun `a neighbour cannot edit someone else's message`() {
         val message = ChatMessage.text(buildingId, author.id, "First")
         val neighbour = user(Role.RESIDENT)
+        givenBuildingExists()
+        givenResidentLivesHere(neighbour)
         every { messageRepository.findById(message.id) } returns message
 
         assertFailsWith<DomainConflictException> {
-            service.edit(message.id, EditMessageCommand("Hijacked"), neighbour)
+            service.edit(message.buildingId, message.id, EditMessageCommand("Hijacked"), neighbour)
         }
     }
 
@@ -215,11 +219,12 @@ class ChatServiceTest {
             ),
             caption = null,
         )
+        givenBuildingExists()
         every { messageRepository.findById(message.id) } returns message
         every { messageRepository.save(any()) } answers { firstArg() }
         justRun { attachmentStorage.delete("chat/key.png") }
 
-        val deleted = service.delete(message.id, manager)
+        val deleted = service.delete(message.buildingId, message.id, manager)
 
         assertTrue(deleted.deleted)
         verify(exactly = 1) { attachmentStorage.delete("chat/key.png") }
@@ -229,10 +234,11 @@ class ChatServiceTest {
     fun `a manager of a different building cannot delete this building's message`() {
         val otherManager = user(Role.MANAGER, managedBuildingId = BuildingId.new())
         val message = ChatMessage.text(buildingId, author.id, "First")
+        givenBuildingExists()
         every { messageRepository.findById(message.id) } returns message
 
-        assertFailsWith<DomainConflictException> {
-            service.delete(message.id, otherManager)
+        assertFailsWith<DomainForbiddenException> {
+            service.delete(message.buildingId, message.id, otherManager)
         }
     }
 

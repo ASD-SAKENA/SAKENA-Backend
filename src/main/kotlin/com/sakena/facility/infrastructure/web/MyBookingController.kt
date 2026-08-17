@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 
 /**
- * The signed-in resident's own upcoming reservations, across every facility.
+ * The signed-in resident's own upcoming reservations in their current building.
  * Lives on its own literal path so it never collides with the
  * `/api/v1/facilities/{id}` template.
  */
@@ -34,11 +34,11 @@ class MyBookingController(
         val user = profileService.getUserByUsername(username)
             ?: throw IllegalStateException("Authenticated user '$username' no longer exists")
 
-        val bookings = bookingService.getUpcomingFor(user.id)
+        val bookings = bookingService.getUpcomingFor(user)
         if (bookings.isEmpty()) return emptyList()
 
-        // One read of the (small) facility list beats an N+1 lookup per booking.
-        val facilities = facilityService.getAll().associateBy { it.id }
+        // One building-scoped read beats an N+1 lookup per booking.
+        val facilities = facilityService.getAll(user).associateBy { it.id }
         return bookings.mapNotNull { booking ->
             facilities[booking.facilityId]?.let { MyBookingResponse.from(booking, it) }
         }

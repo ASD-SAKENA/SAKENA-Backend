@@ -7,6 +7,7 @@ import com.sakena.payment.domain.PaymentReceiptAccess
 import com.sakena.payment.domain.PaymentReceiptStorage
 import com.sakena.payment.domain.model.Payment
 import com.sakena.payment.domain.model.PaymentId
+import com.sakena.property.domain.BuildingAccess
 import com.sakena.shared.domain.DomainConflictException
 import com.sakena.shared.domain.DomainForbiddenException
 import com.sakena.shared.domain.DomainValidationException
@@ -26,6 +27,7 @@ class PaymentService(
     private val paymentRepository: PaymentRepository,
     private val userRepository: UserRepository,
     private val receiptStorage: PaymentReceiptStorage,
+    private val buildingAccess: BuildingAccess,
 ) {
 
     companion object {
@@ -36,6 +38,7 @@ class PaymentService(
     fun submit(command: SubmitPaymentCommand, payerId: UserId): Payment {
         requireRole(payerId, Role.RESIDENT, "Payments can only be submitted by residents")
         val payment = Payment.submit(
+            buildingId = buildingAccess.residentBuildingId(payerId),
             payerId = payerId,
             title = command.title,
             amount = command.amount,
@@ -67,6 +70,7 @@ class PaymentService(
     fun confirm(paymentId: PaymentId, managerId: UserId): Payment {
         requireManager(managerId)
         val payment = requirePayment(paymentId)
+        requireManagerAccess(payment, managerId)
         payment.confirm(managerId)
         return paymentRepository.save(payment)
     }
@@ -74,6 +78,7 @@ class PaymentService(
     fun reject(paymentId: PaymentId, managerId: UserId, reason: String): Payment {
         requireManager(managerId)
         val payment = requirePayment(paymentId)
+        requireManagerAccess(payment, managerId)
         payment.reject(managerId, reason)
         return paymentRepository.save(payment)
     }
@@ -89,7 +94,9 @@ class PaymentService(
     @Transactional(readOnly = true)
     fun getPending(managerId: UserId): List<Payment> {
         requireManager(managerId)
-        return paymentRepository.findAllPendingNewestFirst()
+        return paymentRepository.findAllPendingByBuildingNewestFirst(
+            buildingAccess.managedBuildingId(managerId),
+        )
     }
 
     @Transactional(readOnly = true)
@@ -97,7 +104,9 @@ class PaymentService(
         val payment = requirePayment(paymentId)
         val requester = userRepository.findById(requesterId)
             ?: throw EntityNotFoundException("User with id '$requesterId' was not found")
-        if (requester.role != Role.MANAGER && payment.payerId != requesterId) {
+        if (requester.role == Role.MANAGER) {
+            requireManagerAccess(payment, requesterId)
+        } else if (payment.payerId != requesterId) {
             throw DomainForbiddenException("You may not access this payment receipt")
         }
         val objectKey = payment.receiptObjectKey
@@ -117,6 +126,12 @@ class PaymentService(
     private fun requirePayment(paymentId: PaymentId): Payment =
         paymentRepository.findById(paymentId)
             ?: throw EntityNotFoundException("Payment with id '$paymentId' was not found")
+
+    private fun requireManagerAccess(payment: Payment, managerId: UserId) {
+        val buildingId = payment.buildingId
+            ?: throw DomainForbiddenException("This legacy payment is not assigned to a building")
+        buildingAccess.requireManagerAccess(buildingId, managerId)
+    }
 
     private fun validateReceipt(receipt: PaymentReceiptUpload): InputStream {
         if (receipt.sizeBytes <= 0) throw DomainValidationException("Receipt file must not be empty")
