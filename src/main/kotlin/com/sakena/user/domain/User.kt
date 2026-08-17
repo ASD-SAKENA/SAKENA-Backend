@@ -83,6 +83,17 @@ data class User(
         updatedAt = Instant.now()
     )
 
+    /**
+     * Changes this user's role. A manager's [managedBuildingId] must already
+     * be resolved by the caller — this method only enforces that the
+     * combination is valid, the same invariant construction checks.
+     */
+    fun withRole(role: Role, managedBuildingId: BuildingId?): User = copy(
+        role = role,
+        managedBuildingId = managedBuildingId,
+        updatedAt = Instant.now()
+    )
+
     fun withNewPassword(rawPassword: String, passwordEncoder: (String) -> String): User {
         return this.copy(
             passwordHash = passwordEncoder(rawPassword),

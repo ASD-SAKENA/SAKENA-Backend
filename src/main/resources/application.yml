@@ -89,3 +89,9 @@ app:
     auth:
       attempts: ${APP_AUTH_RATE_LIMIT_ATTEMPTS:10}
       window-seconds: ${APP_AUTH_RATE_LIMIT_WINDOW_SECONDS:60}
+  # The sole administrator account, provisioned on startup if it doesn't
+  # already exist. Left unset in an environment where no admin is needed yet.
+  admin:
+    username: ${ADMIN_USERNAME:}
+    email: ${ADMIN_EMAIL:}
+    password: ${ADMIN_PASSWORD:}

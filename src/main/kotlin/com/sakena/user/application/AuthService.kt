@@ -6,6 +6,7 @@ import com.sakena.user.domain.PasswordResetTokenRepository
 import com.sakena.user.domain.Role
 import com.sakena.user.domain.User
 import com.sakena.user.domain.UserRepository
+import com.sakena.shared.domain.DomainValidationException
 import com.sakena.user.domain.exceptions.InactiveAccountException
 import com.sakena.user.domain.exceptions.InvalidCredentialsException
 import com.sakena.user.domain.exceptions.TokenInvalidException
@@ -49,6 +50,12 @@ class AuthService(
         }
 
         val role = command.role?.let(Role::from) ?: Role.RESIDENT
+        // The administrator account is provisioned once at startup from
+        // trusted configuration (see AdminAccountInitializer) — public signup
+        // must never be able to mint one, or anyone could self-promote.
+        if (role == Role.ADMIN) {
+            throw DomainValidationException("The administrator role cannot be self-registered")
+        }
 
         val managedBuildingId = if (role == Role.MANAGER) {
             val building = buildingService.create(

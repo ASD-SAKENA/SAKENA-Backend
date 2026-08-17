@@ -2,6 +2,7 @@ package com.sakena.user.application
 
 import com.sakena.property.application.BuildingService
 import com.sakena.property.domain.model.Building
+import com.sakena.shared.domain.DomainValidationException
 import com.sakena.user.domain.*
 import com.sakena.wallet.domain.WalletRepository
 import com.sakena.user.domain.exceptions.InactiveAccountException
@@ -144,6 +145,18 @@ class AuthServiceTest {
         every { userRepository.existsByEmail(command.email) } returns false
 
         assertThrows<InvalidRoleException> { authService.register(command) }
+
+        verify(exactly = 0) { passwordEncoder.encode(any()) }
+        verify(exactly = 0) { userRepository.save(any()) }
+    }
+
+    @Test
+    fun `register should reject a self-declared admin role`() {
+        val command = RegisterCommand("john", "john@example.com", "password123", "ADMIN")
+        every { userRepository.existsByUsername(command.username) } returns false
+        every { userRepository.existsByEmail(command.email) } returns false
+
+        assertThrows<DomainValidationException> { authService.register(command) }
 
         verify(exactly = 0) { passwordEncoder.encode(any()) }
         verify(exactly = 0) { userRepository.save(any()) }
