@@ -2,6 +2,7 @@ package com.sakena.servicerequest.application
 
 import com.sakena.property.domain.ApartmentRepository
 import com.sakena.property.domain.model.BuildingId
+import com.sakena.rating.application.RatingService
 import com.sakena.residency.domain.ResidencyRepository
 import com.sakena.servicerequest.domain.ServiceCategoryGroup
 import com.sakena.servicerequest.domain.ServiceRequest
@@ -26,6 +27,7 @@ class ServiceRequestService(
     private val userRepository: UserRepository,
     private val residencyRepository: ResidencyRepository,
     private val apartmentRepository: ApartmentRepository,
+    private val ratingService: RatingService,
 ) {
 
     /**
@@ -182,7 +184,9 @@ class ServiceRequestService(
 
         val confirmed = request.confirmCompletion(command.userId)
         val saved = serviceRequestRepository.save(confirmed)
-        // Rating is recorded in Task 5, once the rating context exists.
+        val staffId = saved.assignedTo
+            ?: throw EntityNotFoundException("Service request has no assigned staff member to rate")
+        ratingService.rate(saved.id, staffId, command.userId, command.score)
         return saved
     }
 
