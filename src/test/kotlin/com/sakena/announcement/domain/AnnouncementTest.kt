@@ -1,6 +1,7 @@
 package com.sakena.announcement.domain
 
 import com.sakena.announcement.domain.model.Announcement
+import com.sakena.property.domain.model.BuildingId
 import com.sakena.shared.domain.DomainValidationException
 import com.sakena.user.domain.UserId
 import org.junit.jupiter.api.Test
@@ -10,10 +11,11 @@ import kotlin.test.assertFailsWith
 class AnnouncementTest {
 
     private val author = UserId.generate()
+    private val buildingId = BuildingId.new()
 
     @Test
     fun `create trims title and body`() {
-        val announcement = Announcement.create("  Water outage  ", "  Details here  ", author)
+        val announcement = Announcement.create("  Water outage  ", "  Details here  ", author, buildingId)
 
         assertEquals("Water outage", announcement.title)
         assertEquals("Details here", announcement.body)
@@ -23,28 +25,28 @@ class AnnouncementTest {
     @Test
     fun `create rejects a blank title`() {
         assertFailsWith<DomainValidationException> {
-            Announcement.create("   ", "body", author)
+            Announcement.create("   ", "body", author, buildingId)
         }
     }
 
     @Test
     fun `create rejects a blank body`() {
         assertFailsWith<DomainValidationException> {
-            Announcement.create("title", "   ", author)
+            Announcement.create("title", "   ", author, buildingId)
         }
     }
 
     @Test
     fun `create rejects an overlong title`() {
         assertFailsWith<DomainValidationException> {
-            Announcement.create("x".repeat(Announcement.MAX_TITLE_LENGTH + 1), "body", author)
+            Announcement.create("x".repeat(Announcement.MAX_TITLE_LENGTH + 1), "body", author, buildingId)
         }
     }
 
     @Test
     fun `create rejects an overlong body`() {
         assertFailsWith<DomainValidationException> {
-            Announcement.create("title", "x".repeat(Announcement.MAX_BODY_LENGTH + 1), author)
+            Announcement.create("title", "x".repeat(Announcement.MAX_BODY_LENGTH + 1), author, buildingId)
         }
     }
 }

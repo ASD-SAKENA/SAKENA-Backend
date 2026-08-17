@@ -2,6 +2,7 @@ package com.sakena.payment.domain
 
 import com.sakena.payment.domain.model.Payment
 import com.sakena.payment.domain.model.PaymentId
+import com.sakena.property.domain.model.BuildingId
 import com.sakena.user.domain.UserId
 
 /**
@@ -21,6 +22,6 @@ interface PaymentRepository {
     /** Every claim submitted by a resident, regardless of review status. */
     fun findAllSubmissionsByPayerNewestFirst(payerId: UserId): List<Payment>
 
-    /** The global manager review queue under the current authorization model. */
-    fun findAllPendingNewestFirst(): List<Payment>
+    /** Pending claims for one building's manager review queue. */
+    fun findAllPendingByBuildingNewestFirst(buildingId: BuildingId): List<Payment>
 }

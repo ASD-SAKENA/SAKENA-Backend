@@ -45,7 +45,7 @@ class FacilityBookingController(
         @RequestParam from: Instant,
         @RequestParam to: Instant,
     ): List<BookingResponse> =
-        bookingService.getForFacilityBetween(FacilityId.from(facilityId), from, to)
+        bookingService.getForFacilityBetween(FacilityId.from(facilityId), from, to, currentUser())
             .map(BookingResponse::from)
 
     @Operation(summary = "Book a facility time slot (locked once capacity is full)")
@@ -58,7 +58,7 @@ class FacilityBookingController(
         val booking = bookingService.book(
             FacilityId.from(facilityId),
             request.toCommand(),
-            currentUser().id,
+            currentUser(),
         )
         return BookingResponse.from(booking)
     }
@@ -71,7 +71,7 @@ class FacilityBookingController(
         @RequestParam endsAt: Instant,
     ): BookingQuoteResponse =
         BookingQuoteResponse(
-            bookingService.quote(FacilityId.from(facilityId), startsAt, endsAt),
+            bookingService.quote(FacilityId.from(facilityId), startsAt, endsAt, currentUser()),
         )
 
     @Operation(summary = "Cancel a booking (your own, or any of them as manager)")

@@ -141,6 +141,7 @@ class PaymentAuthorizationTest {
     )
 
     private fun pendingPayment(payerId: UserId): Payment = Payment.submit(
+        buildingId = BuildingId.new(),
         payerId = payerId,
         title = "Monthly charge",
         amount = BigDecimal("500000"),

@@ -3,6 +3,7 @@ package com.sakena.facility.infrastructure.persistence
 import com.sakena.facility.domain.model.BookingRules
 import com.sakena.facility.domain.model.Facility
 import com.sakena.facility.domain.model.FacilityId
+import com.sakena.property.domain.model.BuildingId
 import java.time.DayOfWeek
 
 /** Translates between the domain aggregate and its JPA representation. */
@@ -11,6 +12,7 @@ internal object FacilityEntityMapper {
     fun toEntity(facility: Facility): FacilityEntity =
         FacilityEntity(
             id = facility.id.value,
+            buildingId = facility.buildingId?.value,
             name = facility.name,
             icon = facility.icon,
             capacity = facility.capacity,
@@ -29,6 +31,7 @@ internal object FacilityEntityMapper {
     fun toDomain(entity: FacilityEntity): Facility =
         Facility.reconstitute(
             id = FacilityId(entity.id),
+            buildingId = entity.buildingId?.let(::BuildingId),
             name = entity.name,
             icon = entity.icon,
             capacity = entity.capacity,

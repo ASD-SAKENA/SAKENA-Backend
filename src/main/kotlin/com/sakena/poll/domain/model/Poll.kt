@@ -2,6 +2,7 @@ package com.sakena.poll.domain.model
 
 import com.sakena.shared.domain.DomainConflictException
 import com.sakena.shared.domain.DomainValidationException
+import com.sakena.property.domain.model.BuildingId
 import com.sakena.user.domain.UserId
 import java.time.Instant
 import java.util.UUID
@@ -76,6 +77,7 @@ class PollOption private constructor(
  */
 class Poll private constructor(
     val id: PollId,
+    val buildingId: BuildingId?,
     val question: String,
     val options: List<PollOption>,
     val createdBy: UserId,
@@ -105,10 +107,16 @@ class Poll private constructor(
         const val MIN_OPTIONS = 2
         const val MAX_OPTIONS = 10
 
-        fun create(question: String, optionLabels: List<String>, createdBy: UserId): Poll {
+        fun create(
+            question: String,
+            optionLabels: List<String>,
+            createdBy: UserId,
+            buildingId: BuildingId,
+        ): Poll {
             val options = validateOptions(optionLabels)
             return Poll(
                 id = PollId.new(),
+                buildingId = buildingId,
                 question = validateQuestion(question),
                 options = options,
                 createdBy = createdBy,
@@ -120,12 +128,13 @@ class Poll private constructor(
         /** Rebuilds an aggregate from already-persisted state. No invariants are re-checked. */
         fun reconstitute(
             id: PollId,
+            buildingId: BuildingId?,
             question: String,
             options: List<PollOption>,
             createdBy: UserId,
             createdAt: Instant,
             closedAt: Instant?,
-        ): Poll = Poll(id, question, options, createdBy, createdAt, closedAt)
+        ): Poll = Poll(id, buildingId, question, options, createdBy, createdAt, closedAt)
 
         private fun validateQuestion(question: String): String {
             val trimmed = question.trim()

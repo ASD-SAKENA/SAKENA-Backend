@@ -15,6 +15,9 @@ class PollEntity(
     @Column(name = "id", nullable = false, updatable = false)
     var id: UUID,
 
+    @Column(name = "building_id")
+    var buildingId: UUID?,
+
     @Column(name = "question", nullable = false, length = 300)
     var question: String,
 

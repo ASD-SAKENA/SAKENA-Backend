@@ -6,7 +6,7 @@ import com.sakena.poll.infrastructure.web.dto.CastVoteRequest
 import com.sakena.poll.infrastructure.web.dto.CreatePollRequest
 import com.sakena.poll.infrastructure.web.dto.PollResponse
 import com.sakena.user.application.ProfileService
-import com.sakena.user.domain.UserId
+import com.sakena.user.domain.User
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.security.SecurityRequirement
 import io.swagger.v3.oas.annotations.tags.Tag
@@ -39,19 +39,20 @@ class PollController(
     @Operation(summary = "List polls with live results, newest first")
     @GetMapping
     fun list(): List<PollResponse> =
-        pollService.getAll(getCurrentUserId()).map(PollResponse::from)
+        pollService.getAll(getCurrentUser()).map(PollResponse::from)
 
     @Operation(summary = "Get one poll with its live results")
     @GetMapping("/{id}")
     fun getById(@PathVariable id: String): PollResponse =
-        PollResponse.from(pollService.getResults(PollId.from(id), getCurrentUserId()))
+        PollResponse.from(pollService.getResults(PollId.from(id), getCurrentUser()))
 
     @Operation(summary = "Create a poll (manager)")
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     fun create(@Valid @RequestBody request: CreatePollRequest): PollResponse {
-        val poll = pollService.create(request.toCommand(), getCurrentUserId())
-        return PollResponse.from(pollService.getResults(poll.id, getCurrentUserId()))
+        val user = getCurrentUser()
+        val poll = pollService.create(request.toCommand(), user)
+        return PollResponse.from(pollService.getResults(poll.id, user))
     }
 
     @Operation(summary = "Cast your single vote and receive the updated tally")
@@ -61,27 +62,28 @@ class PollController(
         @Valid @RequestBody request: CastVoteRequest,
     ): PollResponse =
         PollResponse.from(
-            pollService.vote(PollId.from(id), request.toCommand(), getCurrentUserId()),
+            pollService.vote(PollId.from(id), request.toCommand(), getCurrentUser()),
         )
 
     @Operation(summary = "Withdraw your vote and receive the updated tally")
     @DeleteMapping("/{id}/votes")
     fun withdrawVote(@PathVariable id: String): PollResponse =
         PollResponse.from(
-            pollService.withdrawVote(PollId.from(id), getCurrentUserId()),
+            pollService.withdrawVote(PollId.from(id), getCurrentUser()),
         )
 
     @Operation(summary = "Close a poll so it stops accepting votes (manager)")
     @PostMapping("/{id}/close")
     fun close(@PathVariable id: String): PollResponse {
-        val poll = pollService.close(PollId.from(id))
-        return PollResponse.from(pollService.getResults(poll.id, getCurrentUserId()))
+        val user = getCurrentUser()
+        val poll = pollService.close(PollId.from(id), user)
+        return PollResponse.from(pollService.getResults(poll.id, user))
     }
 
-    private fun getCurrentUserId(): UserId {
+    private fun getCurrentUser(): User {
         val username = SecurityContextHolder.getContext().authentication.name
         val user = profileService.getUserByUsername(username)
             ?: throw RuntimeException("User not found")
-        return user.id
+        return user
     }
 }

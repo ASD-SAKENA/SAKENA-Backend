@@ -9,6 +9,7 @@ import com.sakena.wallet.domain.model.TransactionDirection
 import com.sakena.wallet.infrastructure.persistence.WalletJpaRepository
 import com.sakena.wallet.infrastructure.persistence.WalletTransactionJpaRepository
 import com.sakena.wallet.infrastructure.web.dto.FundWalletRequest
+import com.sakena.wallet.infrastructure.web.dto.RecordBuildingTransactionRequest
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
@@ -93,6 +94,35 @@ class WalletControllerIntegrationTest(
 
         val user = assertNotNull(userRepository.findByUsername(resident.username))
         assertEquals(null, walletJpaRepository.findByOwnerUserId(user.id.value))
+    }
+
+    @Test
+    fun `each manager uses only their building wallet`() {
+        val firstManager = register("first-wallet-manager", "MANAGER")
+        val secondManager = register("second-wallet-manager", "MANAGER")
+
+        val expense = RecordBuildingTransactionRequest(
+            direction = TransactionDirection.DEBIT,
+            category = TransactionCategory.OPERATING_EXPENSE,
+            amount = BigDecimal("100000"),
+            description = "Boiler service",
+        )
+        mockMvc.perform(
+            post("/api/v1/wallets/building/transactions")
+                .header(HttpHeaders.AUTHORIZATION, bearer(firstManager.token))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsBytes(expense)),
+        )
+            .andExpect(status().isCreated)
+            .andExpect(jsonPath("$.balance").value(-100000))
+
+        mockMvc.perform(authorizedGet("/api/v1/wallets/building", secondManager.token))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.balance").value(0))
+
+        mockMvc.perform(authorizedGet("/api/v1/wallets/building/transactions", secondManager.token))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$").isEmpty)
     }
 
     private fun fund(token: String, amount: BigDecimal) =
