@@ -87,6 +87,7 @@ class SecurityConfig(
 
                     // ─── Manager-only surface ───
                     .requestMatchers("/api/v1/dashboard/manager").hasRole(manager)
+                    .requestMatchers("/api/v1/staff").hasRole(manager)
                     .requestMatchers("/api/v1/invitations/**").hasRole(manager)
                     .requestMatchers("/api/v1/charge-periods/**").hasRole(manager)
                     .requestMatchers(HttpMethod.POST, "/api/v1/invoices/*/payments").hasRole(manager)
