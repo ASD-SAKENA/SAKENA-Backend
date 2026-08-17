@@ -8,7 +8,7 @@ import com.sakena.residency.infrastructure.web.dto.ResidencyResponse
 import com.sakena.residency.infrastructure.web.dto.StartResidencyRequest
 import com.sakena.user.application.ProfileService
 import com.sakena.user.application.UserDirectory
-import com.sakena.user.domain.UserId
+import com.sakena.user.domain.User
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.security.SecurityRequirement
 import io.swagger.v3.oas.annotations.tags.Tag
@@ -43,7 +43,7 @@ class ResidencyController(
     @Operation(summary = "The unit the signed-in resident occupies, if any")
     @GetMapping("/me")
     fun myResidency(): ResidencyResponse? {
-        val details = residencyService.getMyResidency(getCurrentUserId()) ?: return null
+        val details = residencyService.getMyResidency(currentUser().id) ?: return null
         val names = userDirectory.usernamesByIds(setOf(details.residency.residentId))
         return ResidencyResponse.from(
             details,
@@ -52,24 +52,20 @@ class ResidencyController(
     }
 
     @Operation(
-        summary = "Active residencies — one row per occupied unit (manager)",
-        description = "Scoped to the signed-in manager's building.",
+        summary = "Active residencies of the building the requesting manager administers",
+        description = "An explicit buildingId must match that building; omitting it defaults to it.",
     )
     @GetMapping
     @PreAuthorize("hasRole('MANAGER')")
     fun listByBuilding(@RequestParam(required = false) buildingId: String?): List<ResidencyResponse> =
         toResponses(
-            residencyService.getActiveByBuilding(
-                buildingId?.let(BuildingId::from),
-                getCurrentUserId(),
-            ),
+            residencyService.getActiveByBuilding(buildingId?.let(BuildingId::from), currentUser().managedBuildingId),
         )
 
     @Operation(summary = "Occupancy history of a unit, newest first")
     @GetMapping("/apartments/{apartmentId}")
-    @PreAuthorize("hasRole('MANAGER')")
     fun history(@PathVariable apartmentId: String): List<ResidencyResponse> =
-        toResponses(residencyService.getHistory(ApartmentId.from(apartmentId), getCurrentUserId()))
+        toResponses(residencyService.getHistory(ApartmentId.from(apartmentId)))
 
     @Operation(summary = "Assign a resident to a unit (manager)")
     @PostMapping("/apartments/{apartmentId}")
@@ -80,18 +76,14 @@ class ResidencyController(
         @Valid @RequestBody request: StartResidencyRequest,
     ): ResidencyResponse =
         toResponse(
-            residencyService.start(
-                ApartmentId.from(apartmentId),
-                request.toCommand(),
-                getCurrentUserId(),
-            ),
+            residencyService.start(ApartmentId.from(apartmentId), request.toCommand(), currentUser().managedBuildingId),
         )
 
     @Operation(summary = "Move the current resident out, leaving the unit vacant (manager)")
     @DeleteMapping("/apartments/{apartmentId}")
     @PreAuthorize("hasRole('MANAGER')")
     fun endCurrent(@PathVariable apartmentId: String): ResidencyResponse =
-        toResponse(residencyService.endCurrent(ApartmentId.from(apartmentId), getCurrentUserId()))
+        toResponse(residencyService.endCurrent(ApartmentId.from(apartmentId), currentUser().managedBuildingId))
 
     private fun toResponse(residency: Residency): ResidencyResponse =
         toResponses(listOf(residency)).first()
@@ -108,10 +100,9 @@ class ResidencyController(
         }
     }
 
-    private fun getCurrentUserId(): UserId {
+    private fun currentUser(): User {
         val username = SecurityContextHolder.getContext().authentication.name
-        val user = profileService.getUserByUsername(username)
+        return profileService.getUserByUsername(username)
             ?: throw RuntimeException("User not found")
-        return user.id
     }
 }

@@ -4,7 +4,6 @@ import com.sakena.billing.domain.ServiceChargeRepository
 import com.sakena.billing.domain.model.ServiceCharge
 import com.sakena.billing.domain.model.ServiceChargeTarget
 import com.sakena.property.domain.ApartmentRepository
-import com.sakena.property.domain.BuildingAccess
 import com.sakena.property.domain.model.BuildingId
 import com.sakena.servicerequest.domain.ServiceCostResponsibility
 import com.sakena.servicerequest.domain.ServiceRequest
@@ -43,15 +42,34 @@ class WalletService(
     private val apartmentRepository: ApartmentRepository,
     private val serviceChargeRepository: ServiceChargeRepository,
     private val userRepository: UserRepository,
-    private val buildingAccess: BuildingAccess,
 ) {
 
     fun settleServiceRequest(serviceRequestId: ServiceRequestId, settledBy: UserId) {
         val request = serviceRequestRepository.findById(serviceRequestId)
             ?: throw EntityNotFoundException("Service request with id '$serviceRequestId' was not found")
+        val manager = userRepository.findById(settledBy)
+            ?: throw EntityNotFoundException("User with id '$settledBy' was not found")
+        if (manager.role != Role.MANAGER) {
+            throw DomainForbiddenException("Only a manager can settle a service request")
+        }
 
-        val buildingId = buildingIdOf(request)
-        buildingAccess.requireManagerAccess(buildingId, settledBy)
+        // A request tied to an apartment settles against that apartment's
+        // building — only its manager may do so. A request with no apartment
+        // (staff-filed, or a resident with no unit) has no building to scope
+        // to, so it settles against the acting manager's own building.
+        val requestingApartmentId = request.requestingApartmentId
+        val buildingId = if (requestingApartmentId != null) {
+            val apartment = apartmentRepository.findById(requestingApartmentId)
+                ?: throw EntityNotFoundException("Requesting apartment with id '$requestingApartmentId' was not found")
+            if (manager.managedBuildingId != apartment.buildingId) {
+                throw DomainForbiddenException("You do not manage the building this request belongs to")
+            }
+            apartment.buildingId
+        } else {
+            manager.managedBuildingId
+                ?: throw DomainConflictException("Could not determine which building's wallet to settle against")
+        }
+
         val settled = request.settle(settledBy)
         val amount = BigDecimal.valueOf(
             settled.completionCost
@@ -59,9 +77,7 @@ class WalletService(
         )
         val worker = settled.assignedTo
             ?: throw DomainConflictException("Service request has no assigned worker")
-        val responsibility = settled.costResponsibility
-            ?: throw DomainConflictException("Service request cost responsibility has not been assigned")
-        val serviceCharge = when (responsibility) {
+        val serviceCharge = when (settled.costResponsibility) {
             ServiceCostResponsibility.BUILDING_WALLET -> null
             ServiceCostResponsibility.ALL_UNITS -> createServiceCharge(
                 settled,
@@ -73,6 +89,7 @@ class WalletService(
                 amount,
                 ServiceChargeTarget.SPECIFIC_UNIT,
             )
+            null -> throw DomainConflictException("Service request cost responsibility has not been assigned")
         }
 
         val buildingWallet = requireBuildingWallet(buildingId)
@@ -124,15 +141,12 @@ class WalletService(
         )
     }
 
-    /** Manager-driven credit or debit of the shared building account. */
-    fun recordBuildingTransaction(
-        command: RecordBuildingTransactionCommand,
-        managerId: UserId,
-    ): Wallet {
+    /** Manager-driven credit or debit of the building account they administer. */
+    fun recordBuildingTransaction(command: RecordBuildingTransactionCommand, requesterManagedBuildingId: BuildingId?): Wallet {
         if (command.category == TransactionCategory.WALLET_FUNDING) {
             throw DomainValidationException("Wallet funding is only valid for personal wallets")
         }
-        val wallet = requireBuildingWallet(buildingAccess.managedBuildingId(managerId))
+        val wallet = requireBuildingWallet(requireManagedBuilding(requesterManagedBuildingId))
         when (command.direction) {
             TransactionDirection.CREDIT -> wallet.credit(command.amount)
             TransactionDirection.DEBIT -> wallet.debit(command.amount)
@@ -168,12 +182,14 @@ class WalletService(
         return saved
     }
 
-    fun getBuildingWallet(managerId: UserId): Wallet =
-        requireBuildingWallet(buildingAccess.managedBuildingId(managerId))
+    @Transactional(readOnly = true)
+    fun getBuildingWallet(requesterManagedBuildingId: BuildingId?): Wallet =
+        requireBuildingWallet(requireManagedBuilding(requesterManagedBuildingId))
 
-    fun getBuildingLedger(managerId: UserId): List<WalletTransaction> =
+    @Transactional(readOnly = true)
+    fun getBuildingLedger(requesterManagedBuildingId: BuildingId?): List<WalletTransaction> =
         transactionRepository.findAllByWalletNewestFirst(
-            requireBuildingWallet(buildingAccess.managedBuildingId(managerId)).id,
+            requireBuildingWallet(requireManagedBuilding(requesterManagedBuildingId)).id,
         )
 
     @Transactional(readOnly = true)
@@ -206,12 +222,10 @@ class WalletService(
     }
 
     private fun requireBuildingWallet(buildingId: BuildingId): Wallet =
-        walletRepository.findOrCreateBuildingWallet(buildingId)
+        walletRepository.findBuildingWallet(buildingId)
+            ?: throw EntityNotFoundException("Building wallet was not found")
 
-    private fun buildingIdOf(request: ServiceRequest): BuildingId {
-        val apartmentId = request.requestingApartmentId
-            ?: throw DomainConflictException("Service request has no requesting apartment")
-        return apartmentRepository.findById(apartmentId)?.buildingId
-            ?: throw EntityNotFoundException("Requesting apartment with id '$apartmentId' was not found")
-    }
+    private fun requireManagedBuilding(requesterManagedBuildingId: BuildingId?): BuildingId =
+        requesterManagedBuildingId
+            ?: throw DomainForbiddenException("You do not manage a building")
 }

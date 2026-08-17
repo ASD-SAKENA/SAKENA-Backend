@@ -118,5 +118,6 @@ class FacilityServiceTest {
         role = role,
         createdAt = Instant.now(),
         updatedAt = Instant.now(),
+        managedBuildingId = buildingId.takeIf { role == Role.MANAGER },
     )
 }

@@ -1,8 +1,8 @@
 package com.sakena.wallet.domain.model
 
+import com.sakena.property.domain.model.BuildingId
 import com.sakena.shared.domain.DomainConflictException
 import com.sakena.shared.domain.DomainValidationException
-import com.sakena.property.domain.model.BuildingId
 import com.sakena.user.domain.UserId
 import java.math.BigDecimal
 import java.time.Instant
@@ -36,11 +36,19 @@ class Wallet private constructor(
     val id: WalletId,
     val ownerType: WalletOwnerType,
     val ownerUserId: UserId?,
-    val ownerBuildingId: BuildingId?,
+    /** The building this account belongs to. Set only for [WalletOwnerType.BUILDING]. */
+    val buildingId: BuildingId?,
     balance: BigDecimal,
     val createdAt: Instant,
     updatedAt: Instant,
 ) {
+    init {
+        if (ownerType == WalletOwnerType.BUILDING) {
+            require(buildingId != null) { "A building wallet must have a buildingId" }
+        } else {
+            require(buildingId == null) { "Only a building wallet has a buildingId" }
+        }
+    }
     var balance: BigDecimal = balance
         private set
 
@@ -67,22 +75,26 @@ class Wallet private constructor(
     }
 
     companion object {
-        fun createBuilding(buildingId: BuildingId): Wallet =
-            create(WalletOwnerType.BUILDING, null, buildingId)
-
-        fun createForUser(userId: UserId): Wallet = create(WalletOwnerType.USER, userId, null)
-
-        private fun create(
-            ownerType: WalletOwnerType,
-            ownerUserId: UserId?,
-            ownerBuildingId: BuildingId?,
-        ): Wallet {
+        fun createBuilding(buildingId: BuildingId): Wallet {
             val now = Instant.now()
             return Wallet(
                 id = WalletId.new(),
-                ownerType = ownerType,
-                ownerUserId = ownerUserId,
-                ownerBuildingId = ownerBuildingId,
+                ownerType = WalletOwnerType.BUILDING,
+                ownerUserId = null,
+                buildingId = buildingId,
+                balance = BigDecimal.ZERO,
+                createdAt = now,
+                updatedAt = now,
+            )
+        }
+
+        fun createForUser(userId: UserId): Wallet {
+            val now = Instant.now()
+            return Wallet(
+                id = WalletId.new(),
+                ownerType = WalletOwnerType.USER,
+                ownerUserId = userId,
+                buildingId = null,
                 balance = BigDecimal.ZERO,
                 createdAt = now,
                 updatedAt = now,
@@ -94,11 +106,11 @@ class Wallet private constructor(
             id: WalletId,
             ownerType: WalletOwnerType,
             ownerUserId: UserId?,
-            ownerBuildingId: BuildingId?,
+            buildingId: BuildingId?,
             balance: BigDecimal,
             createdAt: Instant,
             updatedAt: Instant,
-        ): Wallet = Wallet(id, ownerType, ownerUserId, ownerBuildingId, balance, createdAt, updatedAt)
+        ): Wallet = Wallet(id, ownerType, ownerUserId, buildingId, balance, createdAt, updatedAt)
 
         private fun validateAmount(amount: BigDecimal) {
             if (amount <= BigDecimal.ZERO) {

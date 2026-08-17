@@ -13,11 +13,7 @@ interface BuildingAccess {
 
     fun residentBuildingId(residentId: UserId): BuildingId
 
-    fun staffBuildingId(staffId: UserId): BuildingId
-
     fun requireManagerAccess(buildingId: BuildingId, managerId: UserId)
 
     fun requireResidentAccess(buildingId: BuildingId, residentId: UserId)
-
-    fun requireStaffAccess(buildingId: BuildingId, staffId: UserId)
 }

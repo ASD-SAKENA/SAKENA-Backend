@@ -65,7 +65,7 @@ class DashboardServiceTest {
 
     private val resident = UserId.generate()
     private val manager = UserId.generate()
-    private val building = Building.create("برج ساکنا", "تهران، ونک", manager)
+    private val building = Building.create("برج ساکنا", "تهران، ونک")
     private val apartment = Apartment.create(building.id, "12", 4, BigDecimal("125.5"), 3)
 
     @Test

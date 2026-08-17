@@ -1,49 +1,49 @@
 package com.sakena.property.application
 
-import com.sakena.membership.domain.StaffBuildingMembershipRepository
-import com.sakena.membership.domain.model.StaffBuildingMembership
 import com.sakena.property.domain.ApartmentRepository
-import com.sakena.property.domain.BuildingRepository
 import com.sakena.property.domain.model.Apartment
 import com.sakena.property.domain.model.Building
+import com.sakena.property.domain.model.BuildingId
 import com.sakena.residency.domain.ResidencyRepository
 import com.sakena.residency.domain.model.Residency
 import com.sakena.residency.domain.model.TenancyType
 import com.sakena.shared.domain.DomainForbiddenException
+import com.sakena.user.domain.Role
+import com.sakena.user.domain.User
 import com.sakena.user.domain.UserId
+import com.sakena.user.domain.UserRepository
 import io.mockk.every
 import io.mockk.mockk
 import org.junit.jupiter.api.Test
 import java.math.BigDecimal
+import java.time.Instant
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 
 class BuildingAccessServiceTest {
 
-    private val buildingRepository = mockk<BuildingRepository>()
+    private val userRepository = mockk<UserRepository>()
     private val residencyRepository = mockk<ResidencyRepository>()
     private val apartmentRepository = mockk<ApartmentRepository>()
-    private val staffMembershipRepository = mockk<StaffBuildingMembershipRepository>()
     private val service = BuildingAccessService(
-        buildingRepository,
+        userRepository,
         residencyRepository,
         apartmentRepository,
-        staffMembershipRepository,
     )
 
     @Test
     fun `resolves the building assigned to a manager`() {
-        val managerId = UserId.generate()
-        val building = Building.create("Tower", "Address", managerId)
-        every { buildingRepository.findByManagerId(managerId) } returns building
+        val building = Building.create("Tower", "Address")
+        val manager = user(Role.MANAGER, building.id)
+        every { userRepository.findById(manager.id) } returns manager
 
-        assertEquals(building.id, service.managedBuildingId(managerId))
+        assertEquals(building.id, service.managedBuildingId(manager.id))
     }
 
     @Test
     fun `resolves a resident building through the active apartment`() {
         val residentId = UserId.generate()
-        val building = Building.create("Tower", "Address", UserId.generate())
+        val building = Building.create("Tower", "Address")
         val apartment = Apartment.create(
             building.id,
             "101",
@@ -60,33 +60,38 @@ class BuildingAccessServiceTest {
 
     @Test
     fun `rejects access when the manager owns another building`() {
-        val managerId = UserId.generate()
-        val building = Building.create("Tower", "Address", managerId)
-        every { buildingRepository.findByManagerId(managerId) } returns building
+        val building = Building.create("Tower", "Address")
+        val manager = user(Role.MANAGER, building.id)
+        every { userRepository.findById(manager.id) } returns manager
 
         assertFailsWith<DomainForbiddenException> {
-            service.requireManagerAccess(Building.create("Other", "Other", UserId.generate()).id, managerId)
+            service.requireManagerAccess(Building.create("Other", "Other").id, manager.id)
         }
     }
 
     @Test
-    fun `resolves the building assigned to staff`() {
-        val staffId = UserId.generate()
-        val building = Building.create("Tower", "Address", UserId.generate())
-        val membership = StaffBuildingMembership.create(staffId, building.id)
-        every { staffMembershipRepository.findByStaffId(staffId) } returns membership
-
-        assertEquals(building.id, service.staffBuildingId(staffId))
-    }
-
-    @Test
-    fun `rejects staff access to another building`() {
-        val staffId = UserId.generate()
-        val membership = StaffBuildingMembership.create(staffId, Building.create("Tower", "Address").id)
-        every { staffMembershipRepository.findByStaffId(staffId) } returns membership
+    fun `rejects a non-manager identity as a building manager`() {
+        val resident = user(Role.RESIDENT)
+        every { userRepository.findById(resident.id) } returns resident
 
         assertFailsWith<DomainForbiddenException> {
-            service.requireStaffAccess(Building.create("Other", "Other").id, staffId)
+            service.managedBuildingId(resident.id)
         }
+    }
+
+    private fun user(role: Role, buildingId: BuildingId? = null): User {
+        val id = UserId.generate()
+        val now = Instant.now()
+        return User.reconstitute(
+            id = id,
+            username = "user-${id.value}",
+            email = "${id.value}@example.com",
+            passwordHash = "hash",
+            role = role,
+            createdAt = now,
+            updatedAt = now,
+            active = true,
+            managedBuildingId = buildingId,
+        )
     }
 }

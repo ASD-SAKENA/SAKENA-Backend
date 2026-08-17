@@ -1,6 +1,10 @@
 package com.sakena.user.application
 
+import com.sakena.property.application.BuildingService
+import com.sakena.property.domain.model.Building
+import com.sakena.shared.domain.DomainValidationException
 import com.sakena.user.domain.*
+import com.sakena.wallet.domain.WalletRepository
 import com.sakena.user.domain.exceptions.InactiveAccountException
 import com.sakena.user.domain.exceptions.InvalidCredentialsException
 import com.sakena.user.domain.exceptions.InvalidRoleException
@@ -17,6 +21,8 @@ import java.time.Instant
 class AuthServiceTest {
 
     private lateinit var userRepository: UserRepository
+    private lateinit var buildingService: BuildingService
+    private lateinit var walletRepository: WalletRepository
     private lateinit var passwordEncoder: PasswordEncoder
     private lateinit var jwtTokenProvider: JwtTokenProvider
     private lateinit var resetTokenRepository: PasswordResetTokenRepository
@@ -29,12 +35,16 @@ class AuthServiceTest {
     @BeforeEach
     fun setup() {
         userRepository = mockk()
+        buildingService = mockk()
+        walletRepository = mockk(relaxed = true)
         passwordEncoder = mockk()
         jwtTokenProvider = mockk()
         resetTokenRepository = mockk()
         emailSender = mockk()
         authService = AuthService(
             userRepository,
+            buildingService,
+            walletRepository,
             passwordEncoder,
             jwtTokenProvider,
             resetTokenRepository,
@@ -67,11 +77,13 @@ class AuthServiceTest {
     // ===== REGISTER TESTS =====
 
     @Test
-    fun `register should save and return user when username and email are unique`() {
+    fun `register creates and assigns a building when the role is manager`() {
         val command = RegisterCommand("john", "john@example.com", "password123", "MANAGER")
+        val building = Building.create("ساختمان john", "آدرس ثبت نشده")
 
         every { userRepository.existsByUsername(command.username) } returns false
         every { userRepository.existsByEmail(command.email) } returns false
+        every { buildingService.create(any(), any()) } returns building
         every { passwordEncoder.encode(command.password) } returns "encodedPassword"
 
         val savedUserSlot = slot<User>()
@@ -83,6 +95,7 @@ class AuthServiceTest {
         assertEquals("john@example.com", result.email)
         assertEquals("encodedPassword", result.passwordHash)
         assertEquals(Role.MANAGER, result.role)
+        assertEquals(building.id, result.managedBuildingId)
         assertTrue(result.active)
 
         verify(exactly = 1) { userRepository.save(any()) }
@@ -90,6 +103,22 @@ class AuthServiceTest {
         assertEquals("john", savedUser.username)
         assertEquals("encodedPassword", savedUser.passwordHash)
         assertEquals(Role.MANAGER, savedUser.role)
+        assertEquals(building.id, savedUser.managedBuildingId)
+    }
+
+    @Test
+    fun `register does not create a building for a resident`() {
+        val command = RegisterCommand("jane", "jane@example.com", "password123", "RESIDENT")
+
+        every { userRepository.existsByUsername(command.username) } returns false
+        every { userRepository.existsByEmail(command.email) } returns false
+        every { passwordEncoder.encode(command.password) } returns "encodedPassword"
+        every { userRepository.save(any()) } answers { firstArg() }
+
+        val result = authService.register(command)
+
+        assertEquals(null, result.managedBuildingId)
+        verify(exactly = 0) { buildingService.create(any(), any()) }
     }
 
     @Test
@@ -121,24 +150,65 @@ class AuthServiceTest {
         verify(exactly = 0) { userRepository.save(any()) }
     }
 
+    @Test
+    fun `register should reject a self-declared admin role`() {
+        val command = RegisterCommand("john", "john@example.com", "password123", "ADMIN")
+        every { userRepository.existsByUsername(command.username) } returns false
+        every { userRepository.existsByEmail(command.email) } returns false
+
+        assertThrows<DomainValidationException> { authService.register(command) }
+
+        verify(exactly = 0) { passwordEncoder.encode(any()) }
+        verify(exactly = 0) { userRepository.save(any()) }
+    }
+
     // ===== LOGIN TESTS =====
 
     @Test
-    fun `login should return JWT when credentials are valid`() {
+    fun `login should return JWT and the resolved user when credentials are valid`() {
         val command = LoginCommand("john", "correct")
         val user = createUser(passwordHash = "hashed_correct")
         every { userRepository.findByUsername(command.username) } returns user
         every { passwordEncoder.matches(command.password, user.passwordHash) } returns true
         every { jwtTokenProvider.generateToken(user.username, user.role.name) } returns "jwt-token"
 
-        val token = authService.login(command)
-        assertEquals("jwt-token", token)
+        val result = authService.login(command)
+        assertEquals("jwt-token", result.token)
+        assertEquals(user, result.user)
         verify(exactly = 1) { jwtTokenProvider.generateToken(any(), any()) }
     }
 
     @Test
-    fun `login should throw InvalidCredentialsException when user not found`() {
+    fun `login falls back to matching by email when no username matches`() {
+        val user = createUser(username = "john", email = "john@example.com", passwordHash = "hashed_correct")
+        every { userRepository.findByUsername("john@example.com") } returns null
+        every { userRepository.findByEmail("john@example.com") } returns user
+        every { passwordEncoder.matches("correct", user.passwordHash) } returns true
+        every { jwtTokenProvider.generateToken(user.username, user.role.name) } returns "jwt-token"
+
+        val result = authService.login(LoginCommand("john@example.com", "correct"))
+
+        assertEquals("jwt-token", result.token)
+        assertEquals("john", result.user.username)
+    }
+
+    @Test
+    fun `login normalizes case and whitespace before matching by email`() {
+        val user = createUser(username = "john", email = "john@example.com", passwordHash = "hashed_correct")
+        every { userRepository.findByUsername("  John@Example.com  ") } returns null
+        every { userRepository.findByEmail("john@example.com") } returns user
+        every { passwordEncoder.matches("correct", user.passwordHash) } returns true
+        every { jwtTokenProvider.generateToken(user.username, user.role.name) } returns "jwt-token"
+
+        val result = authService.login(LoginCommand("  John@Example.com  ", "correct"))
+
+        assertEquals("john", result.user.username)
+    }
+
+    @Test
+    fun `login should throw InvalidCredentialsException when user not found by username or email`() {
         every { userRepository.findByUsername("unknown") } returns null
+        every { userRepository.findByEmail("unknown") } returns null
         assertThrows<InvalidCredentialsException> {
             authService.login(LoginCommand("unknown", "pass"))
         }

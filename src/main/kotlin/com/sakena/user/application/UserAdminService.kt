@@ -1,9 +1,8 @@
 package com.sakena.user.application
 
-import com.sakena.membership.domain.StaffBuildingMembershipRepository
-import com.sakena.property.domain.BuildingAccess
-import com.sakena.residency.domain.ResidencyRepository
-import com.sakena.shared.domain.DomainForbiddenException
+import com.sakena.property.domain.BuildingRepository
+import com.sakena.property.domain.model.BuildingId
+import com.sakena.shared.domain.DomainValidationException
 import com.sakena.shared.domain.EntityNotFoundException
 import com.sakena.user.domain.Role
 import com.sakena.user.domain.User
@@ -12,46 +11,51 @@ import com.sakena.user.domain.UserRepository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 
+/** Administrator-only user management: every call here assumes an ADMIN caller (enforced at the controller). */
 @Service
 @Transactional
 class UserAdminService(
     private val userRepository: UserRepository,
-    private val buildingAccess: BuildingAccess,
-    private val residencyRepository: ResidencyRepository,
-    private val staffMembershipRepository: StaffBuildingMembershipRepository,
+    private val buildingRepository: BuildingRepository,
 ) {
 
     @Transactional(readOnly = true)
-    fun getUsers(managerId: UserId, role: Role? = null): List<User> {
-        val users = userRepository.findAllByIds(managedUserIds(managerId))
+    fun getUsers(role: Role? = null): List<User> {
+        val users = userRepository.findAll()
         return role?.let { r -> users.filter { it.role == r } } ?: users
     }
 
-    fun changeActiveStatus(userId: UserId, active: Boolean, managerId: UserId): User {
-        requireManagedUser(userId, managerId)
+    fun changeActiveStatus(userId: UserId, active: Boolean): User {
         val user = userRepository.findById(userId)
             ?: throw EntityNotFoundException("User not found: ${userId.value}")
         val updated = if (active) user.activate() else user.deactivate()
         return userRepository.save(updated)
     }
 
-    fun changeSpecialty(userId: UserId, specialty: String?, managerId: UserId): User {
-        requireManagedUser(userId, managerId)
+    fun changeSpecialty(userId: UserId, specialty: String?): User {
         val user = userRepository.findById(userId)
             ?: throw EntityNotFoundException("User not found: ${userId.value}")
         return userRepository.save(user.withSpecialty(specialty))
     }
 
-    private fun requireManagedUser(userId: UserId, managerId: UserId) {
-        if (userId !in managedUserIds(managerId)) {
-            throw DomainForbiddenException("You may only manage users assigned to your building")
+    /**
+     * Reassigns a user's role. The superuser is the only one who can hand out
+     * or revoke MANAGER, since doing so decides who administers a building —
+     * a building can end up with several managers or none, both intentional
+     * (e.g. temporarily covering for an absent manager, or freeing a building
+     * to be reassigned later).
+     */
+    fun changeRole(userId: UserId, role: Role, managedBuildingId: BuildingId?): User {
+        val user = userRepository.findById(userId)
+            ?: throw EntityNotFoundException("User not found: ${userId.value}")
+        if (role == Role.MANAGER) {
+            val buildingId = managedBuildingId
+                ?: throw DomainValidationException("managedBuildingId is required when assigning the MANAGER role")
+            if (!buildingRepository.existsById(buildingId)) {
+                throw EntityNotFoundException("Building not found: ${buildingId.value}")
+            }
+            return userRepository.save(user.withRole(role, managedBuildingId = buildingId))
         }
-    }
-
-    private fun managedUserIds(managerId: UserId): Set<UserId> {
-        val buildingId = buildingAccess.managedBuildingId(managerId)
-        val residentIds = residencyRepository.findActiveByBuilding(buildingId).map { it.residentId }
-        val staffIds = staffMembershipRepository.findAllByBuilding(buildingId).map { it.staffId }
-        return (residentIds + staffIds + managerId).toSet()
+        return userRepository.save(user.withRole(role, managedBuildingId = null))
     }
 }

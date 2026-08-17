@@ -1,5 +1,6 @@
 package com.sakena.user.domain
 
+import com.sakena.property.domain.model.BuildingId
 import java.time.Instant
 
 data class User(
@@ -11,7 +12,9 @@ data class User(
     val createdAt: Instant,
     val updatedAt: Instant,
     val active: Boolean = true,
-    val specialty: String? = null
+    val specialty: String? = null,
+    /** The single building this manager administers. Null for every other role. */
+    val managedBuildingId: BuildingId? = null
 ) {
     init {
         specialty?.let {
@@ -19,6 +22,11 @@ data class User(
             require(it.length <= MAX_SPECIALTY_LENGTH) {
                 "Specialty must be at most $MAX_SPECIALTY_LENGTH characters"
             }
+        }
+        if (role == Role.MANAGER) {
+            require(managedBuildingId != null) { "A manager must administer a building" }
+        } else {
+            require(managedBuildingId == null) { "Only a manager administers a building" }
         }
     }
 
@@ -30,7 +38,8 @@ data class User(
             email: String,
             rawPassword: String,
             passwordEncoder: (String) -> String,
-            role: Role = Role.RESIDENT
+            role: Role = Role.RESIDENT,
+            managedBuildingId: BuildingId? = null
         ): User {
             require(username.isNotBlank()) { "Username cannot be blank" }
             require(email.isNotBlank() && email.contains("@")) { "Invalid email" }
@@ -43,7 +52,8 @@ data class User(
                 passwordHash = passwordEncoder(rawPassword),
                 role = role,
                 createdAt = Instant.now(),
-                updatedAt = Instant.now()
+                updatedAt = Instant.now(),
+                managedBuildingId = managedBuildingId
             )
         }
 
@@ -56,8 +66,9 @@ data class User(
             createdAt: Instant,
             updatedAt: Instant,
             active: Boolean,
-            specialty: String? = null
-        ) = User(id, username, email, passwordHash, role, createdAt, updatedAt, active, specialty)
+            specialty: String? = null,
+            managedBuildingId: BuildingId? = null
+        ) = User(id, username, email, passwordHash, role, createdAt, updatedAt, active, specialty, managedBuildingId)
     }
 
     fun verifyPassword(rawPassword: String, passwordMatcher: (String, String) -> Boolean): Boolean =
@@ -69,6 +80,17 @@ data class User(
 
     fun withSpecialty(specialty: String?): User = copy(
         specialty = specialty?.trim()?.takeIf { it.isNotEmpty() },
+        updatedAt = Instant.now()
+    )
+
+    /**
+     * Changes this user's role. A manager's [managedBuildingId] must already
+     * be resolved by the caller — this method only enforces that the
+     * combination is valid, the same invariant construction checks.
+     */
+    fun withRole(role: Role, managedBuildingId: BuildingId?): User = copy(
+        role = role,
+        managedBuildingId = managedBuildingId,
         updatedAt = Instant.now()
     )
 

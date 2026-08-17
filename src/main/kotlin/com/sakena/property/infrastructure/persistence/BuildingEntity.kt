@@ -14,9 +14,6 @@ class BuildingEntity(
     @Column(name = "id", nullable = false, updatable = false)
     var id: UUID,
 
-    @Column(name = "manager_id")
-    var managerId: UUID?,
-
     @Column(name = "name", nullable = false, length = 150)
     var name: String,
 

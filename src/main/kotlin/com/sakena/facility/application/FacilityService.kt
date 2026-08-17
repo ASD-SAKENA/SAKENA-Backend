@@ -67,7 +67,7 @@ class FacilityService(
         when (requestedBy.role) {
             Role.MANAGER -> buildingAccess.managedBuildingId(requestedBy.id)
             Role.RESIDENT -> buildingAccess.residentBuildingId(requestedBy.id)
-            Role.STAFF -> throw DomainForbiddenException("Staff cannot access building facilities")
+            Role.STAFF, Role.ADMIN -> throw DomainForbiddenException("You cannot access building facilities")
         }
 
     private fun managedBuildingId(requestedBy: User): BuildingId {

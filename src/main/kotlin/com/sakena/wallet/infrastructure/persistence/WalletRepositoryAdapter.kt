@@ -1,12 +1,11 @@
 package com.sakena.wallet.infrastructure.persistence
 
-import com.sakena.user.domain.UserId
 import com.sakena.property.domain.model.BuildingId
+import com.sakena.user.domain.UserId
 import com.sakena.wallet.domain.WalletRepository
 import com.sakena.wallet.domain.model.Wallet
 import com.sakena.wallet.domain.model.WalletId
 import org.springframework.stereotype.Component
-import java.util.UUID
 
 /**
  * Adapter implementing the domain [WalletRepository] port on top of Spring
@@ -23,13 +22,7 @@ class WalletRepositoryAdapter(
     }
 
     override fun findBuildingWallet(buildingId: BuildingId): Wallet? =
-        jpaRepository.findByOwnerBuildingId(buildingId.value)?.let(::toDomain)
-
-    override fun findOrCreateBuildingWallet(buildingId: BuildingId): Wallet {
-        jpaRepository.insertBuildingWalletIfAbsent(UUID.randomUUID(), buildingId.value)
-        return jpaRepository.findByOwnerBuildingId(buildingId.value)?.let(::toDomain)
-            ?: error("Building wallet provisioning failed for '$buildingId'")
-    }
+        jpaRepository.findByBuildingId(buildingId.value)?.let(::toDomain)
 
     override fun findByOwner(userId: UserId): Wallet? =
         jpaRepository.findByOwnerUserId(userId.value)?.let(::toDomain)
@@ -39,7 +32,7 @@ class WalletRepositoryAdapter(
             id = wallet.id.value,
             ownerType = wallet.ownerType,
             ownerUserId = wallet.ownerUserId?.value,
-            ownerBuildingId = wallet.ownerBuildingId?.value,
+            buildingId = wallet.buildingId?.value,
             balance = wallet.balance,
             createdAt = wallet.createdAt,
             updatedAt = wallet.updatedAt,
@@ -50,7 +43,7 @@ class WalletRepositoryAdapter(
             id = WalletId(entity.id),
             ownerType = entity.ownerType,
             ownerUserId = entity.ownerUserId?.let(::UserId),
-            ownerBuildingId = entity.ownerBuildingId?.let(::BuildingId),
+            buildingId = entity.buildingId?.let(::BuildingId),
             balance = entity.balance,
             createdAt = entity.createdAt,
             updatedAt = entity.updatedAt,

@@ -47,7 +47,7 @@ class InvoiceController(
         val invoices = when (user.role) {
             Role.MANAGER -> invoiceService.getByApartment(id, user.id)
             Role.RESIDENT -> invoiceService.getOwnApartment(id, user.id)
-            Role.STAFF -> throw DomainForbiddenException("Staff may not access apartment invoices")
+            Role.STAFF, Role.ADMIN -> throw DomainForbiddenException("You may not access apartment invoices")
         }
         return invoices.map(UnitInvoiceResponse::from)
     }

@@ -109,7 +109,7 @@ class PollService(
     private fun buildingIdFor(user: User): BuildingId = when (user.role) {
         Role.MANAGER -> buildingAccess.managedBuildingId(user.id)
         Role.RESIDENT -> buildingAccess.residentBuildingId(user.id)
-        Role.STAFF -> buildingAccess.staffBuildingId(user.id)
+        Role.STAFF, Role.ADMIN -> throw DomainForbiddenException("You cannot access building polls")
     }
 
     private fun requireResident(user: User) {

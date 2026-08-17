@@ -43,9 +43,9 @@ class FacilityBookingServiceTest {
         TIMEZONE,
     )
 
+    private val buildingId = BuildingId.new()
     private val resident = user(Role.RESIDENT)
     private val manager = user(Role.MANAGER)
-    private val buildingId = BuildingId.new()
 
     /** Tomorrow 10:00–11:00 local time — inside the default 08–22 window. */
     private val start: Instant = Instant.now()
@@ -269,6 +269,7 @@ class FacilityBookingServiceTest {
         role = role,
         createdAt = Instant.now(),
         updatedAt = Instant.now(),
+        managedBuildingId = buildingId.takeIf { role == Role.MANAGER },
     )
 
     private companion object {

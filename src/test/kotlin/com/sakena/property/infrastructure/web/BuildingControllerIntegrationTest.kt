@@ -2,19 +2,15 @@ package com.sakena.property.infrastructure.web
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.sakena.IntegrationTest
-import com.sakena.property.infrastructure.web.dto.CreateBuildingRequest
 import com.sakena.property.infrastructure.web.dto.UpdateBuildingRequest
 import com.sakena.support.TestAuth
-import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
 import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
 import org.springframework.test.web.servlet.MockMvc
-import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
-import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
@@ -25,193 +21,61 @@ class BuildingControllerIntegrationTest(
     @Autowired private val objectMapper: ObjectMapper,
 ) : IntegrationTest() {
 
-    private lateinit var managerToken: String
+    @Test
+    fun `a building is auto-created and assigned when a manager registers`() {
+        val manager = TestAuth.registerManagerWithBuilding(mockMvc, objectMapper)
 
-    @BeforeEach
-    fun registerManager() {
-        managerToken = TestAuth.register(mockMvc, objectMapper, role = "MANAGER", usernamePrefix = "bldg-mgr")
+        mockMvc.perform(
+            get("/api/v1/buildings/${manager.buildingId}")
+                .header(HttpHeaders.AUTHORIZATION, TestAuth.bearer(manager.token)),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.id").value(manager.buildingId))
     }
 
     @Test
-    fun `full building lifecycle over HTTP`() {
-        val createBody = objectMapper.writeValueAsString(CreateBuildingRequest("Tower A", "Main Street"))
-        val created = mockMvc.perform(
-            post("/api/v1/buildings")
-                .header(HttpHeaders.AUTHORIZATION, TestAuth.bearer(managerToken))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(createBody),
-        )
-            .andExpect(status().isCreated)
-            .andExpect(jsonPath("$.name").value("Tower A"))
-            .andExpect(jsonPath("$.address").value("Main Street"))
-            .andReturn()
-
-        val id = objectMapper.readTree(created.response.contentAsString).get("id").asText()
-
-        mockMvc.perform(
-            get("/api/v1/buildings/$id")
-                .header(HttpHeaders.AUTHORIZATION, TestAuth.bearer(managerToken)),
-        )
-            .andExpect(status().isOk)
-            .andExpect(jsonPath("$.id").value(id))
+    fun `a manager can rename and re-address the building they administer`() {
+        val manager = TestAuth.registerManagerWithBuilding(mockMvc, objectMapper)
 
         val updateBody = objectMapper.writeValueAsString(UpdateBuildingRequest("Tower B", "Second Street"))
         mockMvc.perform(
-            put("/api/v1/buildings/$id")
-                .header(HttpHeaders.AUTHORIZATION, TestAuth.bearer(managerToken))
+            put("/api/v1/buildings/${manager.buildingId}")
+                .header(HttpHeaders.AUTHORIZATION, TestAuth.bearer(manager.token))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(updateBody),
         )
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.name").value("Tower B"))
             .andExpect(jsonPath("$.address").value("Second Street"))
-
-        mockMvc.perform(
-            get("/api/v1/buildings")
-                .header(HttpHeaders.AUTHORIZATION, TestAuth.bearer(managerToken)),
-        )
-            .andExpect(status().isOk)
-            .andExpect(jsonPath("$[?(@.id == '$id')]").exists())
-
-        mockMvc.perform(
-            delete("/api/v1/buildings/$id")
-                .header(HttpHeaders.AUTHORIZATION, TestAuth.bearer(managerToken)),
-        ).andExpect(status().isNoContent)
-
-        mockMvc.perform(
-            get("/api/v1/buildings/$id")
-                .header(HttpHeaders.AUTHORIZATION, TestAuth.bearer(managerToken)),
-        ).andExpect(status().isNotFound)
     }
 
     @Test
-    fun `creating a building with a blank name returns 400 with field errors`() {
-        val body = objectMapper.writeValueAsString(CreateBuildingRequest("", "Address"))
+    fun `a manager cannot update a building they do not administer`() {
+        val manager = TestAuth.registerManagerWithBuilding(mockMvc, objectMapper)
+        val otherManager = TestAuth.registerManagerWithBuilding(mockMvc, objectMapper)
+
+        val updateBody = objectMapper.writeValueAsString(UpdateBuildingRequest("Hijacked", "Nowhere"))
+        mockMvc.perform(
+            put("/api/v1/buildings/${otherManager.buildingId}")
+                .header(HttpHeaders.AUTHORIZATION, TestAuth.bearer(manager.token))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(updateBody),
+        )
+            .andExpect(status().isForbidden)
+    }
+
+    @Test
+    fun `updating a building with a blank name returns 400 with field errors`() {
+        val manager = TestAuth.registerManagerWithBuilding(mockMvc, objectMapper)
+        val body = objectMapper.writeValueAsString(UpdateBuildingRequest("", "Address"))
 
         mockMvc.perform(
-            post("/api/v1/buildings")
-                .header(HttpHeaders.AUTHORIZATION, TestAuth.bearer(managerToken))
+            put("/api/v1/buildings/${manager.buildingId}")
+                .header(HttpHeaders.AUTHORIZATION, TestAuth.bearer(manager.token))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body),
         )
             .andExpect(status().isBadRequest)
             .andExpect(jsonPath("$.fieldErrors[0].field").value("name"))
-    }
-
-    @Test
-    fun `deleting a building with apartments returns 409`() {
-        val buildingId = createBuilding("Tower With Apartment", "Main Street")
-        createApartment(buildingId, "101")
-
-        mockMvc.perform(
-            delete("/api/v1/buildings/$buildingId")
-                .header(HttpHeaders.AUTHORIZATION, TestAuth.bearer(managerToken)),
-        )
-            .andExpect(status().isConflict)
-    }
-
-    @Test
-    fun `managers can only access the building assigned to them`() {
-        val ownerBuildingId = createBuilding("Owner Tower", "Owner Street")
-        val otherManagerToken = TestAuth.register(
-            mockMvc,
-            objectMapper,
-            role = "MANAGER",
-            usernamePrefix = "other-bldg-mgr",
-        )
-        val otherBuildingId = createBuilding(
-            "Other Tower",
-            "Other Street",
-            otherManagerToken,
-        )
-
-        mockMvc.perform(
-            get("/api/v1/buildings")
-                .header(HttpHeaders.AUTHORIZATION, TestAuth.bearer(managerToken)),
-        )
-            .andExpect(status().isOk)
-            .andExpect(jsonPath("$[?(@.id == '$ownerBuildingId')]").exists())
-            .andExpect(jsonPath("$[?(@.id == '$otherBuildingId')]").doesNotExist())
-
-        mockMvc.perform(
-            get("/api/v1/buildings")
-                .header(HttpHeaders.AUTHORIZATION, TestAuth.bearer(otherManagerToken)),
-        )
-            .andExpect(status().isOk)
-            .andExpect(jsonPath("$[?(@.id == '$otherBuildingId')]").exists())
-            .andExpect(jsonPath("$[?(@.id == '$ownerBuildingId')]").doesNotExist())
-
-        mockMvc.perform(
-            get("/api/v1/buildings/$ownerBuildingId")
-                .header(HttpHeaders.AUTHORIZATION, TestAuth.bearer(otherManagerToken)),
-        ).andExpect(status().isForbidden)
-
-        val updateBody = objectMapper.writeValueAsString(UpdateBuildingRequest("Stolen", "Changed"))
-        mockMvc.perform(
-            put("/api/v1/buildings/$ownerBuildingId")
-                .header(HttpHeaders.AUTHORIZATION, TestAuth.bearer(otherManagerToken))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(updateBody),
-        ).andExpect(status().isForbidden)
-
-        mockMvc.perform(
-            delete("/api/v1/buildings/$ownerBuildingId")
-                .header(HttpHeaders.AUTHORIZATION, TestAuth.bearer(otherManagerToken)),
-        ).andExpect(status().isForbidden)
-
-        mockMvc.perform(
-            get("/api/v1/buildings/$ownerBuildingId")
-                .header(HttpHeaders.AUTHORIZATION, TestAuth.bearer(managerToken)),
-        )
-            .andExpect(status().isOk)
-            .andExpect(jsonPath("$.name").value("Owner Tower"))
-
-        val secondBuilding = objectMapper.writeValueAsString(CreateBuildingRequest("Second", "Second Street"))
-        mockMvc.perform(
-            post("/api/v1/buildings")
-                .header(HttpHeaders.AUTHORIZATION, TestAuth.bearer(managerToken))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(secondBuilding),
-        ).andExpect(status().isConflict)
-    }
-
-    private fun createBuilding(
-        name: String,
-        address: String,
-        token: String = managerToken,
-    ): String {
-        val body = objectMapper.writeValueAsString(CreateBuildingRequest(name, address))
-        val created = mockMvc.perform(
-            post("/api/v1/buildings")
-                .header(HttpHeaders.AUTHORIZATION, TestAuth.bearer(token))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(body),
-        )
-            .andExpect(status().isCreated)
-            .andReturn()
-
-        return objectMapper.readTree(created.response.contentAsString).get("id").asText()
-    }
-
-    private fun createApartment(buildingId: String, unitNumber: String): String {
-        val body = """
-            {
-              "buildingId": "$buildingId",
-              "unitNumber": "$unitNumber",
-              "floorNumber": 1,
-              "areaSquareMeters": 80.50,
-              "bedrooms": 2
-            }
-        """.trimIndent()
-        val created = mockMvc.perform(
-            post("/api/v1/apartments")
-                .header(HttpHeaders.AUTHORIZATION, TestAuth.bearer(managerToken))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(body),
-        )
-            .andExpect(status().isCreated)
-            .andReturn()
-
-        return objectMapper.readTree(created.response.contentAsString).get("id").asText()
     }
 }

@@ -30,11 +30,16 @@ class ChatMessageRepositoryAdapter(
         buildingId: BuildingId,
         before: java.time.Instant?,
         limit: Int,
-    ): List<ChatMessage> =
-        jpaRepository.findPage(buildingId.value, before, PageRequest.of(0, limit))
-            .map(ChatMessageEntityMapper::toDomain)
-            // The query pages backwards from the newest; the client renders oldest-first.
-            .reversed()
+    ): List<ChatMessage> {
+        val page = PageRequest.of(0, limit)
+        val entities = if (before == null) {
+            jpaRepository.findByBuildingIdOrderBySentAtDesc(buildingId.value, page)
+        } else {
+            jpaRepository.findByBuildingIdAndSentAtLessThanOrderBySentAtDesc(buildingId.value, before, page)
+        }
+        // The query pages backwards from the newest; the client renders oldest-first.
+        return entities.map(ChatMessageEntityMapper::toDomain).reversed()
+    }
 
     override fun findSince(buildingId: BuildingId, since: java.time.Instant): List<ChatMessage> =
         jpaRepository.findAllByBuildingIdAndSentAtGreaterThanOrderBySentAt(buildingId.value, since)

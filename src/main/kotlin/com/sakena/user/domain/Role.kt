@@ -5,7 +5,8 @@ import com.sakena.user.domain.exceptions.InvalidRoleException
 enum class Role {
     RESIDENT,
     MANAGER,
-    STAFF;
+    STAFF,
+    ADMIN;
 
     companion object {
         fun from(value: String): Role =

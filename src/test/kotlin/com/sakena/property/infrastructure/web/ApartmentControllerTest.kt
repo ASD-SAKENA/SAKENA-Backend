@@ -2,9 +2,9 @@ package com.sakena.property.infrastructure.web
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.sakena.property.application.ApartmentService
-import com.sakena.property.domain.BuildingNotFoundException
 import com.sakena.property.domain.model.Apartment
 import com.sakena.property.domain.model.BuildingId
+import com.sakena.shared.domain.DomainForbiddenException
 import com.sakena.shared.web.GlobalExceptionHandler
 import com.sakena.user.application.ProfileService
 import com.sakena.user.domain.Role
@@ -13,8 +13,11 @@ import com.sakena.user.domain.UserId
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import org.springframework.http.MediaType
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken
+import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
@@ -25,17 +28,13 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.test.web.servlet.setup.MockMvcBuilders
 import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean
 import java.math.BigDecimal
-import java.security.Principal
+import java.time.Instant
 import java.util.UUID
 
 class ApartmentControllerTest {
 
-    private val managerId = UserId.generate()
-    private val principal = Principal { "manager" }
     private val apartmentService = mockk<ApartmentService>()
-    private val profileService = mockk<ProfileService> {
-        every { getUserByUsername(principal.name) } returns manager()
-    }
+    private val profileService = mockk<ProfileService>()
     private val objectMapper = jacksonObjectMapper()
     private val mockMvc: MockMvc = MockMvcBuilders
         .standaloneSetup(ApartmentController(apartmentService, profileService))
@@ -43,9 +42,13 @@ class ApartmentControllerTest {
         .setValidator(validator())
         .build()
 
+    @AfterEach
+    fun clearSecurityContext() = SecurityContextHolder.clearContext()
+
     @Test
-    fun `create maps request to command and returns created apartment`() {
+    fun `create maps request to command and uses the authenticated manager's own building`() {
         val buildingId = BuildingId.new()
+        val manager = authenticateManager(buildingId)
         val apartment = Apartment.create(buildingId, "101", 1, BigDecimal("80.50"), 2)
         every {
             apartmentService.create(
@@ -56,16 +59,11 @@ class ApartmentControllerTest {
                         it.areaSquareMeters == BigDecimal("80.50") &&
                         it.bedrooms == 2
                 },
-                managerId,
+                manager.managedBuildingId,
             )
         } returns apartment
 
-        mockMvc.perform(
-            post("/api/v1/apartments")
-                .principal(principal)
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(apartmentJson(buildingId.value)),
-        )
+        mockMvc.perform(post("/api/v1/apartments").contentType(MediaType.APPLICATION_JSON).content(apartmentJson(buildingId.value)))
             .andExpect(status().isCreated)
             .andExpect(jsonPath("$.id").value(apartment.id.value.toString()))
             .andExpect(jsonPath("$.buildingId").value(buildingId.value.toString()))
@@ -75,6 +73,7 @@ class ApartmentControllerTest {
     @Test
     fun `update maps request to command`() {
         val buildingId = BuildingId.new()
+        val manager = authenticateManager(buildingId)
         val apartment = Apartment.create(buildingId, "202", 2, BigDecimal("95.25"), 3)
         every {
             apartmentService.update(
@@ -85,78 +84,113 @@ class ApartmentControllerTest {
                         it.floorNumber == 2 &&
                         it.bedrooms == 3
                 },
-                managerId,
+                manager.managedBuildingId,
             )
         } returns apartment
 
-        mockMvc.perform(
-            put("/api/v1/apartments/${apartment.id}")
-                .principal(principal)
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(apartmentJson(buildingId.value, "202", 2, "95.25", 3)),
-        )
+        mockMvc.perform(put("/api/v1/apartments/${apartment.id}").contentType(MediaType.APPLICATION_JSON).content(apartmentJson(buildingId.value, "202", 2, "95.25", 3)))
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.unitNumber").value("202"))
             .andExpect(jsonPath("$.bedrooms").value(3))
     }
 
     @Test
-    fun `list maps optional building filter`() {
+    fun `list maps optional building filter for a caller who does not manage one`() {
         val buildingId = BuildingId.new()
-        every { apartmentService.getAll(buildingId, managerId) } returns emptyList()
+        authenticateResident()
+        every { apartmentService.getAll(buildingId, null) } returns emptyList()
 
-        mockMvc.perform(get("/api/v1/apartments?buildingId=$buildingId").principal(principal))
+        mockMvc.perform(get("/api/v1/apartments?buildingId=$buildingId"))
             .andExpect(status().isOk)
 
-        verify(exactly = 1) { apartmentService.getAll(buildingId, managerId) }
+        verify(exactly = 1) { apartmentService.getAll(buildingId, null) }
     }
 
     @Test
-    fun `missing building is translated to 404`() {
+    fun `list scopes to the requesting manager's own building`() {
         val buildingId = BuildingId.new()
-        every { apartmentService.create(any(), managerId) } throws BuildingNotFoundException(buildingId)
+        val manager = authenticateManager(buildingId)
+        every { apartmentService.getAll(null, manager.managedBuildingId) } returns emptyList()
 
-        mockMvc.perform(
-            post("/api/v1/apartments")
-                .principal(principal)
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(apartmentJson(buildingId.value)),
+        mockMvc.perform(get("/api/v1/apartments"))
+            .andExpect(status().isOk)
+
+        verify(exactly = 1) { apartmentService.getAll(null, manager.managedBuildingId) }
+    }
+
+    private fun authenticateResident(): User {
+        val now = Instant.now()
+        val resident = User.reconstitute(
+            id = UserId.generate(),
+            username = "resident",
+            email = "resident@example.com",
+            passwordHash = "hash",
+            role = Role.RESIDENT,
+            createdAt = now,
+            updatedAt = now,
+            active = true,
+            managedBuildingId = null,
         )
-            .andExpect(status().isNotFound)
+        SecurityContextHolder.getContext().authentication =
+            UsernamePasswordAuthenticationToken(resident.username, null)
+        every { profileService.getUserByUsername(resident.username) } returns resident
+        return resident
+    }
+
+    @Test
+    fun `create on a building the manager does not administer returns 403`() {
+        val ownedBuildingId = BuildingId.new()
+        val otherBuildingId = BuildingId.new()
+        val manager = authenticateManager(ownedBuildingId)
+        every {
+            apartmentService.create(any(), manager.managedBuildingId)
+        } throws DomainForbiddenException("You do not manage building '$otherBuildingId'")
+
+        mockMvc.perform(post("/api/v1/apartments").contentType(MediaType.APPLICATION_JSON).content(apartmentJson(otherBuildingId.value)))
+            .andExpect(status().isForbidden)
     }
 
     @Test
     fun `invalid area returns validation error`() {
+        authenticateManager(BuildingId.new())
         val body = apartmentJson(BuildingId.new().value, areaSquareMeters = "0.00")
 
-        mockMvc.perform(
-            post("/api/v1/apartments")
-                .principal(principal)
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(body),
-        )
+        mockMvc.perform(post("/api/v1/apartments").contentType(MediaType.APPLICATION_JSON).content(body))
             .andExpect(status().isBadRequest)
             .andExpect(jsonPath("$.fieldErrors[0].field").value("areaSquareMeters"))
     }
 
     @Test
     fun `delete maps apartment id`() {
-        val apartment = Apartment.create(BuildingId.new(), "303", 3, BigDecimal("70.00"), 1)
-        every { apartmentService.delete(apartment.id, managerId) } returns Unit
+        val buildingId = BuildingId.new()
+        val manager = authenticateManager(buildingId)
+        val apartment = Apartment.create(buildingId, "303", 3, BigDecimal("70.00"), 1)
+        every { apartmentService.delete(apartment.id, manager.managedBuildingId) } returns Unit
 
-        mockMvc.perform(delete("/api/v1/apartments/${apartment.id}").principal(principal))
+        mockMvc.perform(delete("/api/v1/apartments/${apartment.id}"))
             .andExpect(status().isNoContent)
 
-        verify(exactly = 1) { apartmentService.delete(apartment.id, managerId) }
+        verify(exactly = 1) { apartmentService.delete(apartment.id, manager.managedBuildingId) }
     }
 
-    private fun manager(): User = User.register(
-        username = principal.name,
-        email = "manager@example.com",
-        rawPassword = "password123",
-        passwordEncoder = { it },
-        role = Role.MANAGER,
-    ).copy(id = managerId)
+    private fun authenticateManager(managedBuildingId: BuildingId): User {
+        val now = Instant.now()
+        val manager = User.reconstitute(
+            id = UserId.generate(),
+            username = "manager-$managedBuildingId",
+            email = "manager@example.com",
+            passwordHash = "hash",
+            role = Role.MANAGER,
+            createdAt = now,
+            updatedAt = now,
+            active = true,
+            managedBuildingId = managedBuildingId,
+        )
+        SecurityContextHolder.getContext().authentication =
+            UsernamePasswordAuthenticationToken(manager.username, null)
+        every { profileService.getUserByUsername(manager.username) } returns manager
+        return manager
+    }
 
     private fun apartmentJson(
         buildingId: UUID,

@@ -34,5 +34,8 @@ class UserJpaEntity(
     var active: Boolean = true,
 
     @Column(length = 100)
-    var specialty: String? = null
+    var specialty: String? = null,
+
+    @Column(name = "managed_building_id")
+    var managedBuildingId: UUID? = null
 )

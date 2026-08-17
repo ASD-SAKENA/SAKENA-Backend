@@ -123,7 +123,7 @@ class FacilityBookingService(
         when (requestedBy.role) {
             Role.MANAGER -> buildingAccess.managedBuildingId(requestedBy.id)
             Role.RESIDENT -> buildingAccess.residentBuildingId(requestedBy.id)
-            Role.STAFF -> throw DomainForbiddenException("Staff cannot access facility bookings")
+            Role.STAFF, Role.ADMIN -> throw DomainForbiddenException("You cannot access facility bookings")
         }
 
     private fun requireWeeklyQuota(facility: Facility, startsAt: Instant, bookedBy: UserId) {

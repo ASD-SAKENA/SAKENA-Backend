@@ -5,6 +5,7 @@ import com.sakena.announcement.domain.AnnouncementRepository
 import com.sakena.announcement.domain.model.Announcement
 import com.sakena.property.domain.BuildingAccess
 import com.sakena.property.domain.model.BuildingId
+import com.sakena.shared.domain.DomainForbiddenException
 import com.sakena.user.domain.Role
 import com.sakena.user.domain.User
 import com.sakena.user.domain.UserId
@@ -15,6 +16,7 @@ import io.mockk.verify
 import org.junit.jupiter.api.Test
 import java.time.Instant
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 
 class AnnouncementServiceTest {
 
@@ -52,13 +54,10 @@ class AnnouncementServiceTest {
     }
 
     @Test
-    fun `staff reads announcements only from the assigned building`() {
+    fun `staff cannot read building announcements`() {
         val staff = user(Role.STAFF)
-        val announcement = Announcement.create("Notice", "body", UserId.generate(), buildingId)
-        every { buildingAccess.staffBuildingId(staff.id) } returns buildingId
-        every { repository.findAllByBuildingNewestFirst(buildingId) } returns listOf(announcement)
 
-        assertEquals(listOf(announcement), service.getAll(staff))
+        assertFailsWith<DomainForbiddenException> { service.getAll(staff) }
     }
 
     private fun user(role: Role): User {
@@ -73,6 +72,7 @@ class AnnouncementServiceTest {
             now,
             now,
             true,
+            managedBuildingId = buildingId.takeIf { role == Role.MANAGER },
         )
     }
 }

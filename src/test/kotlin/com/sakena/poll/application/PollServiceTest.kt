@@ -113,15 +113,10 @@ class PollServiceTest {
     }
 
     @Test
-    fun `staff can read polls only from the assigned building`() {
+    fun `staff cannot read building polls`() {
         val staff = user(Role.STAFF)
-        val poll = poll()
-        every { buildingAccess.staffBuildingId(staff.id) } returns buildingId
-        every { pollRepository.findAllByBuildingNewestFirst(buildingId) } returns listOf(poll)
-        every { voteRepository.countByOption(poll.id) } returns emptyMap()
-        every { voteRepository.findByPollAndVoter(poll.id, staff.id) } returns null
 
-        assertEquals(1, service.getAll(staff).size)
+        assertFailsWith<DomainForbiddenException> { service.getAll(staff) }
     }
 
     private fun user(role: Role): User {
@@ -136,6 +131,7 @@ class PollServiceTest {
             now,
             now,
             true,
+            managedBuildingId = buildingId.takeIf { role == Role.MANAGER },
         )
     }
 }
