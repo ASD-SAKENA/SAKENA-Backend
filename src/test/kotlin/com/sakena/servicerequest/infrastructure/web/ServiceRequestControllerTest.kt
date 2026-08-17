@@ -104,6 +104,8 @@ class ServiceRequestControllerTest {
 
     private val profileService: ProfileService = mockk()
     private val serviceRequestService: ServiceRequestService = mockk()
+    private val apartmentRepository: com.sakena.property.domain.ApartmentRepository = mockk()
+    private val buildingRepository: com.sakena.property.domain.BuildingRepository = mockk()
     private lateinit var controller: ServiceRequestController
 
     private val testUserId = UserId.generate()
@@ -125,7 +127,7 @@ class ServiceRequestControllerTest {
             active = true
         )
 
-        controller = ServiceRequestController(profileService, serviceRequestService)
+        controller = ServiceRequestController(profileService, serviceRequestService, apartmentRepository, buildingRepository)
 
         val validator = LocalValidatorFactoryBean()
         validator.afterPropertiesSet()
@@ -334,6 +336,60 @@ class ServiceRequestControllerTest {
                     .content(objectMapper.writeValueAsString(request))
             )
                 .andExpect(status().is5xxServerError)
+        } finally {
+            cleanupSecurityContext()
+        }
+    }
+
+    @Test
+    fun `createRequest response includes the resolved requesting unit`() {
+        try {
+            setupSecurityContext()
+
+            val apartmentId = ApartmentId.new()
+            val buildingId = com.sakena.property.domain.model.BuildingId.new()
+
+            val request = CreateServiceRequestRequest(
+                title = "Fix AC",
+                description = "AC not cooling",
+                location = "Building A, Floor 2",
+                categoryGroup = ServiceCategoryGroup.FACILITIES,
+                subCategory = ServiceSubCategory.ELECTRICAL
+            )
+
+            val createdRequest = createMockServiceRequest(
+                title = request.title!!,
+                description = request.description!!,
+                location = request.location!!,
+                createdBy = testUserId,
+                status = ServiceRequestStatus.PENDING,
+                categoryGroup = ServiceCategoryGroup.FACILITIES,
+                subCategory = ServiceSubCategory.ELECTRICAL,
+                requestingApartmentId = apartmentId,
+            )
+
+            every { profileService.getUserByUsername(testUsername) } returns testUser
+            every {
+                serviceRequestService.create(any<CreateServiceRequestCommand>(), testUserId)
+            } returns createdRequest
+            every {
+                apartmentRepository.findById(apartmentId)
+            } returns com.sakena.property.domain.model.Apartment.create(
+                buildingId, "12", 3, java.math.BigDecimal("85"), 2,
+            )
+            every {
+                buildingRepository.findById(buildingId)
+            } returns com.sakena.property.domain.model.Building.create("برج نیلوفر", "تهران")
+
+            mockMvc.perform(
+                post("/api/v1/service-requests")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request))
+            )
+                .andExpect(status().isCreated)
+                .andExpect(jsonPath("$.requestingUnit.unitNumber").value("12"))
+                .andExpect(jsonPath("$.requestingUnit.floorNumber").value(3))
+                .andExpect(jsonPath("$.requestingUnit.buildingName").value("برج نیلوفر"))
         } finally {
             cleanupSecurityContext()
         }
@@ -783,6 +839,7 @@ class ServiceRequestControllerTest {
             every {
                 serviceRequestService.assignCostResponsibility(capture(commandSlot))
             } returns completedRequest
+            every { apartmentRepository.findById(requestingApartmentId) } returns null
 
             mockMvc.perform(
                 patch(

@@ -16,6 +16,8 @@ import com.sakena.servicerequest.domain.ServiceRequestFilters
 import com.sakena.servicerequest.domain.ServiceRequestId
 import com.sakena.servicerequest.domain.ServiceRequestStatus
 import com.sakena.servicerequest.domain.ServiceSubCategory
+import com.sakena.property.domain.ApartmentRepository
+import com.sakena.property.domain.BuildingRepository
 import com.sakena.user.application.ProfileService
 import com.sakena.user.domain.UserId
 import io.swagger.v3.oas.annotations.Operation
@@ -34,7 +36,9 @@ import java.time.Instant
 @SecurityRequirement(name = "bearerAuth")
 class ServiceRequestController(
     private val profileService: ProfileService,
-    private val serviceRequestService: ServiceRequestService
+    private val serviceRequestService: ServiceRequestService,
+    private val apartmentRepository: ApartmentRepository,
+    private val buildingRepository: BuildingRepository,
 ) {
 
     @PostMapping
@@ -52,7 +56,7 @@ class ServiceRequestController(
             subCategory = request.subCategory!!
         )
         val created = serviceRequestService.create(command, userId)
-        return ServiceRequestResponse.fromDomain(created)
+        return ServiceRequestResponse.fromDomain(created, requestingUnitOf(created))
     }
 
     @GetMapping
@@ -79,7 +83,7 @@ class ServiceRequestController(
             updatedTo = updatedTo
         )
         val requests = serviceRequestService.getRequests(filters)
-        return requests.map { ServiceRequestResponse.fromDomain(it) }
+        return requests.map { ServiceRequestResponse.fromDomain(it, requestingUnitOf(it)) }
     }
 
     @GetMapping("/admin")
@@ -111,7 +115,7 @@ class ServiceRequestController(
             updatedTo = updatedTo
         )
         val requests = serviceRequestService.getRequestsForManager(filters, getCurrentUserId())
-        return requests.map { ServiceRequestResponse.fromDomain(it) }
+        return requests.map { ServiceRequestResponse.fromDomain(it, requestingUnitOf(it)) }
     }
 
     @GetMapping("/assigned-to-me")
@@ -138,7 +142,7 @@ class ServiceRequestController(
             updatedTo = updatedTo
         )
         val requests = serviceRequestService.getRequests(filters)
-        return requests.map { ServiceRequestResponse.fromDomain(it) }
+        return requests.map { ServiceRequestResponse.fromDomain(it, requestingUnitOf(it)) }
     }
 
     @GetMapping("/categories")
@@ -183,7 +187,7 @@ class ServiceRequestController(
             userId = getCurrentUserId(),
         )
         val updated = serviceRequestService.updateRequest(command)
-        return ServiceRequestResponse.fromDomain(updated)
+        return ServiceRequestResponse.fromDomain(updated, requestingUnitOf(updated))
     }
 
     @PatchMapping("/{id}/approve")
@@ -194,7 +198,7 @@ class ServiceRequestController(
             userId = getCurrentUserId()
         )
         val approved = serviceRequestService.approveRequest(command)
-        return ServiceRequestResponse.fromDomain(approved)
+        return ServiceRequestResponse.fromDomain(approved, requestingUnitOf(approved))
     }
 
     @PatchMapping("/{id}/reject")
@@ -205,7 +209,7 @@ class ServiceRequestController(
             userId = getCurrentUserId()
         )
         val rejected = serviceRequestService.rejectRequest(command)
-        return ServiceRequestResponse.fromDomain(rejected)
+        return ServiceRequestResponse.fromDomain(rejected, requestingUnitOf(rejected))
     }
 
     @PatchMapping("/{id}/assign")
@@ -217,7 +221,7 @@ class ServiceRequestController(
             userId = getCurrentUserId()
         )
         val assigned = serviceRequestService.assignRequest(command)
-        return ServiceRequestResponse.fromDomain(assigned)
+        return ServiceRequestResponse.fromDomain(assigned, requestingUnitOf(assigned))
     }
 
     @PatchMapping("/{id}/start-progress")
@@ -232,7 +236,7 @@ class ServiceRequestController(
             expectedCompletionAt = request.expectedCompletionAt
         )
         val inProgress = serviceRequestService.startProgress(command)
-        return ServiceRequestResponse.fromDomain(inProgress)
+        return ServiceRequestResponse.fromDomain(inProgress, requestingUnitOf(inProgress))
     }
 
     @PatchMapping("/{id}/complete")
@@ -248,7 +252,7 @@ class ServiceRequestController(
             completionCost = request.completionCost
         )
         val completed = serviceRequestService.completeRequest(command)
-        return ServiceRequestResponse.fromDomain(completed)
+        return ServiceRequestResponse.fromDomain(completed, requestingUnitOf(completed))
     }
 
     @PatchMapping("/{id}/confirm")
@@ -263,7 +267,7 @@ class ServiceRequestController(
             score = request.score!!,
         )
         val confirmed = serviceRequestService.confirmCompletionAndRate(command)
-        return ServiceRequestResponse.fromDomain(confirmed)
+        return ServiceRequestResponse.fromDomain(confirmed, requestingUnitOf(confirmed))
     }
 
     @PatchMapping("/{id}/reject-completion")
@@ -274,7 +278,7 @@ class ServiceRequestController(
             userId = getCurrentUserId(),
         )
         val rejected = serviceRequestService.rejectCompletion(command)
-        return ServiceRequestResponse.fromDomain(rejected)
+        return ServiceRequestResponse.fromDomain(rejected, requestingUnitOf(rejected))
     }
 
     @PatchMapping("/{id}/cost-responsibility")
@@ -289,7 +293,18 @@ class ServiceRequestController(
             managerId = getCurrentUserId(),
         )
         val updated = serviceRequestService.assignCostResponsibility(command)
-        return ServiceRequestResponse.fromDomain(updated)
+        return ServiceRequestResponse.fromDomain(updated, requestingUnitOf(updated))
+    }
+
+    private fun requestingUnitOf(request: com.sakena.servicerequest.domain.ServiceRequest): RequestingUnitResponse? {
+        val apartmentId = request.requestingApartmentId ?: return null
+        val apartment = apartmentRepository.findById(apartmentId) ?: return null
+        val building = buildingRepository.findById(apartment.buildingId) ?: return null
+        return RequestingUnitResponse(
+            unitNumber = apartment.unitNumber,
+            floorNumber = apartment.floorNumber,
+            buildingName = building.name,
+        )
     }
 
     private fun getCurrentUserId(): UserId {
