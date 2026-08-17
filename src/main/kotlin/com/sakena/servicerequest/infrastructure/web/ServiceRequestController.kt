@@ -5,7 +5,9 @@ import com.sakena.servicerequest.application.AssignServiceCostResponsibilityComm
 import com.sakena.servicerequest.application.RejectServiceRequestCommand
 import com.sakena.servicerequest.application.ApproveServiceRequestCommand
 import com.sakena.servicerequest.application.CompleteServiceRequestCommand
+import com.sakena.servicerequest.application.ConfirmCompletionCommand
 import com.sakena.servicerequest.application.CreateServiceRequestCommand
+import com.sakena.servicerequest.application.RejectCompletionCommand
 import com.sakena.servicerequest.application.ServiceRequestService
 import com.sakena.servicerequest.application.StartProgressCommand
 import com.sakena.servicerequest.application.UpdateServiceRequestCommand
@@ -247,6 +249,32 @@ class ServiceRequestController(
         )
         val completed = serviceRequestService.completeRequest(command)
         return ServiceRequestResponse.fromDomain(completed)
+    }
+
+    @PatchMapping("/{id}/confirm")
+    @Operation(summary = "Confirm a completed service request was done properly, and rate the staff (resident, owner only)")
+    fun confirmCompletion(
+        @PathVariable id: String,
+        @RequestBody @Valid request: ConfirmCompletionRequest,
+    ): ServiceRequestResponse {
+        val command = ConfirmCompletionCommand(
+            serviceRequestId = ServiceRequestId.fromString(id),
+            userId = getCurrentUserId(),
+            score = request.score!!,
+        )
+        val confirmed = serviceRequestService.confirmCompletionAndRate(command)
+        return ServiceRequestResponse.fromDomain(confirmed)
+    }
+
+    @PatchMapping("/{id}/reject-completion")
+    @Operation(summary = "Reject a completed service request, sending it back for rework (resident, owner only)")
+    fun rejectCompletion(@PathVariable id: String): ServiceRequestResponse {
+        val command = RejectCompletionCommand(
+            serviceRequestId = ServiceRequestId.fromString(id),
+            userId = getCurrentUserId(),
+        )
+        val rejected = serviceRequestService.rejectCompletion(command)
+        return ServiceRequestResponse.fromDomain(rejected)
     }
 
     @PatchMapping("/{id}/cost-responsibility")

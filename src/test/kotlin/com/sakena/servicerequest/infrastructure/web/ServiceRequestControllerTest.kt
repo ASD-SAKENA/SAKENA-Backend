@@ -10,7 +10,9 @@ import com.sakena.servicerequest.application.ApproveServiceRequestCommand
 import com.sakena.servicerequest.application.CategoryGroupOptionResult
 import com.sakena.servicerequest.application.CategoryOptionsResult
 import com.sakena.servicerequest.application.CompleteServiceRequestCommand
+import com.sakena.servicerequest.application.ConfirmCompletionCommand
 import com.sakena.servicerequest.application.CreateServiceRequestCommand
+import com.sakena.servicerequest.application.RejectCompletionCommand
 import com.sakena.servicerequest.application.ServiceRequestService
 import com.sakena.servicerequest.application.StartProgressCommand
 import com.sakena.servicerequest.application.SubCategoryOptionResult
@@ -800,6 +802,80 @@ class ServiceRequestControllerTest {
             assertEquals(completedRequest.id, commandSlot.captured.serviceRequestId)
             assertEquals(ServiceCostResponsibility.ALL_UNITS, commandSlot.captured.responsibility)
             assertEquals(testUserId, commandSlot.captured.managerId)
+        } finally {
+            cleanupSecurityContext()
+        }
+    }
+
+    // ==================== CONFIRM COMPLETION ====================
+
+    @Test
+    fun `confirmCompletion should return 200 with the confirmed request`() {
+        try {
+            setupSecurityContext()
+
+            val confirmed = createMockServiceRequest(
+                "Fix AC", "AC not cooling", testUserId, ServiceRequestStatus.CONFIRMED,
+                assignedTo = UserId.generate(),
+            )
+
+            every { profileService.getUserByUsername(testUsername) } returns testUser
+            every {
+                serviceRequestService.confirmCompletionAndRate(
+                    ConfirmCompletionCommand(confirmed.id, testUserId, 5),
+                )
+            } returns confirmed
+
+            mockMvc.perform(
+                patch("/api/v1/service-requests/{id}/confirm", confirmed.id.value.toString())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""{"score":5}""")
+            )
+                .andExpect(status().isOk)
+                .andExpect(jsonPath("$.status").value("CONFIRMED"))
+        } finally {
+            cleanupSecurityContext()
+        }
+    }
+
+    @Test
+    fun `confirmCompletion should return 400 when score is missing`() {
+        try {
+            setupSecurityContext()
+
+            mockMvc.perform(
+                patch("/api/v1/service-requests/{id}/confirm", ServiceRequestId.generate().value.toString())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""{}""")
+            )
+                .andExpect(status().isBadRequest)
+        } finally {
+            cleanupSecurityContext()
+        }
+    }
+
+    // ==================== REJECT COMPLETION ====================
+
+    @Test
+    fun `rejectCompletion should return 200 with the request back in progress`() {
+        try {
+            setupSecurityContext()
+
+            val rejected = createMockServiceRequest(
+                "Fix AC", "AC not cooling", testUserId, ServiceRequestStatus.IN_PROGRESS,
+                assignedTo = UserId.generate(),
+            )
+
+            every { profileService.getUserByUsername(testUsername) } returns testUser
+            every {
+                serviceRequestService.rejectCompletion(RejectCompletionCommand(rejected.id, testUserId))
+            } returns rejected
+
+            mockMvc.perform(
+                patch("/api/v1/service-requests/{id}/reject-completion", rejected.id.value.toString())
+            )
+                .andExpect(status().isOk)
+                .andExpect(jsonPath("$.status").value("IN_PROGRESS"))
         } finally {
             cleanupSecurityContext()
         }
