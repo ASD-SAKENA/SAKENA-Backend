@@ -149,6 +149,7 @@ class DashboardServiceTest {
                 openRequest(apartment.id),
                 openRequest(apartment.id),
                 settledRequest(apartment.id),
+                confirmedRequest(apartment.id),
             )
 
         val dashboard = service.forManager(manager)
@@ -159,7 +160,7 @@ class DashboardServiceTest {
         assertEquals(BigDecimal("1500"), dashboard.collectedThisPeriod)
         assertEquals(50, dashboard.collectionRatePct)
         assertEquals(0, dashboard.previousCollectionRatePct)
-        assertEquals(2, dashboard.openRequestCount)
+        assertEquals(2, dashboard.openRequestCount, "CONFIRMED must not count as open, same as COMPLETED")
         assertEquals(listOf("شارژ خرداد", "شارژ تیر"), dashboard.periods.map { it.title })
         assertEquals(1, dashboard.invoiceBreakdown.paid)
         assertEquals(1, dashboard.invoiceBreakdown.partiallyPaid)
@@ -195,5 +196,9 @@ class DashboardServiceTest {
 
     private fun settledRequest(apartmentId: ApartmentId? = null): ServiceRequest = openRequest(apartmentId).copy(
         status = ServiceRequestStatus.SETTLED,
+    )
+
+    private fun confirmedRequest(apartmentId: ApartmentId? = null): ServiceRequest = openRequest(apartmentId).copy(
+        status = ServiceRequestStatus.CONFIRMED,
     )
 }
