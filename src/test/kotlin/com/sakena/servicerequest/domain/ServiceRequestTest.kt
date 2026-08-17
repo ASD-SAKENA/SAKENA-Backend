@@ -478,10 +478,150 @@ class ServiceRequestTest {
     }
 
     @Test
+    fun `confirmCompletion should change status to CONFIRMED when the creator confirms`() {
+        val request = createTestRequest(status = ServiceRequestStatus.COMPLETED)
+
+        val confirmed = request.confirmCompletion(testUserId)
+
+        assertEquals(ServiceRequestStatus.CONFIRMED, confirmed.status)
+        assertEquals(testUserId, confirmed.updatedBy)
+        assertTrue(confirmed.updatedAt > request.updatedAt)
+    }
+
+    @Test
+    fun `confirmCompletion should fail if status is not COMPLETED`() {
+        val nonCompletedStatuses = ServiceRequestStatus.entries - ServiceRequestStatus.COMPLETED
+
+        nonCompletedStatuses.forEach { status ->
+            val request = createTestRequest(status = status)
+
+            assertThrows<DomainValidationException> {
+                request.confirmCompletion(testUserId)
+            }
+        }
+    }
+
+    @Test
+    fun `confirmCompletion should fail when confirmed by someone other than the creator`() {
+        val request = createTestRequest(status = ServiceRequestStatus.COMPLETED)
+        val neighbour = UserId.generate()
+
+        assertThrows<com.sakena.shared.domain.DomainForbiddenException> {
+            request.confirmCompletion(neighbour)
+        }
+    }
+
+    @Test
+    fun `rejectCompletion should return status to IN_PROGRESS and clear completion fields`() {
+        val request = createTestRequest(
+            status = ServiceRequestStatus.COMPLETED,
+            assignedTo = UserId.generate(),
+            completionCost = 250.0,
+        ).let {
+            // completionReport/resolvedAt are private-setter fields reachable only via
+            // reconstitute/complete; simplest path is via complete() on an IN_PROGRESS request.
+            createTestRequest(status = ServiceRequestStatus.IN_PROGRESS, assignedTo = it.assignedTo!!)
+                .complete(it.assignedTo!!, "Fixed the leak", 250.0)
+        }
+
+        val rejected = request.rejectCompletion(testUserId)
+
+        assertEquals(ServiceRequestStatus.IN_PROGRESS, rejected.status)
+        assertNull(rejected.completionReport)
+        assertNull(rejected.completionCost)
+        assertNull(rejected.resolvedAt)
+        assertEquals(testUserId, rejected.updatedBy)
+    }
+
+    @Test
+    fun `rejectCompletion should fail if status is not COMPLETED`() {
+        val nonCompletedStatuses = ServiceRequestStatus.entries - ServiceRequestStatus.COMPLETED
+
+        nonCompletedStatuses.forEach { status ->
+            val request = createTestRequest(status = status)
+
+            assertThrows<DomainValidationException> {
+                request.rejectCompletion(testUserId)
+            }
+        }
+    }
+
+    @Test
+    fun `rejectCompletion should fail when rejected by someone other than the creator`() {
+        val request = createTestRequest(status = ServiceRequestStatus.COMPLETED)
+        val neighbour = UserId.generate()
+
+        assertThrows<com.sakena.shared.domain.DomainForbiddenException> {
+            request.rejectCompletion(neighbour)
+        }
+    }
+
+    @Test
+    fun `settle and assignCostResponsibility should require CONFIRMED when a requesting apartment exists`() {
+        val request = createTestRequest(
+            status = ServiceRequestStatus.COMPLETED,
+            completionCost = 250.0,
+            requestingApartmentId = ApartmentId.new(),
+        )
+
+        assertThrows<DomainValidationException> {
+            request.assignCostResponsibility(ServiceCostResponsibility.BUILDING_WALLET, UserId.generate())
+        }
+    }
+
+    @Test
+    fun `settle should require CONFIRMED before paying out when a requesting apartment exists`() {
+        val request = createTestRequest(
+            status = ServiceRequestStatus.COMPLETED,
+            assignedTo = UserId.generate(),
+            completionCost = 250.0,
+            costResponsibility = ServiceCostResponsibility.BUILDING_WALLET,
+            requestingApartmentId = ApartmentId.new(),
+        )
+
+        assertThrows<DomainValidationException> {
+            request.settle(UserId.generate())
+        }
+    }
+
+    @Test
+    fun `settle should succeed directly from COMPLETED when there is no requesting apartment`() {
+        val request = createTestRequest(
+            status = ServiceRequestStatus.COMPLETED,
+            assignedTo = UserId.generate(),
+            completionCost = 250.0,
+            costResponsibility = ServiceCostResponsibility.BUILDING_WALLET,
+            requestingApartmentId = null,
+        )
+
+        val settled = request.settle(UserId.generate())
+
+        assertEquals(ServiceRequestStatus.SETTLED, settled.status)
+    }
+
+    @Test
+    fun `assignCostResponsibility and settle should succeed from CONFIRMED`() {
+        val confirmed = createTestRequest(
+            status = ServiceRequestStatus.CONFIRMED,
+            assignedTo = UserId.generate(),
+            completionCost = 250.0,
+            requestingApartmentId = ApartmentId.new(),
+        )
+
+        val withResponsibility = confirmed.assignCostResponsibility(
+            ServiceCostResponsibility.BUILDING_WALLET,
+            UserId.generate(),
+        )
+        val settled = withResponsibility.settle(UserId.generate())
+
+        assertEquals(ServiceRequestStatus.SETTLED, settled.status)
+    }
+
+    @Test
     fun `assignCostResponsibility should record responsibility and manager`() {
         val managerId = UserId.generate()
         val request = createTestRequest(
-            status = ServiceRequestStatus.COMPLETED,
+            status = ServiceRequestStatus.CONFIRMED,
             completionCost = 250.0,
             requestingApartmentId = ApartmentId.new(),
         )
@@ -501,7 +641,7 @@ class ServiceRequestTest {
         val managerId = UserId.generate()
         val apartmentId = ApartmentId.new()
         val request = createTestRequest(
-            status = ServiceRequestStatus.COMPLETED,
+            status = ServiceRequestStatus.CONFIRMED,
             completionCost = 250.0,
             costResponsibility = ServiceCostResponsibility.ALL_UNITS,
             requestingApartmentId = apartmentId,
@@ -519,7 +659,7 @@ class ServiceRequestTest {
     @Test
     fun `assignCostResponsibility should require a completed request`() {
         val managerId = UserId.generate()
-        val invalidStatuses = ServiceRequestStatus.entries - ServiceRequestStatus.COMPLETED
+        val invalidStatuses = ServiceRequestStatus.entries - ServiceRequestStatus.COMPLETED - ServiceRequestStatus.CONFIRMED
 
         invalidStatuses.forEach { status ->
             val request = createTestRequest(status = status, completionCost = 250.0)

@@ -121,7 +121,7 @@ class ServiceRequestServiceTest {
         val apartmentId = ApartmentId.new()
         val apartment = Apartment.create(manager.managedBuildingId!!, "1", 1, BigDecimal("40"), 1)
         val request = serviceRequest(
-            status = ServiceRequestStatus.COMPLETED,
+            status = ServiceRequestStatus.CONFIRMED,
             completionCost = 250.0,
             requestingApartmentId = apartmentId,
         )

@@ -1,6 +1,7 @@
 package com.sakena.servicerequest.domain
 
 import com.sakena.property.domain.model.ApartmentId
+import com.sakena.shared.domain.DomainForbiddenException
 import com.sakena.shared.domain.DomainValidationException
 import com.sakena.user.domain.UserId
 import java.time.Instant
@@ -198,10 +199,46 @@ data class ServiceRequest(
         )
     }
 
-    fun settle(userId: UserId): ServiceRequest {
+    fun confirmCompletion(userId: UserId): ServiceRequest {
         if (status != ServiceRequestStatus.COMPLETED) {
-            throw DomainValidationException("Service request can only be settled when it is completed")
+            throw DomainValidationException("Service request can only be confirmed when it is completed")
         }
+        if (createdBy != userId) {
+            throw DomainForbiddenException("Only the resident who created this request can confirm it")
+        }
+        return this.copy(
+            status = ServiceRequestStatus.CONFIRMED,
+            updatedAt = Instant.now(),
+            updatedBy = userId
+        )
+    }
+
+    fun rejectCompletion(userId: UserId): ServiceRequest {
+        if (status != ServiceRequestStatus.COMPLETED) {
+            throw DomainValidationException("Service request can only be rejected when it is completed")
+        }
+        if (createdBy != userId) {
+            throw DomainForbiddenException("Only the resident who created this request can reject it")
+        }
+        return this.copy(
+            status = ServiceRequestStatus.IN_PROGRESS,
+            completionReport = null,
+            completionCost = null,
+            resolvedAt = null,
+            updatedAt = Instant.now(),
+            updatedBy = userId
+        )
+    }
+
+    private fun requireSettleable() {
+        val settleableFromCompleted = status == ServiceRequestStatus.COMPLETED && requestingApartmentId == null
+        if (status != ServiceRequestStatus.CONFIRMED && !settleableFromCompleted) {
+            throw DomainValidationException("Service request must be confirmed by the resident before this action")
+        }
+    }
+
+    fun settle(userId: UserId): ServiceRequest {
+        requireSettleable()
         if (completionCost == null || completionCost <= 0.0) {
             throw DomainValidationException("Service request has no completion cost to settle")
         }
@@ -222,11 +259,7 @@ data class ServiceRequest(
         responsibility: ServiceCostResponsibility,
         userId: UserId,
     ): ServiceRequest {
-        if (status != ServiceRequestStatus.COMPLETED) {
-            throw DomainValidationException(
-                "Cost responsibility can only be assigned when the service request is completed",
-            )
-        }
+        requireSettleable()
         if (completionCost == null || completionCost <= 0.0) {
             throw DomainValidationException(
                 "Service request must have a positive completion cost before assigning cost responsibility",
