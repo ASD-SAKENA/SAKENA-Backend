@@ -66,20 +66,24 @@ class WalletServiceTest {
         responsibility: ServiceCostResponsibility? = ServiceCostResponsibility.BUILDING_WALLET,
         requestingApartmentId: ApartmentId? = ApartmentId.new(),
     ): ServiceRequest {
+        val residentId = UserId.generate()
         val created = ServiceRequest.create(
             title = "Fix kitchen leak",
             description = "The sink is leaking",
             location = "Unit 12",
-            createdBy = UserId.generate(),
+            createdBy = residentId,
             categoryGroup = ServiceCategoryGroup.FACILITIES,
             subCategory = ServiceSubCategory.PLUMBING,
             requestingApartmentId = requestingApartmentId,
         )
-        val completed = created
+        var completed = created
             .approve(manager)
             .assignTo(worker, manager)
             .startProgress()
             .complete(worker, "Replaced the valve", 250_000.0)
+        if (requestingApartmentId != null) {
+            completed = completed.confirmCompletion(residentId)
+        }
         return responsibility?.let { completed.assignCostResponsibility(it, manager) } ?: completed
     }
 
