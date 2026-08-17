@@ -338,6 +338,12 @@ class ServiceRequestCostResponsibilityIntegrationTest(
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.status").value("COMPLETED"))
 
+        // Update the request to CONFIRMED status (simulating resident confirmation)
+        val completed = serviceRequestRepository.findById(ServiceRequestId(requestId))
+            ?: error("Request not found after completion")
+        val confirmed = completed.confirmCompletion(resident.id)
+        serviceRequestRepository.save(confirmed)
+
         return requestId
     }
 
