@@ -3,6 +3,7 @@ package com.sakena.user.application
 import com.sakena.property.application.BuildingService
 import com.sakena.property.domain.model.Building
 import com.sakena.user.domain.*
+import com.sakena.wallet.domain.WalletRepository
 import com.sakena.user.domain.exceptions.InactiveAccountException
 import com.sakena.user.domain.exceptions.InvalidCredentialsException
 import com.sakena.user.domain.exceptions.InvalidRoleException
@@ -20,6 +21,7 @@ class AuthServiceTest {
 
     private lateinit var userRepository: UserRepository
     private lateinit var buildingService: BuildingService
+    private lateinit var walletRepository: WalletRepository
     private lateinit var passwordEncoder: PasswordEncoder
     private lateinit var jwtTokenProvider: JwtTokenProvider
     private lateinit var resetTokenRepository: PasswordResetTokenRepository
@@ -33,6 +35,7 @@ class AuthServiceTest {
     fun setup() {
         userRepository = mockk()
         buildingService = mockk()
+        walletRepository = mockk(relaxed = true)
         passwordEncoder = mockk()
         jwtTokenProvider = mockk()
         resetTokenRepository = mockk()
@@ -40,6 +43,7 @@ class AuthServiceTest {
         authService = AuthService(
             userRepository,
             buildingService,
+            walletRepository,
             passwordEncoder,
             jwtTokenProvider,
             resetTokenRepository,

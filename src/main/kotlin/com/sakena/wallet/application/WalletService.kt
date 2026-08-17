@@ -4,6 +4,7 @@ import com.sakena.billing.domain.ServiceChargeRepository
 import com.sakena.billing.domain.model.ServiceCharge
 import com.sakena.billing.domain.model.ServiceChargeTarget
 import com.sakena.property.domain.ApartmentRepository
+import com.sakena.property.domain.model.BuildingId
 import com.sakena.servicerequest.domain.ServiceCostResponsibility
 import com.sakena.servicerequest.domain.ServiceRequest
 import com.sakena.servicerequest.domain.ServiceRequestId
@@ -46,6 +47,28 @@ class WalletService(
     fun settleServiceRequest(serviceRequestId: ServiceRequestId, settledBy: UserId) {
         val request = serviceRequestRepository.findById(serviceRequestId)
             ?: throw EntityNotFoundException("Service request with id '$serviceRequestId' was not found")
+        val manager = userRepository.findById(settledBy)
+            ?: throw EntityNotFoundException("User with id '$settledBy' was not found")
+        if (manager.role != Role.MANAGER) {
+            throw DomainForbiddenException("Only a manager can settle a service request")
+        }
+
+        // A request tied to an apartment settles against that apartment's
+        // building — only its manager may do so. A request with no apartment
+        // (staff-filed, or a resident with no unit) has no building to scope
+        // to, so it settles against the acting manager's own building.
+        val requestingApartmentId = request.requestingApartmentId
+        val buildingId = if (requestingApartmentId != null) {
+            val apartment = apartmentRepository.findById(requestingApartmentId)
+                ?: throw EntityNotFoundException("Requesting apartment with id '$requestingApartmentId' was not found")
+            if (manager.managedBuildingId != apartment.buildingId) {
+                throw DomainForbiddenException("You do not manage the building this request belongs to")
+            }
+            apartment.buildingId
+        } else {
+            manager.managedBuildingId
+                ?: throw DomainConflictException("Could not determine which building's wallet to settle against")
+        }
 
         val settled = request.settle(settledBy)
         val amount = BigDecimal.valueOf(
@@ -69,7 +92,7 @@ class WalletService(
             null -> throw DomainConflictException("Service request cost responsibility has not been assigned")
         }
 
-        val buildingWallet = requireBuildingWallet()
+        val buildingWallet = requireBuildingWallet(buildingId)
         val workerWallet = walletRepository.findByOwner(worker) ?: Wallet.createForUser(worker)
 
         buildingWallet.debit(amount)
@@ -118,12 +141,12 @@ class WalletService(
         )
     }
 
-    /** Manager-driven credit or debit of the shared building account. */
-    fun recordBuildingTransaction(command: RecordBuildingTransactionCommand): Wallet {
+    /** Manager-driven credit or debit of the building account they administer. */
+    fun recordBuildingTransaction(command: RecordBuildingTransactionCommand, requesterManagedBuildingId: BuildingId?): Wallet {
         if (command.category == TransactionCategory.WALLET_FUNDING) {
             throw DomainValidationException("Wallet funding is only valid for personal wallets")
         }
-        val wallet = requireBuildingWallet()
+        val wallet = requireBuildingWallet(requireManagedBuilding(requesterManagedBuildingId))
         when (command.direction) {
             TransactionDirection.CREDIT -> wallet.credit(command.amount)
             TransactionDirection.DEBIT -> wallet.debit(command.amount)
@@ -160,11 +183,14 @@ class WalletService(
     }
 
     @Transactional(readOnly = true)
-    fun getBuildingWallet(): Wallet = requireBuildingWallet()
+    fun getBuildingWallet(requesterManagedBuildingId: BuildingId?): Wallet =
+        requireBuildingWallet(requireManagedBuilding(requesterManagedBuildingId))
 
     @Transactional(readOnly = true)
-    fun getBuildingLedger(): List<WalletTransaction> =
-        transactionRepository.findAllByWalletNewestFirst(requireBuildingWallet().id)
+    fun getBuildingLedger(requesterManagedBuildingId: BuildingId?): List<WalletTransaction> =
+        transactionRepository.findAllByWalletNewestFirst(
+            requireBuildingWallet(requireManagedBuilding(requesterManagedBuildingId)).id,
+        )
 
     @Transactional(readOnly = true)
     fun getMyWallet(userId: UserId): Wallet =
@@ -195,7 +221,11 @@ class WalletService(
         )
     }
 
-    private fun requireBuildingWallet(): Wallet =
-        walletRepository.findBuildingWallet()
+    private fun requireBuildingWallet(buildingId: BuildingId): Wallet =
+        walletRepository.findBuildingWallet(buildingId)
             ?: throw EntityNotFoundException("Building wallet was not found")
+
+    private fun requireManagedBuilding(requesterManagedBuildingId: BuildingId?): BuildingId =
+        requesterManagedBuildingId
+            ?: throw DomainForbiddenException("You do not manage a building")
 }

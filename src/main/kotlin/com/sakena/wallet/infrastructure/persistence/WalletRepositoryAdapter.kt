@@ -1,10 +1,10 @@
 package com.sakena.wallet.infrastructure.persistence
 
+import com.sakena.property.domain.model.BuildingId
 import com.sakena.user.domain.UserId
 import com.sakena.wallet.domain.WalletRepository
 import com.sakena.wallet.domain.model.Wallet
 import com.sakena.wallet.domain.model.WalletId
-import com.sakena.wallet.domain.model.WalletOwnerType
 import org.springframework.stereotype.Component
 
 /**
@@ -21,8 +21,8 @@ class WalletRepositoryAdapter(
         return toDomain(saved)
     }
 
-    override fun findBuildingWallet(): Wallet? =
-        jpaRepository.findFirstByOwnerType(WalletOwnerType.BUILDING)?.let(::toDomain)
+    override fun findBuildingWallet(buildingId: BuildingId): Wallet? =
+        jpaRepository.findByBuildingId(buildingId.value)?.let(::toDomain)
 
     override fun findByOwner(userId: UserId): Wallet? =
         jpaRepository.findByOwnerUserId(userId.value)?.let(::toDomain)
@@ -32,6 +32,7 @@ class WalletRepositoryAdapter(
             id = wallet.id.value,
             ownerType = wallet.ownerType,
             ownerUserId = wallet.ownerUserId?.value,
+            buildingId = wallet.buildingId?.value,
             balance = wallet.balance,
             createdAt = wallet.createdAt,
             updatedAt = wallet.updatedAt,
@@ -42,6 +43,7 @@ class WalletRepositoryAdapter(
             id = WalletId(entity.id),
             ownerType = entity.ownerType,
             ownerUserId = entity.ownerUserId?.let(::UserId),
+            buildingId = entity.buildingId?.let(::BuildingId),
             balance = entity.balance,
             createdAt = entity.createdAt,
             updatedAt = entity.updatedAt,

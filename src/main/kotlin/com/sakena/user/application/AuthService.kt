@@ -10,6 +10,8 @@ import com.sakena.user.domain.exceptions.InactiveAccountException
 import com.sakena.user.domain.exceptions.InvalidCredentialsException
 import com.sakena.user.domain.exceptions.TokenInvalidException
 import com.sakena.user.domain.exceptions.UserAlreadyExistsException
+import com.sakena.wallet.domain.WalletRepository
+import com.sakena.wallet.domain.model.Wallet
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Service
@@ -20,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional
 class AuthService(
     private val userRepository: UserRepository,
     private val buildingService: BuildingService,
+    private val walletRepository: WalletRepository,
     private val passwordEncoder: PasswordEncoder,
     private val jwtTokenProvider: JwtTokenProvider,
     private val passwordResetTokenRepository: PasswordResetTokenRepository,
@@ -48,10 +51,12 @@ class AuthService(
         val role = command.role?.let(Role::from) ?: Role.RESIDENT
 
         val managedBuildingId = if (role == Role.MANAGER) {
-            buildingService.create(
+            val building = buildingService.create(
                 name = "ساختمان ${command.username}",
                 address = "آدرس ثبت نشده",
-            ).id
+            )
+            walletRepository.save(Wallet.createBuilding(building.id))
+            building.id
         } else {
             null
         }
