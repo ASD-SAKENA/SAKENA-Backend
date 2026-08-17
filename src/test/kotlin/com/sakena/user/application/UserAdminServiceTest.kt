@@ -1,6 +1,7 @@
 package com.sakena.user.application
 
 import com.sakena.property.domain.model.BuildingId
+import com.sakena.shared.domain.DomainValidationException
 import com.sakena.shared.domain.EntityNotFoundException
 import com.sakena.user.domain.Role
 import com.sakena.user.domain.User
@@ -98,6 +99,107 @@ class UserAdminServiceTest {
 
         assertEquals(1, result.size)
         assertFalse(result.first().active)
+    }
+
+    // ===== CHANGE ACTIVE STATUS TESTS =====
+
+    @Test
+    fun `changeActiveStatus should deactivate an active user`() {
+        val user = createUser(active = true)
+        every { userRepository.findById(user.id) } returns user
+        val savedUserSlot = slot<User>()
+        every { userRepository.save(capture(savedUserSlot)) } answers { savedUserSlot.captured }
+
+        val result = userAdminService.changeActiveStatus(user.id, active = false)
+
+        assertFalse(result.active)
+        assertFalse(savedUserSlot.captured.active)
+        verify(exactly = 1) { userRepository.save(any()) }
+    }
+
+    @Test
+    fun `changeActiveStatus should reactivate an inactive user`() {
+        val user = createUser(active = false)
+        every { userRepository.findById(user.id) } returns user
+        val savedUserSlot = slot<User>()
+        every { userRepository.save(capture(savedUserSlot)) } answers { savedUserSlot.captured }
+
+        val result = userAdminService.changeActiveStatus(user.id, active = true)
+
+        assertTrue(result.active)
+        assertTrue(savedUserSlot.captured.active)
+        verify(exactly = 1) { userRepository.save(any()) }
+    }
+
+    @Test
+    fun `changeActiveStatus should throw EntityNotFoundException when user does not exist`() {
+        val userId = UserId.generate()
+        every { userRepository.findById(userId) } returns null
+
+        assertThrows<EntityNotFoundException> {
+            userAdminService.changeActiveStatus(userId, active = false)
+        }
+        verify(exactly = 0) { userRepository.save(any()) }
+    }
+
+    // ===== CHANGE ROLE TESTS =====
+
+    @Test
+    fun `changeRole should reassign a resident to staff`() {
+        val user = createUser(role = Role.RESIDENT)
+        every { userRepository.findById(user.id) } returns user
+        val savedUserSlot = slot<User>()
+        every { userRepository.save(capture(savedUserSlot)) } answers { savedUserSlot.captured }
+
+        val result = userAdminService.changeRole(user.id, Role.STAFF)
+
+        assertEquals(Role.STAFF, result.role)
+        assertEquals(Role.STAFF, savedUserSlot.captured.role)
+        verify(exactly = 1) { userRepository.save(any()) }
+    }
+
+    @Test
+    fun `changeRole should promote a resident to admin`() {
+        val user = createUser(role = Role.RESIDENT)
+        every { userRepository.findById(user.id) } returns user
+        every { userRepository.save(any()) } answers { firstArg() }
+
+        val result = userAdminService.changeRole(user.id, Role.ADMIN)
+
+        assertEquals(Role.ADMIN, result.role)
+    }
+
+    @Test
+    fun `changeRole should reject promoting to manager`() {
+        val user = createUser(role = Role.RESIDENT)
+        every { userRepository.findById(user.id) } returns user
+
+        assertThrows<DomainValidationException> {
+            userAdminService.changeRole(user.id, Role.MANAGER)
+        }
+        verify(exactly = 0) { userRepository.save(any()) }
+    }
+
+    @Test
+    fun `changeRole should reject demoting an existing manager`() {
+        val user = createUser(role = Role.MANAGER)
+        every { userRepository.findById(user.id) } returns user
+
+        assertThrows<DomainValidationException> {
+            userAdminService.changeRole(user.id, Role.RESIDENT)
+        }
+        verify(exactly = 0) { userRepository.save(any()) }
+    }
+
+    @Test
+    fun `changeRole should throw EntityNotFoundException when user does not exist`() {
+        val userId = UserId.generate()
+        every { userRepository.findById(userId) } returns null
+
+        assertThrows<EntityNotFoundException> {
+            userAdminService.changeRole(userId, Role.STAFF)
+        }
+        verify(exactly = 0) { userRepository.save(any()) }
     }
 
     // ===== CHANGE SPECIALTY TESTS =====

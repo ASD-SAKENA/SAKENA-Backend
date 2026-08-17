@@ -200,4 +200,30 @@ class UserTest {
     fun `specialty defaults to null when not provided`() {
         assertNull(createTestUser().specialty)
     }
+
+    // --- withRole tests ---
+
+    @Test
+    fun `withRole should change the role and clear the managed building for a non-manager`() {
+        val user = createTestUser(role = Role.RESIDENT)
+        val promoted = user.withRole(Role.ADMIN, managedBuildingId = null)
+        assertEquals(Role.ADMIN, promoted.role)
+        assertNull(promoted.managedBuildingId)
+    }
+
+    @Test
+    fun `withRole should reject a manager without a managed building`() {
+        val user = createTestUser(role = Role.RESIDENT)
+        assertThrows<IllegalArgumentException> {
+            user.withRole(Role.MANAGER, managedBuildingId = null)
+        }
+    }
+
+    @Test
+    fun `withRole should reject a managed building for a non-manager`() {
+        val user = createTestUser(role = Role.RESIDENT)
+        assertThrows<IllegalArgumentException> {
+            user.withRole(Role.STAFF, managedBuildingId = BuildingId.new())
+        }
+    }
 }
