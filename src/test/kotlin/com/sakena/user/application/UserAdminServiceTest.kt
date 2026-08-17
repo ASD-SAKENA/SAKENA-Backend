@@ -100,47 +100,6 @@ class UserAdminServiceTest {
         assertFalse(result.first().active)
     }
 
-    // ===== CHANGE ACTIVE STATUS TESTS =====
-
-    @Test
-    fun `changeActiveStatus should deactivate an active user`() {
-        val user = createUser(active = true)
-        every { userRepository.findById(user.id) } returns user
-        val savedUserSlot = slot<User>()
-        every { userRepository.save(capture(savedUserSlot)) } answers { savedUserSlot.captured }
-
-        val result = userAdminService.changeActiveStatus(user.id, active = false)
-
-        assertFalse(result.active)
-        assertFalse(savedUserSlot.captured.active)
-        verify(exactly = 1) { userRepository.save(any()) }
-    }
-
-    @Test
-    fun `changeActiveStatus should reactivate an inactive user`() {
-        val user = createUser(active = false)
-        every { userRepository.findById(user.id) } returns user
-        val savedUserSlot = slot<User>()
-        every { userRepository.save(capture(savedUserSlot)) } answers { savedUserSlot.captured }
-
-        val result = userAdminService.changeActiveStatus(user.id, active = true)
-
-        assertTrue(result.active)
-        assertTrue(savedUserSlot.captured.active)
-        verify(exactly = 1) { userRepository.save(any()) }
-    }
-
-    @Test
-    fun `changeActiveStatus should throw EntityNotFoundException when user does not exist`() {
-        val userId = UserId.generate()
-        every { userRepository.findById(userId) } returns null
-
-        assertThrows<EntityNotFoundException> {
-            userAdminService.changeActiveStatus(userId, active = false)
-        }
-        verify(exactly = 0) { userRepository.save(any()) }
-    }
-
     // ===== CHANGE SPECIALTY TESTS =====
 
     @Test

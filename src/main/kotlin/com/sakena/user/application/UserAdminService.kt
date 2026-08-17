@@ -20,13 +20,6 @@ class UserAdminService(
         return role?.let { r -> users.filter { it.role == r } } ?: users
     }
 
-    fun changeActiveStatus(userId: UserId, active: Boolean): User {
-        val user = userRepository.findById(userId)
-            ?: throw EntityNotFoundException("User not found: ${userId.value}")
-        val updated = if (active) user.activate() else user.deactivate()
-        return userRepository.save(updated)
-    }
-
     fun changeSpecialty(userId: UserId, specialty: String?): User {
         val user = userRepository.findById(userId)
             ?: throw EntityNotFoundException("User not found: ${userId.value}")

@@ -95,14 +95,46 @@ class ApartmentControllerTest {
     }
 
     @Test
-    fun `list maps optional building filter`() {
+    fun `list maps optional building filter for a caller who does not manage one`() {
         val buildingId = BuildingId.new()
-        every { apartmentService.getAll(buildingId) } returns emptyList()
+        authenticateResident()
+        every { apartmentService.getAll(buildingId, null) } returns emptyList()
 
         mockMvc.perform(get("/api/v1/apartments?buildingId=$buildingId"))
             .andExpect(status().isOk)
 
-        verify(exactly = 1) { apartmentService.getAll(buildingId) }
+        verify(exactly = 1) { apartmentService.getAll(buildingId, null) }
+    }
+
+    @Test
+    fun `list scopes to the requesting manager's own building`() {
+        val buildingId = BuildingId.new()
+        val manager = authenticateManager(buildingId)
+        every { apartmentService.getAll(null, manager.managedBuildingId) } returns emptyList()
+
+        mockMvc.perform(get("/api/v1/apartments"))
+            .andExpect(status().isOk)
+
+        verify(exactly = 1) { apartmentService.getAll(null, manager.managedBuildingId) }
+    }
+
+    private fun authenticateResident(): User {
+        val now = Instant.now()
+        val resident = User.reconstitute(
+            id = UserId.generate(),
+            username = "resident",
+            email = "resident@example.com",
+            passwordHash = "hash",
+            role = Role.RESIDENT,
+            createdAt = now,
+            updatedAt = now,
+            active = true,
+            managedBuildingId = null,
+        )
+        SecurityContextHolder.getContext().authentication =
+            UsernamePasswordAuthenticationToken(resident.username, null)
+        every { profileService.getUserByUsername(resident.username) } returns resident
+        return resident
     }
 
     @Test
