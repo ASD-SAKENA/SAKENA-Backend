@@ -7,5 +7,7 @@ import java.util.UUID
 interface WalletJpaRepository : JpaRepository<WalletEntity, UUID> {
     fun findFirstByOwnerType(ownerType: WalletOwnerType): WalletEntity?
 
+    fun findByBuildingId(buildingId: UUID): WalletEntity?
+
     fun findByOwnerUserId(ownerUserId: UUID): WalletEntity?
 }

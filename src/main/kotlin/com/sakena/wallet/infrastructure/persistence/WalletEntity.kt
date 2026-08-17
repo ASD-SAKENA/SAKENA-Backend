@@ -26,6 +26,9 @@ class WalletEntity(
     @Column(name = "owner_user_id", unique = true)
     var ownerUserId: UUID?,
 
+    @Column(name = "building_id")
+    var buildingId: UUID?,
+
     @Column(name = "balance", nullable = false, precision = 18, scale = 2)
     var balance: BigDecimal,
 

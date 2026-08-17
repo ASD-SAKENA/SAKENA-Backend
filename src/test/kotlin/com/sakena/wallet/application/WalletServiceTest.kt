@@ -53,11 +53,18 @@ class WalletServiceTest {
         userRepository,
     )
 
-    private val manager = UserId.generate()
+    private val buildingId = BuildingId.new()
+    private val managerUser = user(Role.MANAGER, buildingId)
+    private val manager = managerUser.id
     private val worker = UserId.generate()
+
+    init {
+        every { userRepository.findById(manager) } returns managerUser
+    }
 
     private fun completedRequest(
         responsibility: ServiceCostResponsibility? = ServiceCostResponsibility.BUILDING_WALLET,
+        requestingApartmentId: ApartmentId? = ApartmentId.new(),
     ): ServiceRequest {
         val created = ServiceRequest.create(
             title = "Fix kitchen leak",
@@ -66,7 +73,7 @@ class WalletServiceTest {
             createdBy = UserId.generate(),
             categoryGroup = ServiceCategoryGroup.FACILITIES,
             subCategory = ServiceSubCategory.PLUMBING,
-            requestingApartmentId = ApartmentId.new(),
+            requestingApartmentId = requestingApartmentId,
         )
         val completed = created
             .approve(manager)
@@ -78,10 +85,11 @@ class WalletServiceTest {
 
     @Test
     fun `settle debits the building, credits the worker and marks the request settled`() {
-        val request = completedRequest()
-        val building = Wallet.createBuilding()
+        // No requesting apartment: settles against the acting manager's own building.
+        val request = completedRequest(requestingApartmentId = null)
+        val building = Wallet.createBuilding(buildingId)
         every { serviceRequestRepository.findById(request.id) } returns request
-        every { walletRepository.findBuildingWallet() } returns building
+        every { walletRepository.findBuildingWallet(buildingId) } returns building
         every { walletRepository.findByOwner(worker) } returns null
         val savedWallets = mutableListOf<Wallet>()
         every { walletRepository.save(capture(savedWallets)) } answers { savedWallets.last() }
@@ -98,48 +106,85 @@ class WalletServiceTest {
 
     @Test
     fun `settle writes a ledger line on both wallets`() {
-        val request = completedRequest()
-        val building = Wallet.createBuilding()
+        val request = completedRequest(requestingApartmentId = null)
+        val building = Wallet.createBuilding(buildingId)
         every { serviceRequestRepository.findById(request.id) } returns request
-        every { walletRepository.findBuildingWallet() } returns building
+        every { walletRepository.findBuildingWallet(buildingId) } returns building
         every { walletRepository.findByOwner(worker) } returns null
         every { walletRepository.save(any()) } answers { firstArg() }
-        val ledger = mutableListOf<com.sakena.wallet.domain.model.WalletTransaction>()
+        val ledger = mutableListOf<WalletTransaction>()
         every { transactionRepository.save(capture(ledger)) } answers { ledger.last() }
 
         service.settleServiceRequest(request.id, manager)
 
         assertEquals(2, ledger.size)
-        assertEquals(
-            com.sakena.wallet.domain.model.TransactionDirection.DEBIT,
-            ledger.first().direction,
-        )
-        assertEquals(
-            com.sakena.wallet.domain.model.TransactionCategory.WAGE_SETTLEMENT,
-            ledger.first().category,
-        )
+        assertEquals(TransactionDirection.DEBIT, ledger.first().direction)
+        assertEquals(TransactionCategory.WAGE_SETTLEMENT, ledger.first().category)
+    }
+
+    @Test
+    fun `settle is rejected for a manager who does not administer the request's building`() {
+        val request = completedRequest()
+        val apartment = apartment(request.requestingApartmentId!!)
+        every { serviceRequestRepository.findById(request.id) } returns request
+        every { apartmentRepository.findById(apartment.id) } returns apartment
+
+        assertFailsWith<DomainForbiddenException> {
+            service.settleServiceRequest(request.id, manager)
+        }
+        verify(exactly = 0) { walletRepository.save(any()) }
+    }
+
+    @Test
+    fun `settle is rejected for a non-manager`() {
+        val resident = user(Role.RESIDENT)
+        val request = completedRequest(requestingApartmentId = null)
+        every { userRepository.findById(resident.id) } returns resident
+        every { serviceRequestRepository.findById(request.id) } returns request
+
+        assertFailsWith<DomainForbiddenException> {
+            service.settleServiceRequest(request.id, resident.id)
+        }
+        verify(exactly = 0) { walletRepository.save(any()) }
     }
 
     @Test
     fun `recording a building expense debits the account and logs it`() {
-        val building = Wallet.createBuilding()
-        every { walletRepository.findBuildingWallet() } returns building
+        val building = Wallet.createBuilding(buildingId)
+        every { walletRepository.findBuildingWallet(buildingId) } returns building
         every { walletRepository.save(any()) } answers { firstArg() }
-        val ledger = slot<com.sakena.wallet.domain.model.WalletTransaction>()
+        val ledger = slot<WalletTransaction>()
         every { transactionRepository.save(capture(ledger)) } answers { ledger.captured }
 
         service.recordBuildingTransaction(
             com.sakena.wallet.application.command.RecordBuildingTransactionCommand(
-                direction = com.sakena.wallet.domain.model.TransactionDirection.DEBIT,
-                category = com.sakena.wallet.domain.model.TransactionCategory.OPERATING_EXPENSE,
+                direction = TransactionDirection.DEBIT,
+                category = TransactionCategory.OPERATING_EXPENSE,
                 amount = BigDecimal("400000"),
                 description = "Boiler room service",
             ),
+            requesterManagedBuildingId = buildingId,
         )
 
         assertEquals(BigDecimal("-400000"), building.balance)
         assertEquals("Boiler room service", ledger.captured.description)
         assertEquals(building.balance, ledger.captured.balanceAfter)
+    }
+
+    @Test
+    fun `recording a building expense is rejected for a caller with no managed building`() {
+        assertFailsWith<DomainForbiddenException> {
+            service.recordBuildingTransaction(
+                com.sakena.wallet.application.command.RecordBuildingTransactionCommand(
+                    direction = TransactionDirection.DEBIT,
+                    category = TransactionCategory.OPERATING_EXPENSE,
+                    amount = BigDecimal("400000"),
+                    description = "Boiler room service",
+                ),
+                requesterManagedBuildingId = null,
+            )
+        }
+        verify(exactly = 0) { walletRepository.save(any()) }
     }
 
     @Test
@@ -152,6 +197,7 @@ class WalletServiceTest {
                     amount = BigDecimal("400000"),
                     description = "Invalid building top-up",
                 ),
+                requesterManagedBuildingId = buildingId,
             )
         }
 
@@ -196,11 +242,10 @@ class WalletServiceTest {
 
     @Test
     fun `non-resident cannot fund a personal wallet`() {
-        val manager = user(Role.MANAGER)
-        every { userRepository.findById(manager.id) } returns manager
+        every { userRepository.findById(manager) } returns managerUser
 
         assertFailsWith<DomainForbiddenException> {
-            service.fundMyWallet(FundWalletCommand(BigDecimal("500000")), manager.id)
+            service.fundMyWallet(FundWalletCommand(BigDecimal("500000")), manager)
         }
 
         verify(exactly = 0) { walletRepository.save(any()) }
@@ -242,7 +287,7 @@ class WalletServiceTest {
 
     @Test
     fun `settle rejects a completed request without a cost`() {
-        val request = completedRequest()
+        val request = completedRequest(requestingApartmentId = null)
         val noCost = request.copy(completionCost = null)
         every { serviceRequestRepository.findById(noCost.id) } returns noCost
 
@@ -253,7 +298,7 @@ class WalletServiceTest {
 
     @Test
     fun `settle rejects a completed request without cost responsibility`() {
-        val request = completedRequest(responsibility = null)
+        val request = completedRequest(responsibility = null, requestingApartmentId = null)
         every { serviceRequestRepository.findById(request.id) } returns request
 
         assertFailsWith<DomainValidationException> {
@@ -268,11 +313,11 @@ class WalletServiceTest {
     @Test
     fun `all-units settlement queues the building cost and pays the worker`() {
         val request = completedRequest(ServiceCostResponsibility.ALL_UNITS)
-        val apartment = apartment(request.requestingApartmentId!!)
-        val buildingWallet = Wallet.createBuilding()
+        val apartment = apartment(request.requestingApartmentId!!, buildingId)
+        val buildingWallet = Wallet.createBuilding(buildingId)
         every { serviceRequestRepository.findById(request.id) } returns request
         every { apartmentRepository.findById(apartment.id) } returns apartment
-        every { walletRepository.findBuildingWallet() } returns buildingWallet
+        every { walletRepository.findBuildingWallet(buildingId) } returns buildingWallet
         every { walletRepository.findByOwner(worker) } returns null
         every { walletRepository.save(any()) } answers { firstArg() }
         every { serviceRequestRepository.save(any()) } answers { firstArg() }
@@ -309,11 +354,11 @@ class WalletServiceTest {
     @Test
     fun `requesting-unit settlement queues a targeted cost and pays the worker`() {
         val request = completedRequest(ServiceCostResponsibility.REQUESTING_UNIT)
-        val apartment = apartment(request.requestingApartmentId!!)
-        val buildingWallet = Wallet.createBuilding()
+        val apartment = apartment(request.requestingApartmentId!!, buildingId)
+        val buildingWallet = Wallet.createBuilding(buildingId)
         every { serviceRequestRepository.findById(request.id) } returns request
         every { apartmentRepository.findById(apartment.id) } returns apartment
-        every { walletRepository.findBuildingWallet() } returns buildingWallet
+        every { walletRepository.findBuildingWallet(buildingId) } returns buildingWallet
         every { walletRepository.findByOwner(worker) } returns null
         every { walletRepository.save(any()) } answers { firstArg() }
         every { serviceRequestRepository.save(any()) } answers { firstArg() }
@@ -331,9 +376,9 @@ class WalletServiceTest {
         verify(exactly = 1) { serviceRequestRepository.save(match { it.status.name == "SETTLED" }) }
     }
 
-    private fun apartment(id: ApartmentId): Apartment = Apartment.reconstitute(
+    private fun apartment(id: ApartmentId, ownerBuildingId: BuildingId = BuildingId.new()): Apartment = Apartment.reconstitute(
         id = id,
-        buildingId = BuildingId.new(),
+        buildingId = ownerBuildingId,
         unitNumber = "12",
         floorNumber = 1,
         areaSquareMeters = BigDecimal("90"),
@@ -342,18 +387,18 @@ class WalletServiceTest {
         updatedAt = java.time.Instant.parse("2026-01-15T10:00:00Z"),
     )
 
-    private fun user(role: Role): User {
+    private fun user(role: Role, managedBuildingId: BuildingId? = null): User {
         val now = java.time.Instant.parse("2026-01-15T10:00:00Z")
         return User.reconstitute(
             id = UserId.generate(),
-            username = "${role.name.lowercase()}-user",
-            email = "${role.name.lowercase()}@example.com",
+            username = "${role.name.lowercase()}-user-${UserId.generate()}",
+            email = "${role.name.lowercase()}-${UserId.generate()}@example.com",
             passwordHash = "hash",
             role = role,
             createdAt = now,
             updatedAt = now,
             active = true,
-            managedBuildingId = if (role == Role.MANAGER) BuildingId.new() else null,
+            managedBuildingId = managedBuildingId ?: if (role == Role.MANAGER) BuildingId.new() else null,
         )
     }
 }

@@ -32,7 +32,7 @@ class WalletTest {
 
     @Test
     fun `the building wallet may run a deficit`() {
-        val wallet = Wallet.createBuilding()
+        val wallet = Wallet.createBuilding(com.sakena.property.domain.model.BuildingId.new())
 
         wallet.debit(BigDecimal("300000"))
 
@@ -41,7 +41,7 @@ class WalletTest {
 
     @Test
     fun `non-positive amounts are rejected`() {
-        val wallet = Wallet.createBuilding()
+        val wallet = Wallet.createBuilding(com.sakena.property.domain.model.BuildingId.new())
 
         assertFailsWith<DomainValidationException> { wallet.credit(BigDecimal.ZERO) }
         assertFailsWith<DomainValidationException> { wallet.debit(BigDecimal("-1")) }

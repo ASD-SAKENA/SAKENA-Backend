@@ -1,5 +1,6 @@
 package com.sakena.wallet.domain
 
+import com.sakena.property.domain.model.BuildingId
 import com.sakena.user.domain.UserId
 import com.sakena.wallet.domain.model.Wallet
 
@@ -10,8 +11,7 @@ import com.sakena.wallet.domain.model.Wallet
 interface WalletRepository {
     fun save(wallet: Wallet): Wallet
 
-    /** The single shared building account (seeded by migration). */
-    fun findBuildingWallet(): Wallet?
+    fun findBuildingWallet(buildingId: BuildingId): Wallet?
 
     fun findByOwner(userId: UserId): Wallet?
 }

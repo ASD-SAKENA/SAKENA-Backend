@@ -113,7 +113,7 @@ class ServiceRequestCostResponsibilityIntegrationTest(
         assertEquals(ServiceCostResponsibility.ALL_UNITS, persisted?.costResponsibility)
         assertEquals(manager.id, persisted?.updatedBy)
 
-        val buildingBalanceBefore = walletRepository.findBuildingWallet()?.balance
+        val buildingBalanceBefore = walletRepository.findBuildingWallet(manager.managedBuildingId!!)?.balance
             ?: error("Building wallet was not provisioned")
 
         mockMvc.perform(
@@ -137,7 +137,7 @@ class ServiceRequestCostResponsibilityIntegrationTest(
         val workerWallet = walletRepository.findByOwner(staff.id)
             ?: error("Worker wallet was not created")
         assertEquals(0, workerWallet.balance.compareTo(BigDecimal("250.0")))
-        val buildingBalanceAfter = walletRepository.findBuildingWallet()?.balance
+        val buildingBalanceAfter = walletRepository.findBuildingWallet(manager.managedBuildingId!!)?.balance
             ?: error("Building wallet was not found after settlement")
         assertEquals(
             0,
