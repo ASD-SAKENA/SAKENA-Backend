@@ -21,6 +21,7 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement
 import io.swagger.v3.oas.annotations.tags.Tag
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
+import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.web.bind.annotation.*
 import java.time.Instant
@@ -75,13 +76,14 @@ class ServiceRequestController(
             updatedFrom = updatedFrom,
             updatedTo = updatedTo
         )
-        val requests = serviceRequestService.getResidentRequests(filters, userId)
+        val requests = serviceRequestService.getRequests(filters)
         return requests.map { ServiceRequestResponse.fromDomain(it) }
     }
 
     @GetMapping("/admin")
-    @Operation(summary = "Get all service requests with filtering (admin/manager only)")
+    @Operation(summary = "Requests in the building the requesting manager administers, with filtering")
     @SecurityRequirement(name = "bearerAuth")
+    @PreAuthorize("hasRole('MANAGER')")
     fun getAllRequests(
         @RequestParam(required = false) status: ServiceRequestStatus?,
         @RequestParam(required = false) categoryGroup: ServiceCategoryGroup?,
@@ -106,7 +108,7 @@ class ServiceRequestController(
             updatedFrom = updatedFrom,
             updatedTo = updatedTo
         )
-        val requests = serviceRequestService.getManagerRequests(filters, getCurrentUserId())
+        val requests = serviceRequestService.getRequestsForManager(filters, getCurrentUserId())
         return requests.map { ServiceRequestResponse.fromDomain(it) }
     }
 
@@ -133,7 +135,7 @@ class ServiceRequestController(
             updatedFrom = updatedFrom,
             updatedTo = updatedTo
         )
-        val requests = serviceRequestService.getAssignedRequests(filters, userId)
+        val requests = serviceRequestService.getRequests(filters)
         return requests.map { ServiceRequestResponse.fromDomain(it) }
     }
 

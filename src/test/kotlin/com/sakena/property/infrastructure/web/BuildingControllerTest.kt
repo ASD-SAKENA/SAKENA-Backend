@@ -3,9 +3,9 @@ package com.sakena.property.infrastructure.web
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.sakena.property.application.BuildingService
 import com.sakena.property.domain.model.Building
-import com.sakena.property.infrastructure.web.dto.CreateBuildingRequest
+import com.sakena.property.domain.model.BuildingId
 import com.sakena.property.infrastructure.web.dto.UpdateBuildingRequest
-import com.sakena.shared.domain.DomainConflictException
+import com.sakena.shared.domain.DomainForbiddenException
 import com.sakena.shared.web.GlobalExceptionHandler
 import com.sakena.user.application.ProfileService
 import com.sakena.user.domain.Role
@@ -14,27 +14,24 @@ import com.sakena.user.domain.UserId
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import org.springframework.http.MediaType
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken
+import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.test.web.servlet.MockMvc
-import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
-import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.test.web.servlet.setup.MockMvcBuilders
 import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean
-import java.security.Principal
+import java.time.Instant
 
 class BuildingControllerTest {
 
-    private val managerId = UserId.generate()
-    private val principal = Principal { "manager" }
     private val buildingService = mockk<BuildingService>()
-    private val profileService = mockk<ProfileService> {
-        every { getUserByUsername(principal.name) } returns manager()
-    }
+    private val profileService = mockk<ProfileService>()
     private val objectMapper = jacksonObjectMapper()
     private val mockMvc: MockMvc = MockMvcBuilders
         .standaloneSetup(BuildingController(buildingService, profileService))
@@ -42,96 +39,108 @@ class BuildingControllerTest {
         .setValidator(validator())
         .build()
 
-    @Test
-    fun `create maps request to command and returns created building`() {
-        val building = Building.create("Tower A", "Main Street", managerId)
-        every {
-            buildingService.create(
-                match { it.name == "Tower A" && it.address == "Main Street" },
-                managerId,
-            )
-        } returns building
-
-        val body = objectMapper.writeValueAsString(CreateBuildingRequest("Tower A", "Main Street"))
-        mockMvc.perform(
-            post("/api/v1/buildings")
-                .principal(principal)
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(body),
-        )
-            .andExpect(status().isCreated)
-            .andExpect(jsonPath("$.id").value(building.id.value.toString()))
-            .andExpect(jsonPath("$.name").value("Tower A"))
-            .andExpect(jsonPath("$.address").value("Main Street"))
-    }
+    @AfterEach
+    fun clearSecurityContext() = SecurityContextHolder.clearContext()
 
     @Test
-    fun `update maps request to command`() {
-        val building = Building.create("Tower B", "Second Street", managerId)
+    fun `update maps request to command and uses the authenticated manager's own building`() {
+        val building = Building.create("Tower B", "Second Street")
+        val manager = authenticateManager(building.id)
         every {
             buildingService.update(
                 building.id,
+                manager.managedBuildingId,
                 match { it.name == "Tower B" && it.address == "Second Street" },
-                managerId,
             )
         } returns building
 
         val body = objectMapper.writeValueAsString(UpdateBuildingRequest("Tower B", "Second Street"))
-        mockMvc.perform(
-            put("/api/v1/buildings/${building.id}")
-                .principal(principal)
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(body),
-        )
+        mockMvc.perform(put("/api/v1/buildings/${building.id}").contentType(MediaType.APPLICATION_JSON).content(body))
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.name").value("Tower B"))
             .andExpect(jsonPath("$.address").value("Second Street"))
     }
 
     @Test
-    fun `blank name returns validation error`() {
-        val body = objectMapper.writeValueAsString(CreateBuildingRequest("", "Main Street"))
+    fun `update on a building the manager does not administer returns 403`() {
+        val ownedBuildingId = BuildingId.new()
+        val otherBuildingId = BuildingId.new()
+        val manager = authenticateManager(ownedBuildingId)
+        every {
+            buildingService.update(otherBuildingId, manager.managedBuildingId, any())
+        } throws DomainForbiddenException("You do not manage building '$otherBuildingId'")
 
+        val body = objectMapper.writeValueAsString(UpdateBuildingRequest("Tower B", "Second Street"))
         mockMvc.perform(
-            post("/api/v1/buildings")
-                .principal(principal)
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(body),
+            put("/api/v1/buildings/$otherBuildingId").contentType(MediaType.APPLICATION_JSON).content(body),
         )
-            .andExpect(status().isBadRequest)
-            .andExpect(jsonPath("$.fieldErrors[0].field").value("name"))
+            .andExpect(status().isForbidden)
     }
 
     @Test
-    fun `delete conflict is translated to 409`() {
-        val building = Building.create("Tower C", "Third Street", managerId)
-        every { buildingService.delete(building.id, managerId) } throws
-            DomainConflictException("Cannot delete building")
+    fun `list returns every building for a caller who does not manage one`() {
+        val building = Building.create("Tower D", "Fourth Street")
+        authenticateResident()
+        every { buildingService.getAll(null) } returns listOf(building)
 
-        mockMvc.perform(delete("/api/v1/buildings/${building.id}").principal(principal))
-            .andExpect(status().isConflict)
-    }
-
-    @Test
-    fun `list returns building responses`() {
-        val building = Building.create("Tower D", "Fourth Street", managerId)
-        every { buildingService.getAll(managerId) } returns listOf(building)
-
-        mockMvc.perform(get("/api/v1/buildings").principal(principal))
+        mockMvc.perform(get("/api/v1/buildings"))
             .andExpect(status().isOk)
             .andExpect(jsonPath("$[0].id").value(building.id.value.toString()))
             .andExpect(jsonPath("$[0].name").value("Tower D"))
 
-        verify(exactly = 1) { buildingService.getAll(managerId) }
+        verify(exactly = 1) { buildingService.getAll(null) }
     }
 
-    private fun manager(): User = User.register(
-        username = principal.name,
-        email = "manager@example.com",
-        rawPassword = "password123",
-        passwordEncoder = { it },
-        role = Role.MANAGER,
-    ).copy(id = managerId)
+    @Test
+    fun `list scopes to the requesting manager's own building`() {
+        val building = Building.create("Tower E", "Fifth Street")
+        val manager = authenticateManager(building.id)
+        every { buildingService.getAll(manager.managedBuildingId) } returns listOf(building)
+
+        mockMvc.perform(get("/api/v1/buildings"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$[0].id").value(building.id.value.toString()))
+
+        verify(exactly = 1) { buildingService.getAll(manager.managedBuildingId) }
+    }
+
+    private fun authenticateResident(): User {
+        val now = Instant.now()
+        val resident = User.reconstitute(
+            id = UserId.generate(),
+            username = "resident",
+            email = "resident@example.com",
+            passwordHash = "hash",
+            role = Role.RESIDENT,
+            createdAt = now,
+            updatedAt = now,
+            active = true,
+            managedBuildingId = null,
+        )
+        SecurityContextHolder.getContext().authentication =
+            UsernamePasswordAuthenticationToken(resident.username, null)
+        every { profileService.getUserByUsername(resident.username) } returns resident
+        return resident
+    }
+
+    private fun authenticateManager(managedBuildingId: BuildingId): User {
+        val now = Instant.now()
+        val manager = User.reconstitute(
+            id = UserId.generate(),
+            username = "manager-${managedBuildingId}",
+            email = "manager@example.com",
+            passwordHash = "hash",
+            role = Role.MANAGER,
+            createdAt = now,
+            updatedAt = now,
+            active = true,
+            managedBuildingId = managedBuildingId,
+        )
+        SecurityContextHolder.getContext().authentication =
+            UsernamePasswordAuthenticationToken(manager.username, null)
+        every { profileService.getUserByUsername(manager.username) } returns manager
+        return manager
+    }
 
     private fun validator(): LocalValidatorFactoryBean =
         LocalValidatorFactoryBean().also { it.afterPropertiesSet() }

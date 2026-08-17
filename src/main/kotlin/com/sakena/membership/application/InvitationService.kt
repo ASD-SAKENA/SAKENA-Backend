@@ -4,21 +4,18 @@ import com.sakena.membership.application.command.CreateInvitationCommand
 import com.sakena.membership.domain.InvitationNotFoundException
 import com.sakena.membership.domain.InvitationNotifier
 import com.sakena.membership.domain.InvitationRepository
-import com.sakena.membership.domain.StaffBuildingMembershipRepository
 import com.sakena.membership.domain.model.BuildingInvitation
 import com.sakena.membership.domain.model.InvitationId
-import com.sakena.membership.domain.model.StaffBuildingMembership
-import com.sakena.property.domain.ApartmentNotFoundException
 import com.sakena.property.domain.ApartmentRepository
-import com.sakena.property.domain.BuildingAccess
 import com.sakena.property.domain.BuildingRepository
 import com.sakena.property.domain.model.BuildingId
 import com.sakena.residency.application.ResidencyService
 import com.sakena.residency.application.command.StartResidencyCommand
 import com.sakena.residency.domain.model.TenancyType
 import com.sakena.shared.domain.DomainConflictException
+import com.sakena.shared.domain.DomainForbiddenException
+import com.sakena.shared.domain.DomainValidationException
 import com.sakena.shared.domain.EntityNotFoundException
-import com.sakena.user.domain.Role
 import com.sakena.user.domain.User
 import com.sakena.user.domain.UserId
 import org.slf4j.LoggerFactory
@@ -40,8 +37,6 @@ class InvitationService(
     private val invitationRepository: InvitationRepository,
     private val buildingRepository: BuildingRepository,
     private val apartmentRepository: ApartmentRepository,
-    private val buildingAccess: BuildingAccess,
-    private val staffMembershipRepository: StaffBuildingMembershipRepository,
     private val residencyService: ResidencyService,
     private val notifier: InvitationNotifier,
     @Value("\${app.frontend-url:http://localhost:3000}")
@@ -54,15 +49,18 @@ class InvitationService(
         buildingId: BuildingId,
         command: CreateInvitationCommand,
         invitedBy: UserId,
+        requesterManagedBuildingId: BuildingId?,
     ): BuildingInvitation {
         val building = buildingRepository.findById(buildingId)
             ?: throw EntityNotFoundException("Building with id '$buildingId' was not found")
-        buildingAccess.requireManagerAccess(buildingId, invitedBy)
+        if (requesterManagedBuildingId != buildingId) {
+            throw DomainForbiddenException("You do not manage building '$buildingId'")
+        }
         command.apartmentId?.let { apartmentId ->
             val apartment = apartmentRepository.findById(apartmentId)
-                ?: throw ApartmentNotFoundException(apartmentId)
+                ?: throw EntityNotFoundException("Apartment with id '$apartmentId' was not found")
             if (apartment.buildingId != buildingId) {
-                throw DomainConflictException("The invited apartment does not belong to the invited building")
+                throw DomainValidationException("Apartment '$apartmentId' does not belong to building '$buildingId'")
             }
         }
 
@@ -93,7 +91,6 @@ class InvitationService(
         if (!invitation.isUsableAt(Instant.now())) {
             throw DomainConflictException("This invitation link is no longer valid")
         }
-        requireApartmentBelongsToInvitationBuilding(invitation)
         return invitation
     }
 
@@ -109,68 +106,45 @@ class InvitationService(
         if (!invitation.isAddressedTo(user.email, user.username)) {
             throw DomainConflictException("This invitation was issued for a different person")
         }
-        val newStaffMembership = newStaffMembership(invitation, user)
         invitation.accept(user.id)
 
         invitation.apartmentId?.let { apartmentId ->
-            residencyService.startFromInvitation(
+            // The invitation itself is the authorization for this move-in — it
+            // was only ever created by that building's own manager (see
+            // create() below) — so the requester "is" that building here.
+            residencyService.start(
                 apartmentId,
-                invitation.buildingId,
                 StartResidencyCommand(
                     residentId = user.id,
                     tenancy = invitation.tenancy ?: TenancyType.TENANT,
                 ),
+                requesterManagedBuildingId = invitation.buildingId,
             )
         }
-        newStaffMembership?.let(staffMembershipRepository::save)
         return invitationRepository.save(invitation)
     }
 
-    fun revoke(id: InvitationId, managerId: UserId): BuildingInvitation {
+    fun revoke(id: InvitationId, requesterManagedBuildingId: BuildingId?): BuildingInvitation {
         val invitation = invitationRepository.findById(id)
             ?: throw InvitationNotFoundException(id)
-        buildingAccess.requireManagerAccess(invitation.buildingId, managerId)
+        if (requesterManagedBuildingId != invitation.buildingId) {
+            throw DomainForbiddenException("You do not manage building '${invitation.buildingId}'")
+        }
         invitation.revoke()
         return invitationRepository.save(invitation)
     }
 
     @Transactional(readOnly = true)
-    fun getAll(buildingId: BuildingId, managerId: UserId): List<BuildingInvitation> {
-        buildingAccess.requireManagerAccess(buildingId, managerId)
+    fun getAll(buildingId: BuildingId, requesterManagedBuildingId: BuildingId?): List<BuildingInvitation> {
+        if (requesterManagedBuildingId != buildingId) {
+            throw DomainForbiddenException("You do not manage building '$buildingId'")
+        }
         return invitationRepository.findAllByBuilding(buildingId)
     }
 
     /** The link handed to the invitee; the token is the only secret in it. */
     fun acceptUrlOf(invitation: BuildingInvitation): String =
         "${frontendUrl.trimEnd('/')}/join?token=${invitation.token}"
-
-    private fun requireApartmentBelongsToInvitationBuilding(invitation: BuildingInvitation) {
-        val apartmentId = invitation.apartmentId ?: return
-        val apartment = apartmentRepository.findById(apartmentId)
-            ?: throw DomainConflictException("The apartment assigned to this invitation is no longer available")
-        if (apartment.buildingId != invitation.buildingId) {
-            throw DomainConflictException("The invited apartment does not belong to the invited building")
-        }
-    }
-
-    private fun newStaffMembership(
-        invitation: BuildingInvitation,
-        user: User,
-    ): StaffBuildingMembership? {
-        if (invitation.role != Role.STAFF) return null
-        if (user.role != Role.STAFF) {
-            throw DomainConflictException("This invitation is only valid for a service-staff account")
-        }
-
-        val existing = staffMembershipRepository.findByStaffId(user.id)
-        if (existing == null) {
-            return StaffBuildingMembership.create(user.id, invitation.buildingId)
-        }
-        if (existing.buildingId != invitation.buildingId) {
-            throw DomainConflictException("This staff member is already assigned to another building")
-        }
-        return null
-    }
 
     init {
         log.debug("Invitation links will point at {}", frontendUrl)

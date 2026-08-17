@@ -233,6 +233,7 @@ class PaymentControllerTest {
             createdAt = now,
             updatedAt = now,
             active = true,
+            managedBuildingId = if (role == Role.MANAGER) BuildingId.new() else null,
         )
     }
 

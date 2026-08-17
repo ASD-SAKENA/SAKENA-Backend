@@ -1,168 +1,292 @@
 package com.sakena.user.application
 
-import com.sakena.membership.domain.StaffBuildingMembershipRepository
-import com.sakena.membership.domain.model.StaffBuildingMembership
-import com.sakena.property.domain.BuildingAccess
-import com.sakena.property.domain.model.ApartmentId
+import com.sakena.property.domain.BuildingRepository
 import com.sakena.property.domain.model.BuildingId
-import com.sakena.residency.domain.ResidencyRepository
-import com.sakena.residency.domain.model.Residency
-import com.sakena.residency.domain.model.TenancyType
-import com.sakena.shared.domain.DomainForbiddenException
+import com.sakena.shared.domain.DomainValidationException
+import com.sakena.shared.domain.EntityNotFoundException
 import com.sakena.user.domain.Role
 import com.sakena.user.domain.User
 import com.sakena.user.domain.UserId
 import com.sakena.user.domain.UserRepository
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.slot
 import io.mockk.verify
+import org.junit.jupiter.api.assertThrows
+import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import java.time.Instant
-import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
-import kotlin.test.assertFalse
-import kotlin.test.assertTrue
 
 class UserAdminServiceTest {
 
-    private val buildingId = BuildingId.new()
-    private val manager = createUser("manager", "manager@example.com", Role.MANAGER)
     private lateinit var userRepository: UserRepository
-    private lateinit var buildingAccess: BuildingAccess
-    private lateinit var residencyRepository: ResidencyRepository
-    private lateinit var staffMembershipRepository: StaffBuildingMembershipRepository
-    private lateinit var service: UserAdminService
+    private lateinit var buildingRepository: BuildingRepository
+    private lateinit var userAdminService: UserAdminService
 
     @BeforeEach
     fun setup() {
         userRepository = mockk()
-        buildingAccess = mockk()
-        residencyRepository = mockk()
-        staffMembershipRepository = mockk()
-        service = UserAdminService(
-            userRepository,
-            buildingAccess,
-            residencyRepository,
-            staffMembershipRepository,
+        buildingRepository = mockk()
+        userAdminService = UserAdminService(userRepository, buildingRepository)
+    }
+
+    private fun createUser(
+        username: String = "john",
+        email: String = "john@example.com",
+        role: Role = Role.RESIDENT,
+        active: Boolean = true
+    ): User {
+        return User.reconstitute(
+            id = UserId.generate(),
+            username = username,
+            email = email,
+            passwordHash = "hashed",
+            role = role,
+            createdAt = Instant.now(),
+            updatedAt = Instant.now(),
+            active = active,
+            managedBuildingId = if (role == Role.MANAGER) BuildingId.new() else null,
         )
-        every { buildingAccess.managedBuildingId(manager.id) } returns buildingId
-        every { residencyRepository.findActiveByBuilding(buildingId) } returns emptyList()
-        every { staffMembershipRepository.findAllByBuilding(buildingId) } returns emptyList()
+    }
+
+    // ===== GET USERS TESTS =====
+
+    @Test
+    fun `getUsers should return all users when no role filter is given`() {
+        val users = listOf(
+            createUser(username = "resident", role = Role.RESIDENT),
+            createUser(username = "manager", email = "manager@example.com", role = Role.MANAGER),
+            createUser(username = "staff", email = "staff@example.com", role = Role.STAFF)
+        )
+        every { userRepository.findAll() } returns users
+
+        val result = userAdminService.getUsers()
+
+        assertEquals(3, result.size)
+        assertEquals(users, result)
+        verify(exactly = 1) { userRepository.findAll() }
     }
 
     @Test
-    fun `list returns only residents and staff assigned to the managed building`() {
-        val resident = createUser("resident", "resident@example.com", Role.RESIDENT)
-        val staff = createUser("staff", "staff@example.com", Role.STAFF)
-        val memberIds = setOf(manager.id, resident.id, staff.id)
-        every { residencyRepository.findActiveByBuilding(buildingId) } returns listOf(residency(resident.id))
-        every { staffMembershipRepository.findAllByBuilding(buildingId) } returns
-            listOf(StaffBuildingMembership.create(staff.id, buildingId))
-        every { userRepository.findAllByIds(memberIds) } returns listOf(manager, resident, staff)
+    fun `getUsers should only return users with the requested role`() {
+        val staff = createUser(username = "staff", email = "staff@example.com", role = Role.STAFF)
+        every { userRepository.findAll() } returns listOf(
+            createUser(username = "resident", role = Role.RESIDENT),
+            staff,
+            createUser(username = "manager", email = "manager@example.com", role = Role.MANAGER)
+        )
 
-        val result = service.getUsers(manager.id)
+        val result = userAdminService.getUsers(Role.STAFF)
 
-        assertEquals(listOf(manager, resident, staff), result)
-        verify(exactly = 1) { userRepository.findAllByIds(memberIds) }
+        assertEquals(listOf(staff), result)
     }
 
     @Test
-    fun `list applies role filter after building scope`() {
-        val staff = createUser("staff", "staff@example.com", Role.STAFF)
-        val memberIds = setOf(manager.id, staff.id)
-        every { staffMembershipRepository.findAllByBuilding(buildingId) } returns
-            listOf(StaffBuildingMembership.create(staff.id, buildingId))
-        every { userRepository.findAllByIds(memberIds) } returns listOf(manager, staff)
+    fun `getUsers should return empty list when no user matches the role`() {
+        every { userRepository.findAll() } returns listOf(
+            createUser(username = "resident", role = Role.RESIDENT)
+        )
 
-        assertEquals(listOf(staff), service.getUsers(manager.id, Role.STAFF))
+        val result = userAdminService.getUsers(Role.STAFF)
+
+        assertTrue(result.isEmpty())
     }
 
     @Test
-    fun `list includes inactive members of the managed building`() {
-        val inactive = createUser("inactive", "inactive@example.com", Role.RESIDENT, active = false)
-        val memberIds = setOf(manager.id, inactive.id)
-        every { residencyRepository.findActiveByBuilding(buildingId) } returns listOf(residency(inactive.id))
-        every { userRepository.findAllByIds(memberIds) } returns listOf(manager, inactive)
+    fun `getUsers should include inactive users`() {
+        val inactive = createUser(username = "inactive", email = "inactive@example.com", active = false)
+        every { userRepository.findAll() } returns listOf(inactive)
 
-        val result = service.getUsers(manager.id, Role.RESIDENT)
+        val result = userAdminService.getUsers()
 
-        assertEquals(listOf(inactive), result)
-        assertFalse(result.single().active)
+        assertEquals(1, result.size)
+        assertFalse(result.first().active)
     }
 
-    @Test
-    fun `manager can change status of a resident in their building`() {
-        val resident = createUser("resident", "resident@example.com", Role.RESIDENT)
-        every { residencyRepository.findActiveByBuilding(buildingId) } returns listOf(residency(resident.id))
-        every { userRepository.findById(resident.id) } returns resident
-        every { userRepository.save(any()) } answers { firstArg() }
+    // ===== CHANGE ACTIVE STATUS TESTS =====
 
-        val result = service.changeActiveStatus(resident.id, active = false, manager.id)
+    @Test
+    fun `changeActiveStatus should deactivate an active user`() {
+        val user = createUser(active = true)
+        every { userRepository.findById(user.id) } returns user
+        val savedUserSlot = slot<User>()
+        every { userRepository.save(capture(savedUserSlot)) } answers { savedUserSlot.captured }
+
+        val result = userAdminService.changeActiveStatus(user.id, active = false)
 
         assertFalse(result.active)
-        verify(exactly = 1) { userRepository.save(result) }
+        assertFalse(savedUserSlot.captured.active)
+        verify(exactly = 1) { userRepository.save(any()) }
     }
 
     @Test
-    fun `manager can change specialty of staff in their building`() {
-        val staff = createUser("staff", "staff@example.com", Role.STAFF)
-        every { staffMembershipRepository.findAllByBuilding(buildingId) } returns
-            listOf(StaffBuildingMembership.create(staff.id, buildingId))
-        every { userRepository.findById(staff.id) } returns staff
+    fun `changeActiveStatus should reactivate an inactive user`() {
+        val user = createUser(active = false)
+        every { userRepository.findById(user.id) } returns user
+        val savedUserSlot = slot<User>()
+        every { userRepository.save(capture(savedUserSlot)) } answers { savedUserSlot.captured }
+
+        val result = userAdminService.changeActiveStatus(user.id, active = true)
+
+        assertTrue(result.active)
+        assertTrue(savedUserSlot.captured.active)
+        verify(exactly = 1) { userRepository.save(any()) }
+    }
+
+    @Test
+    fun `changeActiveStatus should throw EntityNotFoundException when user does not exist`() {
+        val userId = UserId.generate()
+        every { userRepository.findById(userId) } returns null
+
+        assertThrows<EntityNotFoundException> {
+            userAdminService.changeActiveStatus(userId, active = false)
+        }
+        verify(exactly = 0) { userRepository.save(any()) }
+    }
+
+    // ===== CHANGE ROLE TESTS =====
+
+    @Test
+    fun `changeRole should reassign a resident to staff`() {
+        val user = createUser(role = Role.RESIDENT)
+        every { userRepository.findById(user.id) } returns user
+        val savedUserSlot = slot<User>()
+        every { userRepository.save(capture(savedUserSlot)) } answers { savedUserSlot.captured }
+
+        val result = userAdminService.changeRole(user.id, Role.STAFF, managedBuildingId = null)
+
+        assertEquals(Role.STAFF, result.role)
+        assertEquals(Role.STAFF, savedUserSlot.captured.role)
+        verify(exactly = 1) { userRepository.save(any()) }
+    }
+
+    @Test
+    fun `changeRole should promote a resident to admin`() {
+        val user = createUser(role = Role.RESIDENT)
+        every { userRepository.findById(user.id) } returns user
         every { userRepository.save(any()) } answers { firstArg() }
 
-        val result = service.changeSpecialty(staff.id, "Electrician", manager.id)
+        val result = userAdminService.changeRole(user.id, Role.ADMIN, managedBuildingId = null)
 
-        assertEquals("Electrician", result.specialty)
-        verify(exactly = 1) { userRepository.save(result) }
+        assertEquals(Role.ADMIN, result.role)
     }
 
     @Test
-    fun `manager cannot mutate a user from another building`() {
-        val outsider = createUser("outsider", "outsider@example.com", Role.RESIDENT)
+    fun `changeRole should promote a resident to manager of the given building`() {
+        val user = createUser(role = Role.RESIDENT)
+        val buildingId = BuildingId.new()
+        every { userRepository.findById(user.id) } returns user
+        every { buildingRepository.existsById(buildingId) } returns true
+        val savedUserSlot = slot<User>()
+        every { userRepository.save(capture(savedUserSlot)) } answers { savedUserSlot.captured }
 
-        assertFailsWith<DomainForbiddenException> {
-            service.changeActiveStatus(outsider.id, active = false, manager.id)
-        }
-        assertFailsWith<DomainForbiddenException> {
-            service.changeSpecialty(outsider.id, "Plumber", manager.id)
-        }
+        val result = userAdminService.changeRole(user.id, Role.MANAGER, buildingId)
 
-        verify(exactly = 0) { userRepository.findById(any()) }
+        assertEquals(Role.MANAGER, result.role)
+        assertEquals(buildingId, result.managedBuildingId)
+        assertEquals(buildingId, savedUserSlot.captured.managedBuildingId)
+    }
+
+    @Test
+    fun `changeRole should allow a second manager on a building that already has one`() {
+        val user = createUser(role = Role.RESIDENT)
+        val buildingId = BuildingId.new()
+        every { userRepository.findById(user.id) } returns user
+        every { buildingRepository.existsById(buildingId) } returns true
+        every { userRepository.save(any()) } answers { firstArg() }
+
+        val result = userAdminService.changeRole(user.id, Role.MANAGER, buildingId)
+
+        assertEquals(buildingId, result.managedBuildingId)
+    }
+
+    @Test
+    fun `changeRole should reject promoting to manager without a buildingId`() {
+        val user = createUser(role = Role.RESIDENT)
+        every { userRepository.findById(user.id) } returns user
+
+        assertThrows<DomainValidationException> {
+            userAdminService.changeRole(user.id, Role.MANAGER, managedBuildingId = null)
+        }
         verify(exactly = 0) { userRepository.save(any()) }
     }
 
     @Test
-    fun `manager can reactivate their own account`() {
-        val inactiveManager = manager.copy(active = false)
-        every { userRepository.findById(manager.id) } returns inactiveManager
-        every { userRepository.save(any()) } answers { firstArg() }
+    fun `changeRole should reject promoting to manager of a building that does not exist`() {
+        val user = createUser(role = Role.RESIDENT)
+        val buildingId = BuildingId.new()
+        every { userRepository.findById(user.id) } returns user
+        every { buildingRepository.existsById(buildingId) } returns false
 
-        val result = service.changeActiveStatus(manager.id, active = true, manager.id)
-
-        assertTrue(result.active)
+        assertThrows<EntityNotFoundException> {
+            userAdminService.changeRole(user.id, Role.MANAGER, buildingId)
+        }
+        verify(exactly = 0) { userRepository.save(any()) }
     }
 
-    private fun residency(residentId: UserId): Residency = Residency.start(
-        apartmentId = ApartmentId.new(),
-        residentId = residentId,
-        tenancy = TenancyType.TENANT,
-    )
+    @Test
+    fun `changeRole should demote an existing manager and clear their building, leaving it unmanaged`() {
+        val user = createUser(role = Role.MANAGER)
+        every { userRepository.findById(user.id) } returns user
+        val savedUserSlot = slot<User>()
+        every { userRepository.save(capture(savedUserSlot)) } answers { savedUserSlot.captured }
 
-    private fun createUser(
-        username: String,
-        email: String,
-        role: Role,
-        active: Boolean = true,
-    ): User = User.reconstitute(
-        id = UserId.generate(),
-        username = username,
-        email = email,
-        passwordHash = "hashed",
-        role = role,
-        createdAt = Instant.parse("2026-01-15T10:00:00Z"),
-        updatedAt = Instant.parse("2026-01-15T10:00:00Z"),
-        active = active,
-    )
+        val result = userAdminService.changeRole(user.id, Role.RESIDENT, managedBuildingId = null)
+
+        assertEquals(Role.RESIDENT, result.role)
+        assertEquals(null, result.managedBuildingId)
+        assertEquals(null, savedUserSlot.captured.managedBuildingId)
+    }
+
+    @Test
+    fun `changeRole should throw EntityNotFoundException when user does not exist`() {
+        val userId = UserId.generate()
+        every { userRepository.findById(userId) } returns null
+
+        assertThrows<EntityNotFoundException> {
+            userAdminService.changeRole(userId, Role.STAFF, managedBuildingId = null)
+        }
+        verify(exactly = 0) { userRepository.save(any()) }
+    }
+
+    // ===== CHANGE SPECIALTY TESTS =====
+
+    @Test
+    fun `changeSpecialty should set the specialty and save the user`() {
+        val user = createUser(role = Role.STAFF)
+        every { userRepository.findById(user.id) } returns user
+        val savedUserSlot = slot<User>()
+        every { userRepository.save(capture(savedUserSlot)) } answers { savedUserSlot.captured }
+
+        val result = userAdminService.changeSpecialty(user.id, "Electrician")
+
+        assertEquals("Electrician", result.specialty)
+        assertEquals("Electrician", savedUserSlot.captured.specialty)
+        verify(exactly = 1) { userRepository.save(any()) }
+    }
+
+    @Test
+    fun `changeSpecialty should clear the specialty when given null`() {
+        val user = createUser(role = Role.STAFF).withSpecialty("Plumber")
+        every { userRepository.findById(user.id) } returns user
+        val savedUserSlot = slot<User>()
+        every { userRepository.save(capture(savedUserSlot)) } answers { savedUserSlot.captured }
+
+        val result = userAdminService.changeSpecialty(user.id, null)
+
+        assertNull(result.specialty)
+        assertNull(savedUserSlot.captured.specialty)
+    }
+
+    @Test
+    fun `changeSpecialty should throw EntityNotFoundException when user does not exist`() {
+        val userId = UserId.generate()
+        every { userRepository.findById(userId) } returns null
+
+        assertThrows<EntityNotFoundException> {
+            userAdminService.changeSpecialty(userId, "Electrician")
+        }
+        verify(exactly = 0) { userRepository.save(any()) }
+    }
 }

@@ -59,7 +59,8 @@ class ProfileController(
             email = user.email,
             role = user.role,
             createdAt = user.createdAt,
-            active = user.active
+            active = user.active,
+            managedBuildingId = user.managedBuildingId?.value
         )
     }
 }

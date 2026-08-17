@@ -9,8 +9,6 @@ import com.sakena.billing.domain.model.ChargePeriodType
 import com.sakena.billing.domain.model.CostAllocation
 import com.sakena.billing.domain.model.ServiceChargeTarget
 import com.sakena.billing.infrastructure.web.dto.CreateChargePeriodRequest
-import com.sakena.membership.domain.StaffBuildingMembershipRepository
-import com.sakena.membership.domain.model.StaffBuildingMembership
 import com.sakena.property.domain.ApartmentRepository
 import com.sakena.property.domain.BuildingRepository
 import com.sakena.property.domain.model.Apartment
@@ -54,7 +52,6 @@ class ServiceRequestCostResponsibilityIntegrationTest(
     @Autowired private val buildingRepository: BuildingRepository,
     @Autowired private val apartmentRepository: ApartmentRepository,
     @Autowired private val residencyRepository: ResidencyRepository,
-    @Autowired private val staffMembershipRepository: StaffBuildingMembershipRepository,
     @Autowired private val serviceChargeRepository: ServiceChargeRepository,
     @Autowired private val chargeItemRepository: ChargeItemRepository,
 ) : IntegrationTest() {
@@ -65,7 +62,7 @@ class ServiceRequestCostResponsibilityIntegrationTest(
         val resident = register("resident-$suffix", "RESIDENT")
         val staff = register("staff-$suffix", "STAFF")
         val manager = register("manager-$suffix", "MANAGER")
-        val requestingApartmentId = startResidency(resident, manager.id, suffix)
+        val requestingApartmentId = startResidency(resident, suffix, manager.managedBuildingId!!)
         val requestId = completeServiceRequest(
             resident,
             staff,
@@ -116,10 +113,8 @@ class ServiceRequestCostResponsibilityIntegrationTest(
         assertEquals(ServiceCostResponsibility.ALL_UNITS, persisted?.costResponsibility)
         assertEquals(manager.id, persisted?.updatedBy)
 
-        val requestingApartment = apartmentRepository.findById(requestingApartmentId)
-            ?: error("Requesting apartment was not found")
-        val buildingBalanceBefore =
-            walletRepository.findBuildingWallet(requestingApartment.buildingId)?.balance ?: BigDecimal.ZERO
+        val buildingBalanceBefore = walletRepository.findBuildingWallet(manager.managedBuildingId!!)?.balance
+            ?: error("Building wallet was not provisioned")
 
         mockMvc.perform(
             post("/api/v1/wallets/settle/$requestId")
@@ -133,6 +128,8 @@ class ServiceRequestCostResponsibilityIntegrationTest(
         val queuedCharge = serviceChargeRepository.findBySourceServiceRequestId(
             ServiceRequestId(requestId),
         ) ?: error("Deferred service charge was not created")
+        val requestingApartment = apartmentRepository.findById(requestingApartmentId)
+            ?: error("Requesting apartment was not found")
         assertEquals(ServiceChargeTarget.ALL_UNITS, queuedCharge.target)
         assertEquals(requestingApartment.buildingId, queuedCharge.buildingId)
         assertEquals(null, queuedCharge.targetApartmentId)
@@ -140,7 +137,7 @@ class ServiceRequestCostResponsibilityIntegrationTest(
         val workerWallet = walletRepository.findByOwner(staff.id)
             ?: error("Worker wallet was not created")
         assertEquals(0, workerWallet.balance.compareTo(BigDecimal("250.0")))
-        val buildingBalanceAfter = walletRepository.findBuildingWallet(requestingApartment.buildingId)?.balance
+        val buildingBalanceAfter = walletRepository.findBuildingWallet(manager.managedBuildingId!!)?.balance
             ?: error("Building wallet was not found after settlement")
         assertEquals(
             0,
@@ -171,7 +168,7 @@ class ServiceRequestCostResponsibilityIntegrationTest(
         val resident = register("resident-$suffix", "RESIDENT")
         val staff = register("staff-$suffix", "STAFF")
         val manager = register("manager-$suffix", "MANAGER")
-        val requestingApartmentId = startResidency(resident, manager.id, suffix)
+        val requestingApartmentId = startResidency(resident, suffix, manager.managedBuildingId!!)
         val requestId = completeServiceRequest(
             resident,
             staff,
@@ -284,9 +281,6 @@ class ServiceRequestCostResponsibilityIntegrationTest(
         manager: AuthenticatedUser,
         requestingApartmentId: ApartmentId,
     ): UUID {
-        val buildingId = apartmentRepository.findById(requestingApartmentId)?.buildingId
-            ?: error("Requesting apartment was not found")
-        staffMembershipRepository.save(StaffBuildingMembership.create(staff.id, buildingId))
         val createBody = CreateServiceRequestRequest(
             title = "Repair water pump",
             description = "The main water pump needs repair",
@@ -349,15 +343,12 @@ class ServiceRequestCostResponsibilityIntegrationTest(
 
     private fun startResidency(
         resident: AuthenticatedUser,
-        managerId: UserId,
         suffix: String,
+        buildingId: com.sakena.property.domain.model.BuildingId,
     ): ApartmentId {
-        val building = buildingRepository.save(
-            Building.create("Building $suffix", "Address $suffix", managerId),
-        )
         val apartment = apartmentRepository.save(
             Apartment.create(
-                buildingId = building.id,
+                buildingId = buildingId,
                 unitNumber = "UNIT-$suffix",
                 floorNumber = 1,
                 areaSquareMeters = BigDecimal("90"),
@@ -402,9 +393,9 @@ class ServiceRequestCostResponsibilityIntegrationTest(
             .andExpect(status().isCreated)
             .andReturn()
         val token = objectMapper.readTree(result.response.contentAsString).get("token").asText()
-        val userId = userRepository.findByUsername(username)?.id
+        val user = userRepository.findByUsername(username)
             ?: error("Registered user '$username' was not persisted")
-        return AuthenticatedUser(token, userId)
+        return AuthenticatedUser(token, user.id, user.managedBuildingId)
     }
 
     private fun bearer(token: String) = "Bearer $token"
@@ -412,6 +403,7 @@ class ServiceRequestCostResponsibilityIntegrationTest(
     private data class AuthenticatedUser(
         val token: String,
         val id: UserId,
+        val managedBuildingId: com.sakena.property.domain.model.BuildingId? = null,
     )
 
     private data class IssuedPeriod(

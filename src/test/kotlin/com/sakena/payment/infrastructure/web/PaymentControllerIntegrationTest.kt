@@ -8,7 +8,6 @@ import com.sakena.payment.domain.PaymentReceiptStorage
 import com.sakena.payment.infrastructure.persistence.PaymentJpaRepository
 import com.sakena.payment.infrastructure.web.dto.RecordPaymentRequest
 import com.sakena.payment.infrastructure.web.dto.RejectPaymentRequest
-import com.sakena.property.infrastructure.web.dto.CreateBuildingRequest
 import com.sakena.user.domain.UserRepository
 import com.sakena.user.infrastructure.web.RegisterRequest
 import io.mockk.every
@@ -48,7 +47,6 @@ class PaymentControllerIntegrationTest(
         val managerToken = register("manager-$suffix", "MANAGER")
         val otherManagerToken = register("other-manager-$suffix", "MANAGER")
         createBuildingWithResident(managerToken, "resident-$suffix", suffix)
-        createBuilding(otherManagerToken, "Other building $suffix", "Other address $suffix")
         val confirmedReference = "TX-CONFIRM-$suffix"
         val rejectedReference = "TX-REJECT-$suffix"
         val objectKey = "payment-receipts/$suffix/receipt.png"
@@ -174,11 +172,7 @@ class PaymentControllerIntegrationTest(
         residentUsername: String,
         suffix: String,
     ) {
-        val buildingId = createBuilding(
-            managerToken,
-            "Payment building $suffix",
-            "Payment address $suffix",
-        )
+        val buildingId = managedBuildingId(managerToken)
         val apartmentBody = mapOf(
             "buildingId" to buildingId,
             "unitNumber" to "P-$suffix",
@@ -209,16 +203,14 @@ class PaymentControllerIntegrationTest(
         ).andExpect(status().isCreated)
     }
 
-    private fun createBuilding(token: String, name: String, address: String): String {
+    private fun managedBuildingId(token: String): String {
         val result = mockMvc.perform(
-            post("/api/v1/buildings")
+            get("/api/v1/profile")
                 .header(HttpHeaders.AUTHORIZATION, bearer(token))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsBytes(CreateBuildingRequest(name, address))),
         )
-            .andExpect(status().isCreated)
+            .andExpect(status().isOk)
             .andReturn()
-        return objectMapper.readTree(result.response.contentAsString).get("id").asText()
+        return objectMapper.readTree(result.response.contentAsString).get("managedBuildingId").asText()
     }
 
     private fun submitPayment(token: String, reference: String, receipt: MockMultipartFile?): String {

@@ -10,7 +10,6 @@ import com.sakena.property.domain.model.Apartment
 import com.sakena.property.domain.model.ApartmentId
 import com.sakena.property.domain.model.BuildingId
 import com.sakena.shared.domain.DomainForbiddenException
-import com.sakena.user.domain.UserId
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 
@@ -21,8 +20,8 @@ class ApartmentService(
     private val buildingRepository: BuildingRepository,
 ) {
 
-    fun create(command: CreateApartmentCommand, managerId: UserId): Apartment {
-        requireManagedBuilding(command.buildingId, managerId)
+    fun create(command: CreateApartmentCommand, requesterManagedBuildingId: BuildingId?): Apartment {
+        requireOwnedBuilding(command.buildingId, requesterManagedBuildingId)
         val apartment = Apartment.create(
             buildingId = command.buildingId,
             unitNumber = command.unitNumber,
@@ -33,10 +32,11 @@ class ApartmentService(
         return apartmentRepository.save(apartment)
     }
 
-    fun update(id: ApartmentId, command: UpdateApartmentCommand, managerId: UserId): Apartment {
+    fun update(id: ApartmentId, command: UpdateApartmentCommand, requesterManagedBuildingId: BuildingId?): Apartment {
         val apartment = requireApartment(id)
-        requireManagedBuilding(apartment.buildingId, managerId)
-        requireManagedBuilding(command.buildingId, managerId)
+        requireOwnedBuilding(apartment.buildingId, requesterManagedBuildingId)
+        // A manager may never move a unit into a building they don't administer either.
+        requireOwnedBuilding(command.buildingId, requesterManagedBuildingId)
         apartment.updateDetails(
             newBuildingId = command.buildingId,
             newUnitNumber = command.unitNumber,
@@ -47,39 +47,46 @@ class ApartmentService(
         return apartmentRepository.save(apartment)
     }
 
-    fun delete(id: ApartmentId, managerId: UserId) {
+    fun delete(id: ApartmentId, requesterManagedBuildingId: BuildingId?) {
         val apartment = requireApartment(id)
-        requireManagedBuilding(apartment.buildingId, managerId)
+        requireOwnedBuilding(apartment.buildingId, requesterManagedBuildingId)
         apartmentRepository.deleteById(id)
     }
 
     @Transactional(readOnly = true)
-    fun getById(id: ApartmentId, managerId: UserId): Apartment {
-        val apartment = requireApartment(id)
-        requireManagedBuilding(apartment.buildingId, managerId)
-        return apartment
-    }
+    fun getById(id: ApartmentId): Apartment = requireApartment(id)
 
+    /**
+     * A manager is always scoped to the building they administer, regardless
+     * of what [buildingId] filter they pass — asking for another building's
+     * units returns nothing rather than leaking that building's data. Callers
+     * with no managed building (residents, staff) filter freely or see all.
+     */
     @Transactional(readOnly = true)
-    fun getAll(buildingId: BuildingId?, managerId: UserId): List<Apartment> {
-        val managedBuilding = buildingRepository.findByManagerId(managerId)
-        if (managedBuilding == null) {
-            if (buildingId != null) throw DomainForbiddenException("You do not manage this building")
-            return emptyList()
+    fun getAll(buildingId: BuildingId?, requesterManagedBuildingId: BuildingId?): List<Apartment> {
+        if (requesterManagedBuildingId != null) {
+            if (buildingId != null && buildingId != requesterManagedBuildingId) return emptyList()
+            return apartmentRepository.findAllByBuildingId(requesterManagedBuildingId)
         }
-        if (buildingId != null && buildingId != managedBuilding.id) {
-            throw DomainForbiddenException("You do not manage this building")
+        return if (buildingId == null) {
+            apartmentRepository.findAll()
+        } else {
+            requireBuilding(buildingId)
+            apartmentRepository.findAllByBuildingId(buildingId)
         }
-        return apartmentRepository.findAllByBuildingId(managedBuilding.id)
     }
 
     private fun requireApartment(id: ApartmentId): Apartment =
         apartmentRepository.findById(id) ?: throw ApartmentNotFoundException(id)
 
-    private fun requireManagedBuilding(id: BuildingId, managerId: UserId) {
-        val building = buildingRepository.findById(id) ?: throw BuildingNotFoundException(id)
-        if (building.managerId != managerId) {
-            throw DomainForbiddenException("You do not manage this building")
+    private fun requireBuilding(id: BuildingId) {
+        if (!buildingRepository.existsById(id)) throw BuildingNotFoundException(id)
+    }
+
+    private fun requireOwnedBuilding(id: BuildingId, requesterManagedBuildingId: BuildingId?) {
+        if (requesterManagedBuildingId != id) {
+            throw DomainForbiddenException("You do not manage building '$id'")
         }
+        requireBuilding(id)
     }
 }

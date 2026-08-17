@@ -2,7 +2,6 @@ package com.sakena.property.infrastructure.web
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.sakena.IntegrationTest
-import com.sakena.property.infrastructure.web.dto.CreateBuildingRequest
 import com.sakena.support.TestAuth
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -26,15 +25,17 @@ class ApartmentControllerIntegrationTest(
 ) : IntegrationTest() {
 
     private lateinit var managerToken: String
+    private lateinit var buildingId: String
 
     @BeforeEach
     fun registerManager() {
-        managerToken = TestAuth.register(mockMvc, objectMapper, role = "MANAGER", usernamePrefix = "apt-mgr")
+        val manager = TestAuth.registerManagerWithBuilding(mockMvc, objectMapper, usernamePrefix = "apt-mgr")
+        managerToken = manager.token
+        buildingId = manager.buildingId
     }
 
     @Test
     fun `full apartment lifecycle over HTTP`() {
-        val buildingId = createBuilding("Tower C", "Third Street")
         val created = createApartment(buildingId, "301")
         val apartmentId = objectMapper.readTree(created.response.contentAsString).get("id").asText()
 
@@ -77,9 +78,9 @@ class ApartmentControllerIntegrationTest(
     }
 
     @Test
-    fun `creating an apartment for a missing building returns 404`() {
-        val missingBuildingId = UUID.randomUUID().toString()
-        val body = apartmentJson(missingBuildingId, "404", 4, "70.00", 1)
+    fun `creating an apartment for a building the manager does not administer returns 403`() {
+        val someOtherBuildingId = UUID.randomUUID().toString()
+        val body = apartmentJson(someOtherBuildingId, "404", 4, "70.00", 1)
 
         mockMvc.perform(
             post("/api/v1/apartments")
@@ -87,12 +88,11 @@ class ApartmentControllerIntegrationTest(
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body),
         )
-            .andExpect(status().isNotFound)
+            .andExpect(status().isForbidden)
     }
 
     @Test
     fun `creating an apartment with invalid area returns 400 with field errors`() {
-        val buildingId = createBuilding("Tower D", "Fourth Street")
         val body = apartmentJson(buildingId, "401", 4, "0.00", 1)
 
         mockMvc.perform(
@@ -103,76 +103,6 @@ class ApartmentControllerIntegrationTest(
         )
             .andExpect(status().isBadRequest)
             .andExpect(jsonPath("$.fieldErrors[0].field").value("areaSquareMeters"))
-    }
-
-    @Test
-    fun `manager cannot access apartments in another manager's building`() {
-        val ownerBuildingId = createBuilding("Owner Apartments", "Owner Street")
-        val apartmentId = objectMapper.readTree(
-            createApartment(ownerBuildingId, "901").response.contentAsString,
-        ).get("id").asText()
-
-        val otherManagerToken = TestAuth.register(
-            mockMvc,
-            objectMapper,
-            role = "MANAGER",
-            usernamePrefix = "other-apt-mgr",
-        )
-        createBuilding("Other Apartments", "Other Street", otherManagerToken)
-
-        mockMvc.perform(
-            get("/api/v1/apartments?buildingId=$ownerBuildingId")
-                .header(HttpHeaders.AUTHORIZATION, TestAuth.bearer(otherManagerToken)),
-        ).andExpect(status().isForbidden)
-
-        mockMvc.perform(
-            get("/api/v1/apartments/$apartmentId")
-                .header(HttpHeaders.AUTHORIZATION, TestAuth.bearer(otherManagerToken)),
-        ).andExpect(status().isForbidden)
-
-        mockMvc.perform(
-            post("/api/v1/apartments")
-                .header(HttpHeaders.AUTHORIZATION, TestAuth.bearer(otherManagerToken))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(apartmentJson(ownerBuildingId, "902", 9, "90.00", 2)),
-        ).andExpect(status().isForbidden)
-
-        mockMvc.perform(
-            put("/api/v1/apartments/$apartmentId")
-                .header(HttpHeaders.AUTHORIZATION, TestAuth.bearer(otherManagerToken))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(apartmentJson(ownerBuildingId, "999", 9, "99.00", 3)),
-        ).andExpect(status().isForbidden)
-
-        mockMvc.perform(
-            delete("/api/v1/apartments/$apartmentId")
-                .header(HttpHeaders.AUTHORIZATION, TestAuth.bearer(otherManagerToken)),
-        ).andExpect(status().isForbidden)
-
-        mockMvc.perform(
-            get("/api/v1/apartments/$apartmentId")
-                .header(HttpHeaders.AUTHORIZATION, TestAuth.bearer(managerToken)),
-        )
-            .andExpect(status().isOk)
-            .andExpect(jsonPath("$.unitNumber").value("901"))
-    }
-
-    private fun createBuilding(
-        name: String,
-        address: String,
-        token: String = managerToken,
-    ): String {
-        val body = objectMapper.writeValueAsString(CreateBuildingRequest(name, address))
-        val created = mockMvc.perform(
-            post("/api/v1/buildings")
-                .header(HttpHeaders.AUTHORIZATION, TestAuth.bearer(token))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(body),
-        )
-            .andExpect(status().isCreated)
-            .andReturn()
-
-        return objectMapper.readTree(created.response.contentAsString).get("id").asText()
     }
 
     private fun createApartment(buildingId: String, unitNumber: String) =

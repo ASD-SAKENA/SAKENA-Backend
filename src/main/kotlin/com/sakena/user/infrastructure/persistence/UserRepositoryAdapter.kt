@@ -1,5 +1,6 @@
 package com.sakena.user.infrastructure.persistence
 
+import com.sakena.property.domain.model.BuildingId
 import com.sakena.user.domain.Role
 import com.sakena.user.domain.User
 import com.sakena.user.domain.UserId
@@ -16,6 +17,9 @@ class UserRepositoryAdapter(
         val saved = jpaRepo.save(entity)
         return toDomain(saved)
     }
+
+    override fun findAll(): List<User> =
+        jpaRepo.findAll().map(::toDomain)
 
     override fun findAllByIds(ids: Set<UserId>): List<User> {
         if (ids.isEmpty()) return emptyList()
@@ -50,7 +54,8 @@ class UserRepositoryAdapter(
             createdAt = user.createdAt,
             updatedAt = user.updatedAt,
             active = user.active,
-            specialty = user.specialty
+            specialty = user.specialty,
+            managedBuildingId = user.managedBuildingId?.value
         )
     }
 
@@ -64,7 +69,8 @@ class UserRepositoryAdapter(
             createdAt = entity.createdAt,
             updatedAt = entity.updatedAt,
             active = entity.active,
-            specialty = entity.specialty
+            specialty = entity.specialty,
+            managedBuildingId = entity.managedBuildingId?.let(::BuildingId)
         )
     }
 }

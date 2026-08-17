@@ -1,7 +1,6 @@
 package com.sakena.property.domain.model
 
 import com.sakena.shared.domain.DomainValidationException
-import com.sakena.user.domain.UserId
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -11,12 +10,10 @@ class BuildingTest {
 
     @Test
     fun `create trims building fields`() {
-        val managerId = UserId.generate()
-        val building = Building.create("  North Tower  ", "  Main Street  ", managerId)
+        val building = Building.create("  North Tower  ", "  Main Street  ")
 
         assertEquals("North Tower", building.name)
         assertEquals("Main Street", building.address)
-        assertEquals(managerId, building.managerId)
     }
 
     @Test

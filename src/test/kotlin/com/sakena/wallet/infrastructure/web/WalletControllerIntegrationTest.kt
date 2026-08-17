@@ -2,7 +2,6 @@ package com.sakena.wallet.infrastructure.web
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.sakena.IntegrationTest
-import com.sakena.property.infrastructure.web.dto.CreateBuildingRequest
 import com.sakena.user.domain.UserRepository
 import com.sakena.user.infrastructure.web.RegisterRequest
 import com.sakena.wallet.domain.model.TransactionCategory
@@ -101,8 +100,6 @@ class WalletControllerIntegrationTest(
     fun `each manager uses only their building wallet`() {
         val firstManager = register("first-wallet-manager", "MANAGER")
         val secondManager = register("second-wallet-manager", "MANAGER")
-        createBuilding(firstManager.token, "First wallet building")
-        createBuilding(secondManager.token, "Second wallet building")
 
         val expense = RecordBuildingTransactionRequest(
             direction = TransactionDirection.DEBIT,
@@ -138,19 +135,6 @@ class WalletControllerIntegrationTest(
 
     private fun authorizedGet(path: String, token: String) =
         get(path).header(HttpHeaders.AUTHORIZATION, bearer(token))
-
-    private fun createBuilding(token: String, name: String) {
-        mockMvc.perform(
-            post("/api/v1/buildings")
-                .header(HttpHeaders.AUTHORIZATION, bearer(token))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    objectMapper.writeValueAsBytes(
-                        CreateBuildingRequest(name, "$name address"),
-                    ),
-                ),
-        ).andExpect(status().isCreated)
-    }
 
     private fun register(usernamePrefix: String, role: String): RegisteredUser {
         val username = "$usernamePrefix-${UUID.randomUUID().toString().take(8)}"

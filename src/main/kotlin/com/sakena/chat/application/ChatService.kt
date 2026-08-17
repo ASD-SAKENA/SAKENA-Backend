@@ -10,9 +10,11 @@ import com.sakena.chat.domain.model.ChatAttachment
 import com.sakena.chat.domain.model.ChatMessage
 import com.sakena.chat.domain.model.ChatMessageId
 import com.sakena.chat.domain.model.ChatMessageKind
-import com.sakena.property.domain.BuildingAccess
+import com.sakena.property.domain.ApartmentRepository
 import com.sakena.property.domain.BuildingRepository
 import com.sakena.property.domain.model.BuildingId
+import com.sakena.residency.domain.ResidencyRepository
+import com.sakena.shared.domain.DomainForbiddenException
 import com.sakena.shared.domain.DomainValidationException
 import com.sakena.shared.domain.EntityNotFoundException
 import com.sakena.user.domain.Role
@@ -32,7 +34,8 @@ class ChatService(
     private val messageRepository: ChatMessageRepository,
     private val attachmentStorage: ChatAttachmentStorage,
     private val buildingRepository: BuildingRepository,
-    private val buildingAccess: BuildingAccess,
+    private val residencyRepository: ResidencyRepository,
+    private val apartmentRepository: ApartmentRepository,
 ) {
 
     companion object {
@@ -141,17 +144,31 @@ class ChatService(
     }
 
     /**
-     * Every role may only reach the building assigned through its own trusted
-     * ownership or membership relation.
+     * A building's chat is only for the people who actually live or work
+     * there: a resident of that specific unit, or the manager administering
+     * that specific building. Service staff have no building of their own —
+     * their work is filed through service requests, not chat — so they never
+     * get in.
      */
     private fun requireMembership(buildingId: BuildingId, user: User) {
-        if (buildingRepository.findById(buildingId) == null) {
+        if (!buildingRepository.existsById(buildingId)) {
             throw EntityNotFoundException("Building with id '$buildingId' was not found")
         }
         when (user.role) {
-            Role.MANAGER -> buildingAccess.requireManagerAccess(buildingId, user.id)
-            Role.RESIDENT -> buildingAccess.requireResidentAccess(buildingId, user.id)
-            Role.STAFF -> buildingAccess.requireStaffAccess(buildingId, user.id)
+            Role.MANAGER -> {
+                if (user.managedBuildingId != buildingId) {
+                    throw DomainForbiddenException("You do not manage this building")
+                }
+            }
+            Role.RESIDENT -> {
+                val residency = residencyRepository.findActiveByResident(user.id)
+                    ?: throw DomainForbiddenException("You are not a resident of any building")
+                val residentBuildingId = apartmentRepository.findById(residency.apartmentId)?.buildingId
+                if (residentBuildingId != buildingId) {
+                    throw DomainForbiddenException("You are not a resident of this building")
+                }
+            }
+            Role.STAFF, Role.ADMIN -> throw DomainForbiddenException("You do not have access to building chat")
         }
     }
 

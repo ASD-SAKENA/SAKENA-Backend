@@ -1,5 +1,6 @@
 package com.sakena.user.domain
 
+import com.sakena.property.domain.model.BuildingId
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -37,7 +38,8 @@ class UserTest {
             email = "john@example.com",
             rawPassword = rawPassword,
             passwordEncoder = encoder,
-            role = Role.MANAGER
+            role = Role.MANAGER,
+            managedBuildingId = BuildingId.new()
         )
 
         assertEquals("john_doe", user.username)
@@ -50,6 +52,34 @@ class UserTest {
         assertNotNull(user.updatedAt)
         assertTrue(user.createdAt <= Instant.now())
         assertTrue(user.updatedAt <= Instant.now())
+    }
+
+    @Test
+    fun `a manager must administer a building`() {
+        assertThrows<IllegalArgumentException> {
+            User.register(
+                username = "john_doe",
+                email = "john@example.com",
+                rawPassword = "secret123",
+                passwordEncoder = { it },
+                role = Role.MANAGER,
+                managedBuildingId = null
+            )
+        }
+    }
+
+    @Test
+    fun `a non-manager cannot administer a building`() {
+        assertThrows<IllegalArgumentException> {
+            User.register(
+                username = "jane",
+                email = "jane@example.com",
+                rawPassword = "secret123",
+                passwordEncoder = { it },
+                role = Role.RESIDENT,
+                managedBuildingId = BuildingId.new()
+            )
+        }
     }
 
     @Test
@@ -169,5 +199,31 @@ class UserTest {
     @Test
     fun `specialty defaults to null when not provided`() {
         assertNull(createTestUser().specialty)
+    }
+
+    // --- withRole tests ---
+
+    @Test
+    fun `withRole should change the role and clear the managed building for a non-manager`() {
+        val user = createTestUser(role = Role.RESIDENT)
+        val promoted = user.withRole(Role.ADMIN, managedBuildingId = null)
+        assertEquals(Role.ADMIN, promoted.role)
+        assertNull(promoted.managedBuildingId)
+    }
+
+    @Test
+    fun `withRole should reject a manager without a managed building`() {
+        val user = createTestUser(role = Role.RESIDENT)
+        assertThrows<IllegalArgumentException> {
+            user.withRole(Role.MANAGER, managedBuildingId = null)
+        }
+    }
+
+    @Test
+    fun `withRole should reject a managed building for a non-manager`() {
+        val user = createTestUser(role = Role.RESIDENT)
+        assertThrows<IllegalArgumentException> {
+            user.withRole(Role.STAFF, managedBuildingId = BuildingId.new())
+        }
     }
 }

@@ -35,6 +35,7 @@ class SecurityConfig(
     private val manager = Role.MANAGER.name
     private val resident = Role.RESIDENT.name
     private val staff = Role.STAFF.name
+    private val admin = Role.ADMIN.name
 
     @Bean
     fun securityFilterChain(http: HttpSecurity): SecurityFilterChain {
@@ -81,9 +82,12 @@ class SecurityConfig(
                     // Residents may fund only the personal wallet bound to their identity.
                     .requestMatchers(HttpMethod.POST, "/api/v1/wallets/me/top-ups").hasRole(resident)
 
+                    // ─── Admin-only surface ───
+                    .requestMatchers("/api/v1/users/**").hasRole(admin)
+
                     // ─── Manager-only surface ───
                     .requestMatchers("/api/v1/dashboard/manager").hasRole(manager)
-                    .requestMatchers("/api/v1/users/**").hasRole(manager)
+                    .requestMatchers("/api/v1/staff").hasRole(manager)
                     .requestMatchers("/api/v1/invitations/**").hasRole(manager)
                     .requestMatchers("/api/v1/charge-periods/**").hasRole(manager)
                     .requestMatchers(HttpMethod.POST, "/api/v1/invoices/*/payments").hasRole(manager)
