@@ -1,5 +1,6 @@
 package com.sakena.user.infrastructure.web
 
+import com.sakena.rating.application.RatingService
 import com.sakena.user.application.StaffDirectoryService
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.security.SecurityRequirement
@@ -9,7 +10,6 @@ import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 
-/** Lets a manager see who is assignable to a service request, without the admin-only full user list. */
 @PreAuthorize("hasRole('MANAGER')")
 @RestController
 @RequestMapping("/api/v1/staff")
@@ -17,10 +17,14 @@ import org.springframework.web.bind.annotation.RestController
 @SecurityRequirement(name = "bearerAuth")
 class StaffController(
     private val staffDirectoryService: StaffDirectoryService,
+    private val ratingService: RatingService,
 ) {
 
     @GetMapping
-    @Operation(summary = "List active service staff")
-    fun list(): List<UserSummaryResponse> =
-        staffDirectoryService.getActiveStaff().map(UserSummaryResponse::from)
+    @Operation(summary = "List active service staff with their average rating")
+    fun list(): List<StaffSummaryResponse> {
+        val staff = staffDirectoryService.getActiveStaff()
+        val averages = ratingService.getAverageFor(staff.map { it.id })
+        return staff.map { StaffSummaryResponse.from(it, averages[it.id]) }
+    }
 }
