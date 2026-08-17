@@ -116,6 +116,63 @@ class ServiceRequestServiceTest {
     }
 
     @Test
+    fun `confirmCompletionAndRate transitions a completed request to CONFIRMED`() {
+        val resident = user(Role.RESIDENT)
+        val worker = user(Role.STAFF)
+        val request = serviceRequest(
+            status = ServiceRequestStatus.COMPLETED,
+            completionCost = null,
+            createdBy = resident.id,
+        ).copy(assignedTo = worker.id)
+        every { serviceRequestRepository.findById(request.id) } returns request
+        every { serviceRequestRepository.save(any()) } answers { firstArg() }
+
+        val result = service.confirmCompletionAndRate(
+            ConfirmCompletionCommand(request.id, resident.id, score = 5),
+        )
+
+        assertEquals(ServiceRequestStatus.CONFIRMED, result.status)
+    }
+
+    @Test
+    fun `confirmCompletionAndRate rejects a non-owner`() {
+        val resident = user(Role.RESIDENT)
+        val stranger = user(Role.RESIDENT)
+        val request = serviceRequest(
+            status = ServiceRequestStatus.COMPLETED,
+            completionCost = null,
+            createdBy = resident.id,
+        )
+        every { serviceRequestRepository.findById(request.id) } returns request
+
+        assertFailsWith<DomainForbiddenException> {
+            service.confirmCompletionAndRate(
+                ConfirmCompletionCommand(request.id, stranger.id, score = 5),
+            )
+        }
+        verify(exactly = 0) { serviceRequestRepository.save(any()) }
+    }
+
+    @Test
+    fun `rejectCompletion returns a completed request to IN_PROGRESS`() {
+        val resident = user(Role.RESIDENT)
+        val request = serviceRequest(
+            status = ServiceRequestStatus.COMPLETED,
+            completionCost = 250.0,
+            createdBy = resident.id,
+        )
+        every { serviceRequestRepository.findById(request.id) } returns request
+        every { serviceRequestRepository.save(any()) } answers { firstArg() }
+
+        val result = service.rejectCompletion(
+            RejectCompletionCommand(request.id, resident.id),
+        )
+
+        assertEquals(ServiceRequestStatus.IN_PROGRESS, result.status)
+        assertEquals(null, result.completionCost)
+    }
+
+    @Test
     fun `manager assigns cost responsibility to a request in the building they administer`() {
         val manager = user(Role.MANAGER)
         val apartmentId = ApartmentId.new()
