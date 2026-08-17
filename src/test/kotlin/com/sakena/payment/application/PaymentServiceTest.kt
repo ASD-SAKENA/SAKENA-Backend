@@ -7,11 +7,12 @@ import com.sakena.payment.domain.PaymentReceiptAccess
 import com.sakena.payment.domain.PaymentReceiptStorage
 import com.sakena.payment.domain.model.Payment
 import com.sakena.payment.domain.model.PaymentStatus
+import com.sakena.property.domain.BuildingAccess
+import com.sakena.property.domain.model.BuildingId
 import com.sakena.shared.domain.DomainConflictException
 import com.sakena.shared.domain.DomainForbiddenException
 import com.sakena.shared.domain.DomainValidationException
 import com.sakena.shared.domain.EntityNotFoundException
-import com.sakena.property.domain.model.BuildingId
 import com.sakena.user.domain.Role
 import com.sakena.user.domain.User
 import com.sakena.user.domain.UserId
@@ -29,10 +30,16 @@ import kotlin.test.assertFailsWith
 
 class PaymentServiceTest {
 
+    private val buildingId = BuildingId.new()
     private val repository = mockk<PaymentRepository>()
     private val userRepository = mockk<UserRepository>()
     private val receiptStorage = mockk<PaymentReceiptStorage>()
-    private val service = PaymentService(repository, userRepository, receiptStorage)
+    private val buildingAccess = mockk<BuildingAccess> {
+        every { residentBuildingId(any()) } returns buildingId
+        every { managedBuildingId(any()) } returns buildingId
+        every { requireManagerAccess(buildingId, any()) } returns Unit
+    }
+    private val service = PaymentService(repository, userRepository, receiptStorage, buildingAccess)
 
     @Test
     fun `submit persists a pending claim for the authenticated resident`() {
@@ -189,7 +196,7 @@ class PaymentServiceTest {
         val manager = user(Role.MANAGER)
         val pending = listOf(pendingPayment(UserId.generate(), "TX-PENDING"))
         every { userRepository.findById(manager.id) } returns manager
-        every { repository.findAllPendingNewestFirst() } returns pending
+        every { repository.findAllPendingByBuildingNewestFirst(buildingId) } returns pending
 
         assertEquals(pending, service.getPending(manager.id))
     }
@@ -207,6 +214,22 @@ class PaymentServiceTest {
         assertEquals(PaymentStatus.CONFIRMED, result.status)
         assertEquals(manager.id, result.reviewedBy)
         verify(exactly = 1) { repository.save(payment) }
+    }
+
+    @Test
+    fun `manager cannot review another building's payment`() {
+        val manager = user(Role.MANAGER)
+        val otherBuildingId = BuildingId.new()
+        val payment = pendingPayment(UserId.generate(), "TX-OTHER", buildingId = otherBuildingId)
+        every { userRepository.findById(manager.id) } returns manager
+        every { repository.findById(payment.id) } returns payment
+        every { buildingAccess.requireManagerAccess(otherBuildingId, manager.id) } throws
+            DomainForbiddenException("You do not manage this building")
+
+        assertFailsWith<DomainForbiddenException> {
+            service.confirm(payment.id, manager.id)
+        }
+        verify(exactly = 0) { repository.save(any()) }
     }
 
     @Test
@@ -270,8 +293,10 @@ class PaymentServiceTest {
         payerId: UserId,
         reference: String,
         receiptObjectKey: String? = null,
+        buildingId: BuildingId = this.buildingId,
     ): Payment =
         Payment.submit(
+            buildingId = buildingId,
             payerId = payerId,
             title = "Monthly charge",
             amount = BigDecimal("850000"),

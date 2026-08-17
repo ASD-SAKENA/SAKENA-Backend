@@ -28,14 +28,33 @@ class ServiceRequestRepositoryImpl(
         return jpa.findById(id.value).orElse(null)?.let { toDomain(it) }
     }
 
-    override fun findAll(): List<ServiceRequest> {
-        return jpa.findAll().map { toDomain(it) }
+    override fun findAllByApartmentIds(apartmentIds: Set<ApartmentId>): List<ServiceRequest> {
+        if (apartmentIds.isEmpty()) return emptyList()
+        return jpa.findAllByRequestingApartmentIdIn(apartmentIds.mapTo(mutableSetOf()) { it.value })
+            .map { toDomain(it) }
     }
 
-    override fun findAllByFilters(filters: ServiceRequestFilters): List<ServiceRequest> {
+    override fun findAllByFilters(filters: ServiceRequestFilters): List<ServiceRequest> =
+        findAllByFilters(filters, null)
+
+    override fun findAllByApartmentIdsAndFilters(
+        apartmentIds: Set<ApartmentId>,
+        filters: ServiceRequestFilters,
+    ): List<ServiceRequest> {
+        if (apartmentIds.isEmpty()) return emptyList()
+        return findAllByFilters(filters, apartmentIds)
+    }
+
+    private fun findAllByFilters(
+        filters: ServiceRequestFilters,
+        apartmentIds: Set<ApartmentId>?,
+    ): List<ServiceRequest> {
         val spec = org.springframework.data.jpa.domain.Specification<ServiceRequestJpaEntity> { root, _, cb ->
             val predicates = mutableListOf<Predicate>()
 
+            apartmentIds?.let { ids ->
+                predicates.add(root.get<UUID>("requestingApartmentId").`in`(ids.map { it.value }))
+            }
             filters.createdBy?.let { predicates.add(cb.equal(root.get<UUID>("createdBy"), it.value)) }
             filters.updatedBy?.let { predicates.add(cb.equal(root.get<UUID>("updatedBy"), it.value)) }
             filters.assignedTo?.let { predicates.add(cb.equal(root.get<UUID>("assignedTo"), it.value)) }

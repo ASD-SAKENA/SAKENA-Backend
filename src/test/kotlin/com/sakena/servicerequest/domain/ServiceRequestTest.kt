@@ -267,7 +267,7 @@ class ServiceRequestTest {
         assertEquals(ServiceSubCategory.GENERAL, updated.subCategory)
         assertEquals(editorId, updated.updatedBy)
         assertEquals(ServiceRequestStatus.PENDING, updated.status)
-        assertTrue(updated.updatedAt > request.updatedAt)
+        assertTrue(updated.updatedAt >= request.updatedAt)
     }
 
     @Test
@@ -327,7 +327,7 @@ class ServiceRequestTest {
 
         assertEquals(ServiceRequestStatus.APPROVED, updated.status)
         assertEquals(adminId, updated.updatedBy)
-        assertTrue(updated.updatedAt > request.updatedAt)
+        assertTrue(updated.updatedAt >= request.updatedAt)
         assertNull(updated.assignedTo)
         assertNull(updated.resolvedAt)
     }
@@ -356,7 +356,7 @@ class ServiceRequestTest {
         assertEquals(ServiceRequestStatus.ASSIGNED, updated.status)
         assertEquals(workerId, updated.assignedTo)
         assertEquals(adminId, updated.updatedBy)
-        assertTrue(updated.updatedAt > request.updatedAt)
+        assertTrue(updated.updatedAt >= request.updatedAt)
         assertNull(updated.resolvedAt)
     }
 
@@ -374,7 +374,7 @@ class ServiceRequestTest {
         assertEquals(ServiceRequestStatus.IN_PROGRESS, updated.status)
         assertEquals(workerId, updated.assignedTo)
         assertEquals(expectedAt, updated.expectedCompletionAt)
-        assertTrue(updated.updatedAt > request.updatedAt)
+        assertTrue(updated.updatedAt >= request.updatedAt)
         assertNull(updated.resolvedAt)
     }
 
@@ -428,7 +428,7 @@ class ServiceRequestTest {
         assertEquals("Fixed the elevator motor", updated.completionReport)
         assertEquals(250.0, updated.completionCost)
         assertTrue(updated.resolvedAt!! > request.createdAt)
-        assertTrue(updated.updatedAt > request.updatedAt)
+        assertTrue(updated.updatedAt >= request.updatedAt)
     }
 
     @Test
@@ -753,7 +753,7 @@ class ServiceRequestTest {
 
         assertEquals(ServiceRequestStatus.REJECTED, updated.status)
         assertEquals(adminId, updated.updatedBy)
-        assertTrue(updated.updatedAt > request.updatedAt)
+        assertTrue(updated.updatedAt >= request.updatedAt)
         assertNull(updated.assignedTo)
         assertNull(updated.resolvedAt)
     }

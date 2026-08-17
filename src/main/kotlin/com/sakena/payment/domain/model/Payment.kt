@@ -2,6 +2,7 @@ package com.sakena.payment.domain.model
 
 import com.sakena.shared.domain.DomainConflictException
 import com.sakena.shared.domain.DomainValidationException
+import com.sakena.property.domain.model.BuildingId
 import com.sakena.user.domain.UserId
 import java.math.BigDecimal
 import java.time.Instant
@@ -18,6 +19,7 @@ enum class PaymentStatus {
  */
 class Payment private constructor(
     val id: PaymentId,
+    val buildingId: BuildingId?,
     val payerId: UserId,
     val title: String,
     val amount: BigDecimal,
@@ -82,6 +84,7 @@ class Payment private constructor(
         const val MAX_REJECTION_REASON_LENGTH = 500
 
         fun submit(
+            buildingId: BuildingId,
             payerId: UserId,
             title: String,
             amount: BigDecimal,
@@ -90,6 +93,7 @@ class Payment private constructor(
         ): Payment =
             Payment(
                 id = PaymentId.new(),
+                buildingId = buildingId,
                 payerId = payerId,
                 title = validateTitle(title),
                 amount = validateAmount(amount),
@@ -105,6 +109,7 @@ class Payment private constructor(
         /** Rebuilds an aggregate from already-persisted state. */
         fun reconstitute(
             id: PaymentId,
+            buildingId: BuildingId?,
             payerId: UserId,
             title: String,
             amount: BigDecimal,
@@ -117,6 +122,7 @@ class Payment private constructor(
             rejectionReason: String?,
         ): Payment = Payment(
             id = id,
+            buildingId = buildingId,
             payerId = payerId,
             title = title,
             amount = amount,

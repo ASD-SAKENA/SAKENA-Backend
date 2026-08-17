@@ -1,6 +1,7 @@
 package com.sakena.announcement.domain.model
 
 import com.sakena.shared.domain.DomainValidationException
+import com.sakena.property.domain.model.BuildingId
 import com.sakena.user.domain.UserId
 import java.time.Instant
 
@@ -12,6 +13,7 @@ import java.time.Instant
  */
 class Announcement private constructor(
     val id: AnnouncementId,
+    val buildingId: BuildingId?,
     val title: String,
     val body: String,
     val createdBy: UserId,
@@ -22,9 +24,15 @@ class Announcement private constructor(
         const val MAX_TITLE_LENGTH = 200
         const val MAX_BODY_LENGTH = 4_000
 
-        fun create(title: String, body: String, createdBy: UserId): Announcement =
+        fun create(
+            title: String,
+            body: String,
+            createdBy: UserId,
+            buildingId: BuildingId,
+        ): Announcement =
             Announcement(
                 id = AnnouncementId.new(),
+                buildingId = buildingId,
                 title = validateTitle(title),
                 body = validateBody(body),
                 createdBy = createdBy,
@@ -34,11 +42,12 @@ class Announcement private constructor(
         /** Rebuilds an aggregate from already-persisted state. No invariants are re-checked. */
         fun reconstitute(
             id: AnnouncementId,
+            buildingId: BuildingId?,
             title: String,
             body: String,
             createdBy: UserId,
             createdAt: Instant,
-        ): Announcement = Announcement(id, title, body, createdBy, createdAt)
+        ): Announcement = Announcement(id, buildingId, title, body, createdBy, createdAt)
 
         private fun validateTitle(title: String): String {
             val trimmed = title.trim()

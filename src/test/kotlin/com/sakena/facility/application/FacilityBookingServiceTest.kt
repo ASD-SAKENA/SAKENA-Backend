@@ -3,17 +3,15 @@ package com.sakena.facility.application
 import com.sakena.facility.application.command.BookFacilityCommand
 import com.sakena.facility.domain.BookingNotFoundException
 import com.sakena.facility.domain.FacilityBookingRepository
+import com.sakena.facility.domain.FacilityNotFoundException
 import com.sakena.facility.domain.FacilityRepository
 import com.sakena.facility.domain.model.BookingRules
 import com.sakena.facility.domain.model.Facility
 import com.sakena.facility.domain.model.FacilityBooking
-import com.sakena.residency.application.ResidencyService
-import com.sakena.residency.domain.model.Residency
-import com.sakena.residency.domain.model.TenancyType
-import com.sakena.property.domain.model.ApartmentId
-import com.sakena.shared.domain.DomainConflictException
-import com.sakena.shared.domain.DomainForbiddenException
+import com.sakena.facility.domain.model.FacilityId
+import com.sakena.property.domain.BuildingAccess
 import com.sakena.property.domain.model.BuildingId
+import com.sakena.shared.domain.DomainConflictException
 import com.sakena.user.domain.Role
 import com.sakena.user.domain.User
 import com.sakena.user.domain.UserId
@@ -22,6 +20,7 @@ import io.mockk.justRun
 import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import java.math.BigDecimal
 import java.time.Instant
@@ -35,17 +34,18 @@ class FacilityBookingServiceTest {
 
     private val facilityRepository = mockk<FacilityRepository>()
     private val bookingRepository = mockk<FacilityBookingRepository>()
-    private val residencyService = mockk<ResidencyService>()
+    private val buildingAccess = mockk<BuildingAccess>()
     private val zone = ZoneId.of(TIMEZONE)
-    private val service = FacilityBookingService(facilityRepository, bookingRepository, residencyService, TIMEZONE)
+    private val service = FacilityBookingService(
+        facilityRepository,
+        bookingRepository,
+        buildingAccess,
+        TIMEZONE,
+    )
 
+    private val buildingId = BuildingId.new()
     private val resident = user(Role.RESIDENT)
     private val manager = user(Role.MANAGER)
-
-    init {
-        every { residencyService.requireActiveResidency(resident.id) } returns
-            Residency.start(ApartmentId.new(), resident.id, TenancyType.TENANT)
-    }
 
     /** Tomorrow 10:00–11:00 local time — inside the default 08–22 window. */
     private val start: Instant = Instant.now()
@@ -56,15 +56,21 @@ class FacilityBookingServiceTest {
         .toInstant()
     private val end: Instant = start.plus(1, ChronoUnit.HOURS)
 
+    @BeforeEach
+    fun setUpBuildingAccess() {
+        every { buildingAccess.residentBuildingId(resident.id) } returns buildingId
+        every { buildingAccess.managedBuildingId(manager.id) } returns buildingId
+    }
+
     @Test
     fun `book saves a booking while the slot has free capacity`() {
         val facility = facility(capacity = 10)
-        every { facilityRepository.findById(facility.id) } returns facility
+        every { facilityRepository.findByIdAndBuildingId(facility.id, buildingId) } returns facility
         every { bookingRepository.countOverlapping(facility.id, start, end) } returns 9
         val saved = slot<FacilityBooking>()
         every { bookingRepository.save(capture(saved)) } answers { saved.captured }
 
-        val result = service.book(facility.id, BookFacilityCommand(start, end), resident.id)
+        val result = service.book(facility.id, BookFacilityCommand(start, end), resident)
 
         assertEquals(facility.id, result.facilityId)
         assertEquals(resident.id, result.bookedBy)
@@ -74,11 +80,11 @@ class FacilityBookingServiceTest {
     @Test
     fun `book locks the slot once capacity is reached`() {
         val facility = facility(capacity = 10)
-        every { facilityRepository.findById(facility.id) } returns facility
+        every { facilityRepository.findByIdAndBuildingId(facility.id, buildingId) } returns facility
         every { bookingRepository.countOverlapping(facility.id, start, end) } returns 10
 
         assertFailsWith<DomainConflictException> {
-            service.book(facility.id, BookFacilityCommand(start, end), resident.id)
+            service.book(facility.id, BookFacilityCommand(start, end), resident)
         }
         verify(exactly = 0) { bookingRepository.save(any()) }
     }
@@ -86,10 +92,10 @@ class FacilityBookingServiceTest {
     @Test
     fun `book rejects a slot outside the opening hours`() {
         val facility = facility(rules = rules(opensAt = LocalTime.of(18, 0)))
-        every { facilityRepository.findById(facility.id) } returns facility
+        every { facilityRepository.findByIdAndBuildingId(facility.id, buildingId) } returns facility
 
         assertFailsWith<DomainConflictException> {
-            service.book(facility.id, BookFacilityCommand(start, end), resident.id)
+            service.book(facility.id, BookFacilityCommand(start, end), resident)
         }
         verify(exactly = 0) { bookingRepository.save(any()) }
     }
@@ -97,24 +103,24 @@ class FacilityBookingServiceTest {
     @Test
     fun `book rejects a slot in the past`() {
         val facility = facility()
-        every { facilityRepository.findById(facility.id) } returns facility
+        every { facilityRepository.findByIdAndBuildingId(facility.id, buildingId) } returns facility
         val past = start.minus(3, ChronoUnit.DAYS)
 
         assertFailsWith<DomainConflictException> {
-            service.book(facility.id, BookFacilityCommand(past, past.plus(1, ChronoUnit.HOURS)), resident.id)
+            service.book(facility.id, BookFacilityCommand(past, past.plus(1, ChronoUnit.HOURS)), resident)
         }
     }
 
     @Test
     fun `book rejects a resident who has used up the weekly quota`() {
         val facility = facility(rules = rules(maxPerResidentPerWeek = 2))
-        every { facilityRepository.findById(facility.id) } returns facility
+        every { facilityRepository.findByIdAndBuildingId(facility.id, buildingId) } returns facility
         every {
             bookingRepository.countByResidentBetween(facility.id, resident.id, any(), any())
         } returns 2
 
         assertFailsWith<DomainConflictException> {
-            service.book(facility.id, BookFacilityCommand(start, end), resident.id)
+            service.book(facility.id, BookFacilityCommand(start, end), resident)
         }
         verify(exactly = 0) { bookingRepository.save(any()) }
     }
@@ -122,7 +128,7 @@ class FacilityBookingServiceTest {
     @Test
     fun `book allows a resident still inside the weekly quota`() {
         val facility = facility(rules = rules(maxPerResidentPerWeek = 2))
-        every { facilityRepository.findById(facility.id) } returns facility
+        every { facilityRepository.findByIdAndBuildingId(facility.id, buildingId) } returns facility
         every {
             bookingRepository.countByResidentBetween(facility.id, resident.id, any(), any())
         } returns 1
@@ -130,37 +136,24 @@ class FacilityBookingServiceTest {
         val saved = slot<FacilityBooking>()
         every { bookingRepository.save(capture(saved)) } answers { saved.captured }
 
-        service.book(facility.id, BookFacilityCommand(start, end), resident.id)
+        service.book(facility.id, BookFacilityCommand(start, end), resident)
 
         verify(exactly = 1) { bookingRepository.save(any()) }
     }
 
     @Test
-    fun `book rejects a resident with no active residency`() {
-        val facility = facility(capacity = 10)
-        val outsider = user(Role.RESIDENT)
-        every { facilityRepository.findById(facility.id) } returns facility
-        every { residencyService.requireActiveResidency(outsider.id) } throws
-            DomainForbiddenException("You must be an active resident of a unit to do this")
-
-        assertFailsWith<DomainForbiddenException> {
-            service.book(facility.id, BookFacilityCommand(start, end), outsider.id)
-        }
-        verify(exactly = 0) { bookingRepository.save(any()) }
-    }
-
-    @Test
     fun `quote prices a slot from the hourly rate`() {
         val facility = facility(rules = rules(hourlyPrice = BigDecimal("50000")))
-        every { facilityRepository.findById(facility.id) } returns facility
+        every { facilityRepository.findByIdAndBuildingId(facility.id, buildingId) } returns facility
 
-        assertEquals(BigDecimal("50000"), service.quote(facility.id, start, end))
+        assertEquals(BigDecimal("50000"), service.quote(facility.id, start, end, resident))
     }
 
     @Test
     fun `cancel rejects a booking that belongs to someone else`() {
         val facility = facility()
         val booking = FacilityBooking.create(facility.id, UserId.generate(), start, end)
+        every { facilityRepository.findByIdAndBuildingId(facility.id, buildingId) } returns facility
         every { bookingRepository.findById(booking.id) } returns booking
 
         assertFailsWith<DomainConflictException> {
@@ -172,6 +165,7 @@ class FacilityBookingServiceTest {
     fun `cancel removes the resident's own booking`() {
         val facility = facility()
         val booking = FacilityBooking.create(facility.id, resident.id, start, end)
+        every { facilityRepository.findByIdAndBuildingId(facility.id, buildingId) } returns facility
         every { bookingRepository.findById(booking.id) } returns booking
         justRun { bookingRepository.deleteById(booking.id) }
 
@@ -184,6 +178,7 @@ class FacilityBookingServiceTest {
     fun `cancel lets the manager remove anyone's booking`() {
         val facility = facility()
         val booking = FacilityBooking.create(facility.id, resident.id, start, end)
+        every { facilityRepository.findByIdAndBuildingId(facility.id, buildingId) } returns facility
         every { bookingRepository.findById(booking.id) } returns booking
         justRun { bookingRepository.deleteById(booking.id) }
 
@@ -196,6 +191,7 @@ class FacilityBookingServiceTest {
     fun `cancel throws when the booking is missing`() {
         val facility = facility()
         val booking = FacilityBooking.create(facility.id, resident.id, start, end)
+        every { facilityRepository.findByIdAndBuildingId(facility.id, buildingId) } returns facility
         every { bookingRepository.findById(booking.id) } returns null
 
         assertFailsWith<BookingNotFoundException> {
@@ -203,10 +199,57 @@ class FacilityBookingServiceTest {
         }
     }
 
+    @Test
+    fun `resident cannot book a facility outside their building`() {
+        val facilityId = FacilityId.new()
+        every { facilityRepository.findByIdAndBuildingId(facilityId, buildingId) } returns null
+
+        assertFailsWith<FacilityNotFoundException> {
+            service.book(facilityId, BookFacilityCommand(start, end), resident)
+        }
+        verify(exactly = 0) { bookingRepository.save(any()) }
+    }
+
+    @Test
+    fun `resident upcoming bookings are queried only in their current building`() {
+        val booking = FacilityBooking.create(facility().id, resident.id, start, end)
+        every {
+            bookingRepository.findUpcomingByResidentInBuilding(resident.id, buildingId, any())
+        } returns listOf(booking)
+
+        assertEquals(listOf(booking), service.getUpcomingFor(resident))
+    }
+
+    @Test
+    fun `resident cannot list bookings for a facility outside their building`() {
+        val facilityId = FacilityId.new()
+        every { facilityRepository.findByIdAndBuildingId(facilityId, buildingId) } returns null
+
+        assertFailsWith<FacilityNotFoundException> {
+            service.getForFacilityBetween(facilityId, start, end, resident)
+        }
+        verify(exactly = 0) { bookingRepository.findAllForFacilityBetween(any(), any(), any()) }
+    }
+
+    @Test
+    fun `manager cannot cancel a booking for a facility outside their building`() {
+        val foreignFacility = Facility.create(BuildingId.new(), "Foreign pool", "pool")
+        val booking = FacilityBooking.create(foreignFacility.id, resident.id, start, end)
+        every {
+            facilityRepository.findByIdAndBuildingId(foreignFacility.id, buildingId)
+        } returns null
+
+        assertFailsWith<FacilityNotFoundException> {
+            service.cancel(foreignFacility.id, booking.id, manager)
+        }
+        verify(exactly = 0) { bookingRepository.findById(any()) }
+        verify(exactly = 0) { bookingRepository.deleteById(any()) }
+    }
+
     private fun facility(
         capacity: Int = 10,
         rules: BookingRules = BookingRules.DEFAULT,
-    ) = Facility.create("Pool", "pool", capacity = capacity, rules = rules)
+    ) = Facility.create(buildingId, "Pool", "pool", capacity = capacity, rules = rules)
 
     private fun rules(
         opensAt: LocalTime = LocalTime.of(8, 0),
@@ -226,7 +269,7 @@ class FacilityBookingServiceTest {
         role = role,
         createdAt = Instant.now(),
         updatedAt = Instant.now(),
-        managedBuildingId = if (role == Role.MANAGER) BuildingId.new() else null,
+        managedBuildingId = buildingId.takeIf { role == Role.MANAGER },
     )
 
     private companion object {
