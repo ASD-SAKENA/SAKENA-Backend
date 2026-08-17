@@ -176,6 +176,24 @@ class ServiceRequestService(
         return serviceRequestRepository.save(completed)
     }
 
+    fun confirmCompletionAndRate(command: ConfirmCompletionCommand): ServiceRequest {
+        val request = serviceRequestRepository.findById(command.serviceRequestId)
+            ?: throw EntityNotFoundException("Service request not found")
+
+        val confirmed = request.confirmCompletion(command.userId)
+        val saved = serviceRequestRepository.save(confirmed)
+        // Rating is recorded in Task 5, once the rating context exists.
+        return saved
+    }
+
+    fun rejectCompletion(command: RejectCompletionCommand): ServiceRequest {
+        val request = serviceRequestRepository.findById(command.serviceRequestId)
+            ?: throw EntityNotFoundException("Service request not found")
+
+        val rejected = request.rejectCompletion(command.userId)
+        return serviceRequestRepository.save(rejected)
+    }
+
     fun assignCostResponsibility(command: AssignServiceCostResponsibilityCommand): ServiceRequest {
         val manager = userRepository.findById(command.managerId)
             ?: throw EntityNotFoundException("User with id '${command.managerId}' was not found")
