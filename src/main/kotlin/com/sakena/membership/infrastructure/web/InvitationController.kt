@@ -4,6 +4,7 @@ import com.sakena.membership.application.InvitationService
 import com.sakena.membership.domain.model.BuildingInvitation
 import com.sakena.membership.domain.model.InvitationChannel
 import com.sakena.membership.domain.model.InvitationId
+import com.sakena.membership.infrastructure.web.dto.BuildingMemberResponse
 import com.sakena.membership.infrastructure.web.dto.CreateInvitationRequest
 import com.sakena.membership.infrastructure.web.dto.InvitationPreviewResponse
 import com.sakena.membership.infrastructure.web.dto.InvitationResponse
@@ -76,6 +77,15 @@ class InvitationController(
     @PreAuthorize("hasRole('MANAGER')")
     fun list(@RequestParam buildingId: String): List<InvitationResponse> =
         invitationService.getAll(BuildingId.from(buildingId), currentUser().managedBuildingId).map(::toResponse)
+
+    @Operation(summary = "People who joined the building, and the unit each occupies (manager)")
+    @GetMapping("/members")
+    @SecurityRequirement(name = "bearerAuth")
+    @PreAuthorize("hasRole('MANAGER')")
+    fun members(@RequestParam buildingId: String): List<BuildingMemberResponse> =
+        invitationService
+            .getMembers(BuildingId.from(buildingId), currentUser().managedBuildingId)
+            .map(BuildingMemberResponse::from)
 
     @Operation(summary = "Invite someone into the building the requesting manager administers")
     @PostMapping("/buildings/{buildingId}")
