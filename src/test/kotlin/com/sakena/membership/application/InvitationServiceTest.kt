@@ -100,6 +100,57 @@ class InvitationServiceTest {
     }
 
     @Test
+    fun `inviting into a unit that already has a resident is refused up front`() {
+        val unit = apartment()
+        every { buildingRepository.findById(building.id) } returns building
+        every { apartmentRepository.findById(unit.id) } returns unit
+        every { residencyService.getCurrent(unit.id) } returns
+            Residency.start(unit.id, com.sakena.user.domain.UserId.generate(), TenancyType.TENANT)
+
+        assertFailsWith<DomainConflictException> {
+            service.create(
+                building.id,
+                CreateInvitationCommand(
+                    channel = InvitationChannel.LINK,
+                    recipient = null,
+                    role = Role.RESIDENT,
+                    apartmentId = unit.id,
+                    tenancy = TenancyType.TENANT,
+                ),
+                invitedBy,
+                requesterManagedBuildingId = building.id,
+            )
+        }
+        // Nothing is issued and nobody is notified about a unit that is taken.
+        verify(exactly = 0) { invitationRepository.save(any()) }
+        verify(exactly = 0) { notifier.notify(any(), any(), any()) }
+    }
+
+    @Test
+    fun `inviting into a vacant unit is allowed`() {
+        val unit = apartment()
+        every { buildingRepository.findById(building.id) } returns building
+        every { apartmentRepository.findById(unit.id) } returns unit
+        every { residencyService.getCurrent(unit.id) } returns null
+        givenSavePassesThrough()
+
+        val invitation = service.create(
+            building.id,
+            CreateInvitationCommand(
+                channel = InvitationChannel.LINK,
+                recipient = null,
+                role = Role.RESIDENT,
+                apartmentId = unit.id,
+                tenancy = TenancyType.TENANT,
+            ),
+            invitedBy,
+            requesterManagedBuildingId = building.id,
+        )
+
+        assertEquals(unit.id, invitation.apartmentId)
+    }
+
+    @Test
     fun `create validates the apartment belongs to the building`() {
         val unit = apartment()
         val otherBuilding = Building.create("Other tower", "Elsewhere")
