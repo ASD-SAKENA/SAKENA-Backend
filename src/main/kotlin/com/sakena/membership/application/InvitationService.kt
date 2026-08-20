@@ -62,6 +62,15 @@ class InvitationService(
             if (apartment.buildingId != buildingId) {
                 throw DomainValidationException("Apartment '$apartmentId' does not belong to building '$buildingId'")
             }
+            // Catch the clash while the manager is still here to act on it.
+            // Without this the link is issued happily and only fails on the
+            // invitee's screen, once they have already followed it.
+            if (residencyService.getCurrent(apartmentId) != null) {
+                throw DomainConflictException(
+                    "Unit ${apartment.unitNumber} already has a current resident; " +
+                        "end that residency before inviting a new one",
+                )
+            }
         }
 
         val invitation = invitationRepository.save(
