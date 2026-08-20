@@ -93,12 +93,14 @@ class FacilityBookingService(
         return bookingRepository.findAllForFacilityBetween(facilityId, from, to)
     }
 
-    /** A resident's own upcoming bookings in their current building. */
+    /**
+     * A resident's own upcoming bookings in their current building.
+     * Non-residents get an empty list so a manager opening the reserve screen
+     * never trips a 403 from a shared "my bookings" client call.
+     */
     @Transactional(readOnly = true)
     fun getUpcomingFor(requestedBy: User): List<FacilityBooking> {
-        if (requestedBy.role != Role.RESIDENT) {
-            throw DomainForbiddenException("Only residents can view their bookings")
-        }
+        if (requestedBy.role != Role.RESIDENT) return emptyList()
         val buildingId = buildingAccess.residentBuildingId(requestedBy.id)
         return bookingRepository.findUpcomingByResidentInBuilding(requestedBy.id, buildingId, Instant.now())
     }
@@ -121,7 +123,8 @@ class FacilityBookingService(
 
     private fun accessibleBuildingId(requestedBy: User): BuildingId =
         when (requestedBy.role) {
-            Role.MANAGER -> buildingAccess.managedBuildingId(requestedBy.id)
+            Role.MANAGER -> requestedBy.managedBuildingId
+                ?: buildingAccess.managedBuildingId(requestedBy.id)
             Role.RESIDENT -> buildingAccess.residentBuildingId(requestedBy.id)
             Role.STAFF, Role.ADMIN -> throw DomainForbiddenException("You cannot access facility bookings")
         }

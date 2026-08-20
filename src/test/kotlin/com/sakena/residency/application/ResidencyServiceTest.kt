@@ -1,5 +1,6 @@
 package com.sakena.residency.application
 
+import com.sakena.notification.application.NotificationService
 import com.sakena.property.domain.ApartmentRepository
 import com.sakena.property.domain.BuildingRepository
 import com.sakena.property.domain.model.Apartment
@@ -31,11 +32,13 @@ class ResidencyServiceTest {
     private val apartmentRepository = mockk<ApartmentRepository>()
     private val buildingRepository = mockk<BuildingRepository>(relaxed = true)
     private val userRepository = mockk<UserRepository>()
+    private val notificationService = mockk<NotificationService>(relaxed = true)
     private val service = ResidencyService(
         residencyRepository,
         apartmentRepository,
         buildingRepository,
         userRepository,
+        notificationService,
     )
 
     private val buildingId = BuildingId.new()
@@ -211,6 +214,16 @@ class ResidencyServiceTest {
         every { residencyRepository.findActiveByBuilding(buildingId) } returns listOf(residency)
 
         val residencies = service.getActiveByBuilding(null, requesterManagedBuildingId = buildingId)
+
+        assertEquals(listOf(residency), residencies)
+    }
+
+    @Test
+    fun `getActiveByBuilding with no managed building returns every active residency`() {
+        val residency = Residency.start(apartmentId, user().id, TenancyType.TENANT)
+        every { residencyRepository.findAllActive() } returns listOf(residency)
+
+        val residencies = service.getActiveByBuilding(null, requesterManagedBuildingId = null)
 
         assertEquals(listOf(residency), residencies)
     }
