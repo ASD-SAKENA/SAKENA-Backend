@@ -16,7 +16,8 @@ interface FacilityBookingRepository {
     fun findAllForFacilityBetween(facilityId: FacilityId, from: Instant, to: Instant): List<FacilityBooking>
 
     /** How many existing bookings overlap the given time range. */
-    fun countOverlapping(facilityId: FacilityId, startsAt: Instant, endsAt: Instant): Long
+    /** People already booked into the slot, not the number of bookings. */
+    fun sumPartySizeOverlapping(facilityId: FacilityId, startsAt: Instant, endsAt: Instant): Long
 
     /** How many bookings a resident holds for a facility inside a window. */
     fun countByResidentBetween(

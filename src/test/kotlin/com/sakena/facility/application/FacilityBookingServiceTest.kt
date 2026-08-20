@@ -12,6 +12,7 @@ import com.sakena.facility.domain.model.FacilityId
 import com.sakena.property.domain.BuildingAccess
 import com.sakena.property.domain.model.BuildingId
 import com.sakena.shared.domain.DomainConflictException
+import com.sakena.shared.domain.DomainValidationException
 import com.sakena.user.domain.Role
 import com.sakena.user.domain.User
 import com.sakena.user.domain.UserId
@@ -66,7 +67,7 @@ class FacilityBookingServiceTest {
     fun `book saves a booking while the slot has free capacity`() {
         val facility = facility(capacity = 10)
         every { facilityRepository.findByIdAndBuildingId(facility.id, buildingId) } returns facility
-        every { bookingRepository.countOverlapping(facility.id, start, end) } returns 9
+        every { bookingRepository.sumPartySizeOverlapping(facility.id, start, end) } returns 9
         val saved = slot<FacilityBooking>()
         every { bookingRepository.save(capture(saved)) } answers { saved.captured }
 
@@ -81,11 +82,65 @@ class FacilityBookingServiceTest {
     fun `book locks the slot once capacity is reached`() {
         val facility = facility(capacity = 10)
         every { facilityRepository.findByIdAndBuildingId(facility.id, buildingId) } returns facility
-        every { bookingRepository.countOverlapping(facility.id, start, end) } returns 10
+        every { bookingRepository.sumPartySizeOverlapping(facility.id, start, end) } returns 10
 
         assertFailsWith<DomainConflictException> {
             service.book(facility.id, BookFacilityCommand(start, end), resident)
         }
+        verify(exactly = 0) { bookingRepository.save(any()) }
+    }
+
+    @Test
+    fun `capacity counts people, so many small bookings still leave room`() {
+        // The bug: ten one-person bookings used to fill a twenty-person
+        // facility, because each booking counted as one against capacity.
+        val facility = facility(capacity = 20)
+        every { facilityRepository.findByIdAndBuildingId(facility.id, buildingId) } returns facility
+        every { bookingRepository.sumPartySizeOverlapping(facility.id, start, end) } returns 10
+        val saved = slot<FacilityBooking>()
+        every { bookingRepository.save(capture(saved)) } answers { saved.captured }
+
+        service.book(facility.id, BookFacilityCommand(start, end, partySize = 4), resident)
+
+        assertEquals(4, saved.captured.partySize)
+    }
+
+    @Test
+    fun `book refuses a party that does not fit in the remaining room`() {
+        val facility = facility(capacity = 10)
+        every { facilityRepository.findByIdAndBuildingId(facility.id, buildingId) } returns facility
+        every { bookingRepository.sumPartySizeOverlapping(facility.id, start, end) } returns 8
+
+        // Two seats left, four people asked for.
+        assertFailsWith<DomainConflictException> {
+            service.book(facility.id, BookFacilityCommand(start, end, partySize = 4), resident)
+        }
+        verify(exactly = 0) { bookingRepository.save(any()) }
+    }
+
+    @Test
+    fun `a party filling the last of the room is accepted`() {
+        val facility = facility(capacity = 10)
+        every { facilityRepository.findByIdAndBuildingId(facility.id, buildingId) } returns facility
+        every { bookingRepository.sumPartySizeOverlapping(facility.id, start, end) } returns 6
+        val saved = slot<FacilityBooking>()
+        every { bookingRepository.save(capture(saved)) } answers { saved.captured }
+
+        service.book(facility.id, BookFacilityCommand(start, end, partySize = 4), resident)
+
+        assertEquals(4, saved.captured.partySize)
+    }
+
+    @Test
+    fun `book refuses a party larger than the facility itself`() {
+        val facility = facility(capacity = 10)
+        every { facilityRepository.findByIdAndBuildingId(facility.id, buildingId) } returns facility
+
+        assertFailsWith<DomainValidationException> {
+            service.book(facility.id, BookFacilityCommand(start, end, partySize = 11), resident)
+        }
+        // Rejected before the slot is even queried — it can never fit.
+        verify(exactly = 0) { bookingRepository.sumPartySizeOverlapping(any(), any(), any()) }
         verify(exactly = 0) { bookingRepository.save(any()) }
     }
 
@@ -132,7 +187,7 @@ class FacilityBookingServiceTest {
         every {
             bookingRepository.countByResidentBetween(facility.id, resident.id, any(), any())
         } returns 1
-        every { bookingRepository.countOverlapping(facility.id, start, end) } returns 0
+        every { bookingRepository.sumPartySizeOverlapping(facility.id, start, end) } returns 0
         val saved = slot<FacilityBooking>()
         every { bookingRepository.save(capture(saved)) } answers { saved.captured }
 

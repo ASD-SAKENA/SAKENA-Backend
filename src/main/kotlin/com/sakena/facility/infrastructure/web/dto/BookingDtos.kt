@@ -3,6 +3,7 @@ package com.sakena.facility.infrastructure.web.dto
 import com.sakena.facility.application.command.BookFacilityCommand
 import com.sakena.facility.domain.model.Facility
 import com.sakena.facility.domain.model.FacilityBooking
+import jakarta.validation.constraints.Min
 import jakarta.validation.constraints.NotNull
 import java.math.BigDecimal
 import java.time.Instant
@@ -14,8 +15,16 @@ data class CreateBookingRequest(
 
     @field:NotNull(message = "endsAt must not be null")
     val endsAt: Instant,
+
+    /** Defaults to one person so an older client keeps working unchanged. */
+    @field:Min(1, message = "partySize must be at least 1")
+    val partySize: Int = 1,
 ) {
-    fun toCommand() = BookFacilityCommand(startsAt = startsAt, endsAt = endsAt)
+    fun toCommand() = BookFacilityCommand(
+        startsAt = startsAt,
+        endsAt = endsAt,
+        partySize = partySize,
+    )
 }
 
 data class BookingResponse(
@@ -24,6 +33,7 @@ data class BookingResponse(
     val bookedBy: UUID,
     val startsAt: Instant,
     val endsAt: Instant,
+    val partySize: Int,
 ) {
     companion object {
         fun from(booking: FacilityBooking) = BookingResponse(
@@ -32,6 +42,7 @@ data class BookingResponse(
             bookedBy = booking.bookedBy.value,
             startsAt = booking.startsAt,
             endsAt = booking.endsAt,
+            partySize = booking.partySize,
         )
     }
 }
@@ -47,6 +58,7 @@ data class MyBookingResponse(
     val facilityIcon: String?,
     val startsAt: Instant,
     val endsAt: Instant,
+    val partySize: Int,
     val price: BigDecimal,
 ) {
     companion object {
@@ -57,6 +69,7 @@ data class MyBookingResponse(
             facilityIcon = facility.icon,
             startsAt = booking.startsAt,
             endsAt = booking.endsAt,
+            partySize = booking.partySize,
             price = facility.rules.priceFor(booking.startsAt, booking.endsAt),
         )
     }

@@ -13,6 +13,7 @@ import com.sakena.property.domain.BuildingAccess
 import com.sakena.property.domain.model.BuildingId
 import com.sakena.shared.domain.DomainConflictException
 import com.sakena.shared.domain.DomainForbiddenException
+import com.sakena.shared.domain.DomainValidationException
 import com.sakena.user.domain.Role
 import com.sakena.user.domain.User
 import com.sakena.user.domain.UserId
@@ -51,11 +52,21 @@ class FacilityBookingService(
         facility.rules.validateSlot(command.startsAt, command.endsAt, zone, Instant.now())
         requireWeeklyQuota(facility, command.startsAt, requestedBy.id)
 
-        val overlapping =
-            bookingRepository.countOverlapping(facilityId, command.startsAt, command.endsAt)
-        if (overlapping >= facility.capacity) {
+        if (command.partySize > facility.capacity) {
+            throw DomainValidationException(
+                "Facility '${facility.name}' holds ${facility.capacity} people, " +
+                    "so it cannot take a party of ${command.partySize}",
+            )
+        }
+        // Capacity is people, not bookings: a 20-person pool used to fill up
+        // after 20 reservations no matter how many people actually came.
+        val alreadyBooked =
+            bookingRepository.sumPartySizeOverlapping(facilityId, command.startsAt, command.endsAt)
+        val remaining = facility.capacity - alreadyBooked
+        if (command.partySize > remaining) {
             throw DomainConflictException(
-                "Facility '${facility.name}' is fully booked for this time slot (capacity ${facility.capacity})",
+                "Facility '${facility.name}' has room for $remaining more " +
+                    "people in this time slot, but ${command.partySize} were requested",
             )
         }
 
@@ -64,6 +75,7 @@ class FacilityBookingService(
             bookedBy = requestedBy.id,
             startsAt = command.startsAt,
             endsAt = command.endsAt,
+            partySize = command.partySize,
         )
         return bookingRepository.save(booking)
     }

@@ -5,4 +5,6 @@ import java.time.Instant
 data class BookFacilityCommand(
     val startsAt: Instant,
     val endsAt: Instant,
+    /** People this booking brings; capacity is measured in people. */
+    val partySize: Int = 1,
 )
