@@ -28,18 +28,26 @@ class FacilityBooking private constructor(
     val bookedBy: UserId,
     val startsAt: Instant,
     val endsAt: Instant,
+    /** How many people this booking brings — capacity is counted in people. */
+    val partySize: Int,
     val createdAt: Instant,
 ) {
 
     companion object {
+        const val MIN_PARTY_SIZE = 1
+
         fun create(
             facilityId: FacilityId,
             bookedBy: UserId,
             startsAt: Instant,
             endsAt: Instant,
+            partySize: Int = MIN_PARTY_SIZE,
         ): FacilityBooking {
             if (!endsAt.isAfter(startsAt)) {
                 throw DomainValidationException("Booking end must be after its start")
+            }
+            if (partySize < MIN_PARTY_SIZE) {
+                throw DomainValidationException("A booking must be for at least one person")
             }
             return FacilityBooking(
                 id = BookingId.new(),
@@ -47,6 +55,7 @@ class FacilityBooking private constructor(
                 bookedBy = bookedBy,
                 startsAt = startsAt,
                 endsAt = endsAt,
+                partySize = partySize,
                 createdAt = Instant.now(),
             )
         }
@@ -57,7 +66,9 @@ class FacilityBooking private constructor(
             bookedBy: UserId,
             startsAt: Instant,
             endsAt: Instant,
+            partySize: Int,
             createdAt: Instant,
-        ): FacilityBooking = FacilityBooking(id, facilityId, bookedBy, startsAt, endsAt, createdAt)
+        ): FacilityBooking =
+            FacilityBooking(id, facilityId, bookedBy, startsAt, endsAt, partySize, createdAt)
     }
 }

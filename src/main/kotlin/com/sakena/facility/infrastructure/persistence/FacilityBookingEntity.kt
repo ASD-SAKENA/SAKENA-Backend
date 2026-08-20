@@ -26,6 +26,9 @@ class FacilityBookingEntity(
     @Column(name = "ends_at", nullable = false)
     var endsAt: Instant,
 
+    @Column(name = "party_size", nullable = false)
+    var partySize: Int,
+
     @Column(name = "created_at", nullable = false, updatable = false)
     var createdAt: Instant,
 )
