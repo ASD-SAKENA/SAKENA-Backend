@@ -41,10 +41,29 @@ class StaffAuthorizationTest {
     @MockkBean
     private lateinit var ratingService: com.sakena.rating.application.RatingService
 
+    @MockkBean
+    private lateinit var profileService: com.sakena.user.application.ProfileService
+
+    private val managedBuildingId = com.sakena.property.domain.model.BuildingId.new()
+
+    /** The controller resolves the signed-in manager to scope the directory. */
+    private fun givenSignedInManager() {
+        every { profileService.getUserByUsername("manager") } returns
+            com.sakena.user.domain.User.register(
+                username = "manager",
+                email = "manager@sakena.test",
+                rawPassword = "password123",
+                passwordEncoder = { it },
+                role = com.sakena.user.domain.Role.MANAGER,
+                managedBuildingId = managedBuildingId,
+            )
+    }
+
     @Test
     @WithMockUser(username = "manager", roles = ["MANAGER"])
     fun `manager may list active staff`() {
-        every { staffDirectoryService.getActiveStaff() } returns emptyList()
+        givenSignedInManager()
+        every { staffDirectoryService.getActiveStaff(managedBuildingId) } returns emptyList()
         every { ratingService.getAverageFor(emptyList()) } returns emptyMap()
 
         mockMvc.perform(get("/api/v1/staff"))
@@ -61,7 +80,8 @@ class StaffAuthorizationTest {
             passwordEncoder = { it },
             role = com.sakena.user.domain.Role.STAFF,
         )
-        every { staffDirectoryService.getActiveStaff() } returns listOf(staff)
+        givenSignedInManager()
+        every { staffDirectoryService.getActiveStaff(managedBuildingId) } returns listOf(staff)
         every { ratingService.getAverageFor(listOf(staff.id)) } returns mapOf(staff.id to 4.5)
 
         mockMvc.perform(get("/api/v1/staff"))

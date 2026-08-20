@@ -166,27 +166,39 @@ class BuildingInvitationTest {
     }
 
     @Test
-    fun `only a resident may accept an invitation that assigns a unit`() {
-        val nonResidents = Role.entries - Role.RESIDENT
-
-        nonResidents.forEach { role ->
-            val invitation = invite(apartmentId = ApartmentId.new(), tenancy = TenancyType.TENANT)
-
-            assertFailsWith<DomainConflictException>("$role must not occupy a unit") {
-                invitation.accept(UserId.generate(), role)
-            }
-            assertEquals(InvitationStatus.PENDING, invitation.status)
+    fun `a unit can only ever be attached to a resident invitation`() {
+        // This is what keeps a non-resident out of a unit: such an invitation
+        // cannot be created at all, so acceptance never has to defend against it.
+        assertFailsWith<DomainValidationException> {
+            invite(
+                role = Role.STAFF,
+                apartmentId = ApartmentId.new(),
+                tenancy = TenancyType.TENANT,
+            )
         }
     }
 
     @Test
-    fun `any role may accept an invitation that assigns no unit`() {
-        Role.entries.forEach { role ->
-            val invitation = invite()
+    fun `an invitation is accepted by the role it was issued for`() {
+        // Managers and admins are not onboarded through invitations at all.
+        listOf(Role.RESIDENT, Role.STAFF).forEach { role ->
+            val invitation = invite(role = role)
 
             invitation.accept(UserId.generate(), role)
 
             assertEquals(InvitationStatus.ACCEPTED, invitation.status)
         }
+    }
+
+    @Test
+    fun `an invitation refuses a role it was not issued for`() {
+        // A resident following a staff link would otherwise burn it for the
+        // person it was meant for.
+        val invitation = invite(role = Role.STAFF)
+
+        assertFailsWith<DomainConflictException> {
+            invitation.accept(UserId.generate(), Role.RESIDENT)
+        }
+        assertEquals(InvitationStatus.PENDING, invitation.status)
     }
 }

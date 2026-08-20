@@ -14,6 +14,7 @@ import com.sakena.shared.domain.DomainForbiddenException
 import com.sakena.shared.domain.DomainValidationException
 import com.sakena.shared.domain.EntityNotFoundException
 import com.sakena.user.domain.Role
+import com.sakena.user.domain.StaffBuildingMembershipRepository
 import com.sakena.user.domain.User
 import com.sakena.user.domain.UserId
 import com.sakena.user.domain.UserRepository
@@ -28,6 +29,7 @@ class ServiceRequestService(
     private val residencyRepository: ResidencyRepository,
     private val apartmentRepository: ApartmentRepository,
     private val ratingService: RatingService,
+    private val staffMembershipRepository: StaffBuildingMembershipRepository,
 ) {
 
     /**
@@ -144,7 +146,19 @@ class ServiceRequestService(
         requireManagerCanAct(request, command.userId)
 
         val worker = userRepository.findById(command.workerId)
-            ?: throw IllegalArgumentException("Worker not found with id: ${command.workerId}")
+            ?: throw EntityNotFoundException("Worker not found with id: ${command.workerId}")
+        if (worker.role != Role.STAFF) {
+            throw DomainValidationException("Only a service staff account can be assigned a request")
+        }
+        // The picker only offers this building's staff, but the id arrives from
+        // the client — so the boundary is enforced here, not just in the list.
+        val manager = userRepository.findById(command.userId)
+            ?: throw EntityNotFoundException("User with id '${command.userId}' was not found")
+        val buildingId = manager.managedBuildingId
+            ?: throw DomainForbiddenException("You do not manage a building")
+        if (!staffMembershipRepository.exists(worker.id, buildingId)) {
+            throw DomainForbiddenException("This staff member does not serve your building")
+        }
 
         val assigned = request.assignTo(worker.id, command.userId)
         return serviceRequestRepository.save(assigned)

@@ -97,24 +97,19 @@ class BuildingInvitation private constructor(
             status = InvitationStatus.EXPIRED
             throw DomainConflictException("This invitation has expired")
         }
-        if (!isAcceptableBy(userRole)) {
+        // create() already refuses a unit for anything but a resident, so
+        // matching the role is all that is needed to keep a non-resident out
+        // of a unit — and it also stops one role burning another's link.
+        if (userRole != role) {
             throw DomainConflictException(
-                "A ${userRole.name.lowercase()} account cannot move into a unit; " +
-                    "join with a resident account instead",
+                "This invitation is for a ${role.name.lowercase()} account, " +
+                    "but you are signed in as a ${userRole.name.lowercase()}",
             )
         }
         status = InvitationStatus.ACCEPTED
         acceptedBy = userId
         acceptedAt = now
     }
-
-    /**
-     * Only a resident can occupy a unit. Letting another role accept would
-     * leave the unit assigned to an account that can never reach the resident
-     * side of the app — occupied on paper, unreachable in practice.
-     */
-    fun isAcceptableBy(userRole: Role): Boolean =
-        apartmentId == null || userRole == Role.RESIDENT
 
     fun revoke() {
         if (status == InvitationStatus.ACCEPTED) {

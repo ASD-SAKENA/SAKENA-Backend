@@ -37,12 +37,15 @@ class ServiceRequestServiceTest {
     private val residencyRepository = mockk<ResidencyRepository>()
     private val apartmentRepository = mockk<ApartmentRepository>()
     private val ratingService = mockk<com.sakena.rating.application.RatingService>(relaxed = true)
+    private val staffMembershipRepository =
+        mockk<com.sakena.user.domain.StaffBuildingMembershipRepository>(relaxed = true)
     private val service = ServiceRequestService(
         serviceRequestRepository,
         userRepository,
         residencyRepository,
         apartmentRepository,
         ratingService,
+        staffMembershipRepository,
     )
 
     @Test
