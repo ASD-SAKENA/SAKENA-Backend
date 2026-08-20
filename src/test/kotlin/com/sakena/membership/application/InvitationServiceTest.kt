@@ -37,12 +37,14 @@ class InvitationServiceTest {
     private val buildingRepository = mockk<BuildingRepository>()
     private val apartmentRepository = mockk<ApartmentRepository>()
     private val residencyService = mockk<ResidencyService>()
+    private val userRepository = mockk<com.sakena.user.domain.UserRepository>()
     private val notifier = mockk<InvitationNotifier>(relaxed = true)
     private val service = InvitationService(
         invitationRepository,
         buildingRepository,
         apartmentRepository,
         residencyService,
+        userRepository,
         notifier,
         "https://sakena.app/",
     )
@@ -313,6 +315,44 @@ class InvitationServiceTest {
 
         assertEquals(InvitationStatus.ACCEPTED, accepted.status)
         verify(exactly = 0) { residencyService.start(any(), any(), any()) }
+    }
+
+    @Test
+    fun `members lists everyone who accepted, flagging who still has no unit`() {
+        val housed = user(username = "9121111111", email = "housed@example.com")
+        val unhoused = user(username = "9122222222", email = "unhoused@example.com")
+        val unit = apartment()
+        val accepted = pendingInvitation(channel = InvitationChannel.LINK, recipient = null)
+            .also { it.accept(housed.id, Role.RESIDENT) }
+        val acceptedNoUnit = pendingInvitation(channel = InvitationChannel.LINK, recipient = null)
+            .also { it.accept(unhoused.id, Role.RESIDENT) }
+        val stillPending = pendingInvitation()
+
+        every { invitationRepository.findAllByBuilding(building.id) } returns
+            listOf(accepted, acceptedNoUnit, stillPending)
+        every { userRepository.findAllByIds(setOf(housed.id, unhoused.id)) } returns
+            listOf(housed, unhoused)
+        every { residencyService.getActiveByBuilding(building.id, building.id) } returns
+            listOf(Residency.start(unit.id, housed.id, TenancyType.OWNER_OCCUPIER))
+        every { apartmentRepository.findById(unit.id) } returns unit
+
+        val members = service.getMembers(building.id, requesterManagedBuildingId = building.id)
+
+        // A pending invitation is not a member yet.
+        assertEquals(2, members.size)
+        val housedMember = members.first { it.user.id == housed.id }
+        val unhousedMember = members.first { it.user.id == unhoused.id }
+        assertEquals("12", housedMember.unitNumber)
+        assertEquals(null, unhousedMember.unitNumber)
+    }
+
+    @Test
+    fun `members is rejected for a manager who does not administer the building`() {
+        val otherBuilding = Building.create("Other tower", "Elsewhere")
+
+        assertFailsWith<DomainForbiddenException> {
+            service.getMembers(building.id, requesterManagedBuildingId = otherBuilding.id)
+        }
     }
 
     @Test

@@ -1,5 +1,6 @@
 package com.sakena.membership.infrastructure.web.dto
 
+import com.sakena.membership.application.BuildingMember
 import com.sakena.membership.application.command.CreateInvitationCommand
 import com.sakena.membership.domain.model.BuildingInvitation
 import com.sakena.membership.domain.model.InvitationChannel
@@ -84,3 +85,27 @@ data class InvitationPreviewResponse(
     val unitNumber: String?,
     val expiresAt: Instant,
 )
+
+/**
+ * A member of the building as the manager's units screen renders them. A null
+ * [unitNumber] is the actionable case: they joined but still need a unit.
+ */
+data class BuildingMemberResponse(
+    val userId: String,
+    val username: String,
+    val email: String,
+    val role: Role,
+    val unitNumber: String?,
+    val tenancy: TenancyType?,
+) {
+    companion object {
+        fun from(member: BuildingMember) = BuildingMemberResponse(
+            userId = member.user.id.value.toString(),
+            username = member.user.username,
+            email = member.user.email,
+            role = member.user.role,
+            unitNumber = member.unitNumber,
+            tenancy = member.tenancy,
+        )
+    }
+}

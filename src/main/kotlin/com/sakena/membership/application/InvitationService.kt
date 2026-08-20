@@ -18,6 +18,7 @@ import com.sakena.shared.domain.DomainValidationException
 import com.sakena.shared.domain.EntityNotFoundException
 import com.sakena.user.domain.User
 import com.sakena.user.domain.UserId
+import com.sakena.user.domain.UserRepository
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
@@ -38,6 +39,7 @@ class InvitationService(
     private val buildingRepository: BuildingRepository,
     private val apartmentRepository: ApartmentRepository,
     private val residencyService: ResidencyService,
+    private val userRepository: UserRepository,
     private val notifier: InvitationNotifier,
     @Value("\${app.frontend-url:http://localhost:3000}")
     private val frontendUrl: String,
@@ -151,6 +153,37 @@ class InvitationService(
         return invitationRepository.findAllByBuilding(buildingId)
     }
 
+    /**
+     * Everyone who has joined this building, with the unit they occupy when
+     * they have one. An accepted invitation is the only record that someone
+     * belongs here, so it — not the residency — is what makes them a member:
+     * a person invited without a unit still shows up, waiting to be assigned.
+     */
+    @Transactional(readOnly = true)
+    fun getMembers(buildingId: BuildingId, requesterManagedBuildingId: BuildingId?): List<BuildingMember> {
+        if (requesterManagedBuildingId != buildingId) {
+            throw DomainForbiddenException("You do not manage building '$buildingId'")
+        }
+
+        val acceptedBy = invitationRepository.findAllByBuilding(buildingId)
+            .mapNotNull { it.acceptedBy }
+            .toSet()
+        if (acceptedBy.isEmpty()) return emptyList()
+
+        val unitByResident = residencyService
+            .getActiveByBuilding(buildingId, requesterManagedBuildingId)
+            .associateBy { it.residentId }
+
+        return userRepository.findAllByIds(acceptedBy).map { user ->
+            val residency = unitByResident[user.id]
+            BuildingMember(
+                user = user,
+                unitNumber = residency?.let { apartmentRepository.findById(it.apartmentId)?.unitNumber },
+                tenancy = residency?.tenancy,
+            )
+        }
+    }
+
     /** The link handed to the invitee; the token is the only secret in it. */
     fun acceptUrlOf(invitation: BuildingInvitation): String =
         "${frontendUrl.trimEnd('/')}/join?token=${invitation.token}"
@@ -159,3 +192,14 @@ class InvitationService(
         log.debug("Invitation links will point at {}", frontendUrl)
     }
 }
+
+/**
+ * A person who joined the building, together with the unit they occupy.
+ * A null [unitNumber] means they accepted an invitation but no unit has been
+ * assigned to them yet — the manager still has to place them.
+ */
+data class BuildingMember(
+    val user: User,
+    val unitNumber: String?,
+    val tenancy: TenancyType?,
+)
