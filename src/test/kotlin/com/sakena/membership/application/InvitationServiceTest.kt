@@ -38,6 +38,8 @@ class InvitationServiceTest {
     private val apartmentRepository = mockk<ApartmentRepository>()
     private val residencyService = mockk<ResidencyService>()
     private val userRepository = mockk<com.sakena.user.domain.UserRepository>()
+    private val staffMembershipRepository =
+        mockk<com.sakena.user.domain.StaffBuildingMembershipRepository>(relaxed = true)
     private val notifier = mockk<InvitationNotifier>(relaxed = true)
     private val service = InvitationService(
         invitationRepository,
@@ -45,6 +47,7 @@ class InvitationServiceTest {
         apartmentRepository,
         residencyService,
         userRepository,
+        staffMembershipRepository,
         notifier,
         "https://sakena.app/",
     )
@@ -305,8 +308,64 @@ class InvitationServiceTest {
     }
 
     @Test
+    fun `a resident cannot burn a staff invitation`() {
+        val invitation = pendingInvitation(
+            channel = InvitationChannel.LINK,
+            recipient = null,
+            role = Role.STAFF,
+        )
+        val resident = user(role = Role.RESIDENT)
+        every { invitationRepository.findByToken(invitation.token) } returns invitation
+
+        assertFailsWith<DomainConflictException> {
+            service.accept(invitation.token, resident)
+        }
+        // The link must survive for the staff member it was meant for.
+        assertEquals(InvitationStatus.PENDING, invitation.status)
+        verify(exactly = 0) { invitationRepository.save(any()) }
+    }
+
+    @Test
+    fun `accepting a staff invitation puts the worker inside the building`() {
+        val invitation = pendingInvitation(
+            channel = InvitationChannel.LINK,
+            recipient = null,
+            role = Role.STAFF,
+        )
+        val staff = user(role = Role.STAFF)
+        every { invitationRepository.findByToken(invitation.token) } returns invitation
+        every { staffMembershipRepository.exists(staff.id, building.id) } returns false
+        givenSavePassesThrough()
+
+        service.accept(invitation.token, staff)
+
+        verify(exactly = 1) { staffMembershipRepository.save(any()) }
+    }
+
+    @Test
+    fun `re-accepting does not duplicate a staff member's building membership`() {
+        val invitation = pendingInvitation(
+            channel = InvitationChannel.LINK,
+            recipient = null,
+            role = Role.STAFF,
+        )
+        val staff = user(role = Role.STAFF)
+        every { invitationRepository.findByToken(invitation.token) } returns invitation
+        every { staffMembershipRepository.exists(staff.id, building.id) } returns true
+        givenSavePassesThrough()
+
+        service.accept(invitation.token, staff)
+
+        verify(exactly = 0) { staffMembershipRepository.save(any()) }
+    }
+
+    @Test
     fun `staff may accept an invitation that assigns no unit`() {
-        val invitation = pendingInvitation(channel = InvitationChannel.LINK, recipient = null)
+        val invitation = pendingInvitation(
+            channel = InvitationChannel.LINK,
+            recipient = null,
+            role = Role.STAFF,
+        )
         val staff = user(role = Role.STAFF)
         every { invitationRepository.findByToken(invitation.token) } returns invitation
         givenSavePassesThrough()
@@ -377,11 +436,12 @@ class InvitationServiceTest {
         recipient: String? = "neighbour@example.com",
         apartmentId: com.sakena.property.domain.model.ApartmentId? = null,
         tenancy: TenancyType? = null,
+        role: Role = Role.RESIDENT,
     ) = BuildingInvitation.create(
         buildingId = building.id,
         channel = channel,
         recipient = recipient,
-        role = Role.RESIDENT,
+        role = role,
         apartmentId = apartmentId,
         tenancy = tenancy,
         invitedBy = invitedBy,
