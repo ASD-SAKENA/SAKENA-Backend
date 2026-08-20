@@ -52,8 +52,8 @@ class ResidencyController(
     }
 
     @Operation(
-        summary = "Active residencies of the building the requesting manager administers",
-        description = "An explicit buildingId must match that building; omitting it defaults to it.",
+        summary = "Active residencies — one row per occupied unit",
+        description = "Scoped to the manager's building when buildingId is omitted or matches it. Without a managed building, omitting buildingId returns every active residency.",
     )
     @GetMapping
     @PreAuthorize("hasRole('MANAGER')")

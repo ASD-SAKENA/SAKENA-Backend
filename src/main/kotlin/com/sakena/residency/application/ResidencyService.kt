@@ -1,5 +1,7 @@
 package com.sakena.residency.application
 
+import com.sakena.notification.application.NotificationService
+import com.sakena.notification.domain.model.NotificationType
 import com.sakena.property.domain.ApartmentRepository
 import com.sakena.property.domain.BuildingRepository
 import com.sakena.property.domain.model.ApartmentId
@@ -29,6 +31,7 @@ class ResidencyService(
     private val apartmentRepository: ApartmentRepository,
     private val buildingRepository: BuildingRepository,
     private val userRepository: UserRepository,
+    private val notificationService: NotificationService,
 ) {
 
     fun start(
@@ -51,9 +54,18 @@ class ResidencyService(
             throw DomainConflictException("This resident already occupies another unit")
         }
 
-        return residencyRepository.save(
+        val residency = residencyRepository.save(
             Residency.start(apartmentId, command.residentId, command.tenancy),
         )
+        val buildingName = buildingRepository.findById(apartment.buildingId)?.name ?: "ساختمان"
+        notificationService.notifyUser(
+            recipientId = command.residentId,
+            title = "تخصیص واحد",
+            body = "واحد ${apartment.unitNumber} در «$buildingName» به شما اختصاص داده شد.",
+            type = NotificationType.SYSTEM,
+            href = "/dashboard",
+        )
+        return residency
     }
 
     /** Moves the current resident out, leaving the unit vacant. */
@@ -76,18 +88,29 @@ class ResidencyService(
         residencyRepository.findAllByApartment(apartmentId)
 
     /**
-     * Active residencies of the building the requesting manager administers.
-     * An explicit [buildingId] must match that building; omitting it defaults
-     * to it. A manager never sees another building's residents this way.
+     * Active residencies for the units table.
+     *
+     * - Manager with a managed building: an explicit [buildingId] must match it;
+     *   omitting it defaults to that building (never another manager's data).
+     * - Caller without a managed building (e.g. transitional data): an explicit
+     *   filter scopes to one building; omitting it returns every active residency
+     *   so the "all buildings" screen can show occupancy.
      */
     @Transactional(readOnly = true)
     fun getActiveByBuilding(buildingId: BuildingId?, requesterManagedBuildingId: BuildingId?): List<Residency> {
-        val target = buildingId ?: requesterManagedBuildingId
-        requireOwnedBuilding(
-            target ?: throw DomainForbiddenException("You do not manage a building"),
-            requesterManagedBuildingId,
-        )
-        return residencyRepository.findActiveByBuilding(target)
+        if (requesterManagedBuildingId != null) {
+            val target = buildingId ?: requesterManagedBuildingId
+            requireOwnedBuilding(target, requesterManagedBuildingId)
+            return residencyRepository.findActiveByBuilding(target)
+        }
+        return if (buildingId != null) {
+            if (!buildingRepository.existsById(buildingId)) {
+                throw EntityNotFoundException("Building with id '$buildingId' was not found")
+            }
+            residencyRepository.findActiveByBuilding(buildingId)
+        } else {
+            residencyRepository.findAllActive()
+        }
     }
 
     /** The unit the signed-in resident occupies, or null while none is assigned. */

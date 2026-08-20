@@ -3,6 +3,8 @@ package com.sakena.announcement.application
 import com.sakena.announcement.application.command.CreateAnnouncementCommand
 import com.sakena.announcement.domain.AnnouncementRepository
 import com.sakena.announcement.domain.model.Announcement
+import com.sakena.notification.application.NotificationService
+import com.sakena.notification.domain.model.NotificationType
 import com.sakena.property.domain.BuildingAccess
 import com.sakena.property.domain.model.BuildingId
 import com.sakena.shared.domain.DomainForbiddenException
@@ -23,7 +25,8 @@ class AnnouncementServiceTest {
     private val repository = mockk<AnnouncementRepository>()
     private val buildingId = BuildingId.new()
     private val buildingAccess = mockk<BuildingAccess>()
-    private val service = AnnouncementService(repository, buildingAccess)
+    private val notificationService = mockk<NotificationService>(relaxed = true)
+    private val service = AnnouncementService(repository, buildingAccess, notificationService)
 
     @Test
     fun `create persists a new announcement for the author`() {
@@ -38,6 +41,15 @@ class AnnouncementServiceTest {
         assertEquals(author.id, result.createdBy)
         assertEquals(buildingId, result.buildingId)
         verify(exactly = 1) { repository.save(any()) }
+        verify(exactly = 1) {
+            notificationService.notifyBuildingResidents(
+                buildingId,
+                "اطلاعیه جدید",
+                "Water outage",
+                NotificationType.ANNOUNCEMENT,
+                "/announcements",
+            )
+        }
     }
 
     @Test

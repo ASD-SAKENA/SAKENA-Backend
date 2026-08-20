@@ -65,7 +65,9 @@ class FacilityService(
 
     private fun accessibleBuildingId(requestedBy: User): BuildingId =
         when (requestedBy.role) {
-            Role.MANAGER -> buildingAccess.managedBuildingId(requestedBy.id)
+            // Prefer the already-loaded identity; BuildingAccess re-fetches the same row.
+            Role.MANAGER -> requestedBy.managedBuildingId
+                ?: buildingAccess.managedBuildingId(requestedBy.id)
             Role.RESIDENT -> buildingAccess.residentBuildingId(requestedBy.id)
             Role.STAFF, Role.ADMIN -> throw DomainForbiddenException("You cannot access building facilities")
         }
@@ -74,6 +76,7 @@ class FacilityService(
         if (requestedBy.role != Role.MANAGER) {
             throw DomainForbiddenException("Only a building manager can manage facilities")
         }
-        return buildingAccess.managedBuildingId(requestedBy.id)
+        return requestedBy.managedBuildingId
+            ?: buildingAccess.managedBuildingId(requestedBy.id)
     }
 }

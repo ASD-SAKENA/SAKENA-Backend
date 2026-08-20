@@ -3,6 +3,8 @@ package com.sakena.announcement.application
 import com.sakena.announcement.application.command.CreateAnnouncementCommand
 import com.sakena.announcement.domain.AnnouncementRepository
 import com.sakena.announcement.domain.model.Announcement
+import com.sakena.notification.application.NotificationService
+import com.sakena.notification.domain.model.NotificationType
 import com.sakena.property.domain.BuildingAccess
 import com.sakena.property.domain.model.BuildingId
 import com.sakena.shared.domain.DomainForbiddenException
@@ -21,19 +23,29 @@ import org.springframework.transaction.annotation.Transactional
 class AnnouncementService(
     private val announcementRepository: AnnouncementRepository,
     private val buildingAccess: BuildingAccess,
+    private val notificationService: NotificationService,
 ) {
 
     fun create(command: CreateAnnouncementCommand, createdBy: User): Announcement {
         if (createdBy.role != Role.MANAGER) {
             throw DomainForbiddenException("Only managers can publish announcements")
         }
+        val buildingId = buildingAccess.managedBuildingId(createdBy.id)
         val announcement = Announcement.create(
             command.title,
             command.body,
             createdBy.id,
-            buildingAccess.managedBuildingId(createdBy.id),
+            buildingId,
         )
-        return announcementRepository.save(announcement)
+        val saved = announcementRepository.save(announcement)
+        notificationService.notifyBuildingResidents(
+            buildingId = buildingId,
+            title = "اطلاعیه جدید",
+            body = saved.title,
+            type = NotificationType.ANNOUNCEMENT,
+            href = "/announcements",
+        )
+        return saved
     }
 
     @Transactional(readOnly = true)
