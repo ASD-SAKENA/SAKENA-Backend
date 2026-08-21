@@ -83,9 +83,14 @@ class PollService(
         resultsOf(requireAccessiblePoll(id, viewer), viewer.id)
 
     @Transactional(readOnly = true)
-    fun getAll(viewer: User): List<PollResults> =
-        pollRepository.findAllByBuildingNewestFirst(requireBuildingScope(viewer))
+    fun getAll(viewer: User): List<PollResults> {
+        if (viewer.role == Role.STAFF || viewer.role == Role.ADMIN) {
+            throw DomainForbiddenException("You cannot access building polls")
+        }
+        val buildingId = buildingAccess.buildingIdFor(viewer) ?: return emptyList()
+        return pollRepository.findAllByBuildingNewestFirst(buildingId)
             .map { resultsOf(it, viewer.id) }
+    }
 
     private fun resultsOf(poll: Poll, viewerId: UserId): PollResults =
         PollResults.of(

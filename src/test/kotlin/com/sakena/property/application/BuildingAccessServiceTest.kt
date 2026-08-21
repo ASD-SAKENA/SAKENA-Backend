@@ -68,6 +68,22 @@ class BuildingAccessServiceTest {
     }
 
     @Test
+    fun `resident without an active residency has no building scope`() {
+        val resident = user(Role.RESIDENT)
+        every { residencyRepository.findActiveByResident(resident.id) } returns null
+
+        assertNull(service.buildingIdFor(resident))
+    }
+
+    @Test
+    fun `missing manager record has no building scope`() {
+        val manager = user(Role.MANAGER, Building.create("Tower", "Address").id)
+        every { userRepository.findById(manager.id) } returns null
+
+        assertNull(service.buildingIdFor(manager))
+    }
+
+    @Test
     fun `rejects access when the manager owns another building`() {
         val building = Building.create("Tower", "Address")
         val manager = user(Role.MANAGER, building.id)
