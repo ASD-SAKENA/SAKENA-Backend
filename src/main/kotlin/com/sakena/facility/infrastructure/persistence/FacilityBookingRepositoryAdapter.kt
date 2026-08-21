@@ -30,9 +30,6 @@ class FacilityBookingRepositoryAdapter(
     ): List<FacilityBooking> =
         jpaRepository.findAllIntersecting(facilityId.value, from, to).map(::toDomain)
 
-    override fun sumPartySizeOverlapping(facilityId: FacilityId, startsAt: Instant, endsAt: Instant): Long =
-        jpaRepository.sumPartySizeOverlapping(facilityId.value, startsAt, endsAt)
-
     override fun countByResidentBetween(
         facilityId: FacilityId,
         residentId: UserId,

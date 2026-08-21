@@ -9,6 +9,7 @@ import com.sakena.facility.domain.model.BookingId
 import com.sakena.facility.domain.model.Facility
 import com.sakena.facility.domain.model.FacilityBooking
 import com.sakena.facility.domain.model.FacilityId
+import com.sakena.facility.domain.model.SlotOccupancy
 import com.sakena.property.domain.BuildingAccess
 import com.sakena.property.domain.model.BuildingId
 import com.sakena.shared.domain.DomainConflictException
@@ -67,11 +68,15 @@ class FacilityBookingService(
                     "so it cannot take a party of ${command.partySize}",
             )
         }
-        // Capacity is people, not bookings: a 20-person pool used to fill up
-        // after 20 reservations no matter how many people actually came.
-        val alreadyBooked =
-            bookingRepository.sumPartySizeOverlapping(facilityId, command.startsAt, command.endsAt)
-        val remaining = facility.capacity - alreadyBooked
+        // Capacity is people at a moment, not bookings over a range: an
+        // existing booking must only block the seats it actually occupies,
+        // and only while it lasts.
+        val peak = SlotOccupancy.peakWithin(
+            bookingRepository.findAllForFacilityBetween(facilityId, command.startsAt, command.endsAt),
+            command.startsAt,
+            command.endsAt,
+        )
+        val remaining = facility.capacity - peak
         if (command.partySize > remaining) {
             throw DomainConflictException(
                 "Facility '${facility.name}' has room for $remaining more " +

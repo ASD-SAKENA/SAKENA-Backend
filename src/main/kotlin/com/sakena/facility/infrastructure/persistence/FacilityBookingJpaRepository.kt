@@ -22,20 +22,6 @@ interface FacilityBookingJpaRepository : JpaRepository<FacilityBookingEntity, UU
         @Param("to") to: Instant,
     ): List<FacilityBookingEntity>
 
-    /** People already booked into the slot — COALESCE covers an empty slot. */
-    @Query(
-        """
-        SELECT COALESCE(SUM(b.partySize), 0) FROM FacilityBookingEntity b
-        WHERE b.facilityId = :facilityId AND b.startsAt < :endsAt AND b.endsAt > :startsAt
-          AND b.cancelledAt IS NULL
-        """
-    )
-    fun sumPartySizeOverlapping(
-        @Param("facilityId") facilityId: UUID,
-        @Param("startsAt") startsAt: Instant,
-        @Param("endsAt") endsAt: Instant,
-    ): Long
-
     /** Weekly quota — a cancelled booking must not count against the resident. */
     @Query(
         """

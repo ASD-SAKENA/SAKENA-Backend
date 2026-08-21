@@ -25,6 +25,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import java.math.BigDecimal
 import java.time.Instant
+import java.util.UUID
 import java.time.LocalTime
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
@@ -64,6 +65,10 @@ class FacilityBookingServiceTest {
         .toInstant()
     private val end: Instant = start.plus(1, ChronoUnit.HOURS)
 
+    /** Existing bookings covering the whole [start, end) window. */
+    private fun occupying(vararg partySizes: Int): List<FacilityBooking> =
+        partySizes.map { FacilityBooking.create(FacilityId(UUID.randomUUID()), UserId(UUID.randomUUID()), start, end, partySize = it) }
+
     @BeforeEach
     fun setUpBuildingAccess() {
         every { buildingAccess.residentBuildingId(resident.id) } returns buildingId
@@ -74,7 +79,7 @@ class FacilityBookingServiceTest {
     fun `book saves a booking while the slot has free capacity`() {
         val facility = facility(capacity = 10)
         every { facilityRepository.findByIdAndBuildingId(facility.id, buildingId) } returns facility
-        every { bookingRepository.sumPartySizeOverlapping(facility.id, start, end) } returns 9
+        every { bookingRepository.findAllForFacilityBetween(facility.id, start, end) } returns occupying(9)
         val saved = slot<FacilityBooking>()
         every { bookingRepository.save(capture(saved)) } answers { saved.captured }
 
@@ -89,7 +94,7 @@ class FacilityBookingServiceTest {
     fun `book locks the slot once capacity is reached`() {
         val facility = facility(capacity = 10)
         every { facilityRepository.findByIdAndBuildingId(facility.id, buildingId) } returns facility
-        every { bookingRepository.sumPartySizeOverlapping(facility.id, start, end) } returns 10
+        every { bookingRepository.findAllForFacilityBetween(facility.id, start, end) } returns occupying(10)
 
         assertFailsWith<DomainConflictException> {
             service.book(facility.id, BookFacilityCommand(start, end), resident)
@@ -103,7 +108,7 @@ class FacilityBookingServiceTest {
         // facility, because each booking counted as one against capacity.
         val facility = facility(capacity = 20)
         every { facilityRepository.findByIdAndBuildingId(facility.id, buildingId) } returns facility
-        every { bookingRepository.sumPartySizeOverlapping(facility.id, start, end) } returns 10
+        every { bookingRepository.findAllForFacilityBetween(facility.id, start, end) } returns occupying(10)
         val saved = slot<FacilityBooking>()
         every { bookingRepository.save(capture(saved)) } answers { saved.captured }
 
@@ -116,7 +121,7 @@ class FacilityBookingServiceTest {
     fun `book refuses a party that does not fit in the remaining room`() {
         val facility = facility(capacity = 10)
         every { facilityRepository.findByIdAndBuildingId(facility.id, buildingId) } returns facility
-        every { bookingRepository.sumPartySizeOverlapping(facility.id, start, end) } returns 8
+        every { bookingRepository.findAllForFacilityBetween(facility.id, start, end) } returns occupying(8)
 
         // Two seats left, four people asked for.
         assertFailsWith<DomainConflictException> {
@@ -129,7 +134,7 @@ class FacilityBookingServiceTest {
     fun `a party filling the last of the room is accepted`() {
         val facility = facility(capacity = 10)
         every { facilityRepository.findByIdAndBuildingId(facility.id, buildingId) } returns facility
-        every { bookingRepository.sumPartySizeOverlapping(facility.id, start, end) } returns 6
+        every { bookingRepository.findAllForFacilityBetween(facility.id, start, end) } returns occupying(6)
         val saved = slot<FacilityBooking>()
         every { bookingRepository.save(capture(saved)) } answers { saved.captured }
 
@@ -147,7 +152,7 @@ class FacilityBookingServiceTest {
             service.book(facility.id, BookFacilityCommand(start, end, partySize = 11), resident)
         }
         // Rejected before the slot is even queried — it can never fit.
-        verify(exactly = 0) { bookingRepository.sumPartySizeOverlapping(any(), any(), any()) }
+        verify(exactly = 0) { bookingRepository.findAllForFacilityBetween(any(), any(), any()) }
         verify(exactly = 0) { bookingRepository.save(any()) }
     }
 
@@ -194,7 +199,7 @@ class FacilityBookingServiceTest {
         every {
             bookingRepository.countByResidentBetween(facility.id, resident.id, any(), any())
         } returns 1
-        every { bookingRepository.sumPartySizeOverlapping(facility.id, start, end) } returns 0
+        every { bookingRepository.findAllForFacilityBetween(facility.id, start, end) } returns emptyList()
         val saved = slot<FacilityBooking>()
         every { bookingRepository.save(capture(saved)) } answers { saved.captured }
 
@@ -357,7 +362,7 @@ class FacilityBookingServiceTest {
         residentWallet.credit(BigDecimal("500000"))
         val buildingWallet = Wallet.createBuilding(buildingId)
         every { facilityRepository.findByIdAndBuildingId(facility.id, buildingId) } returns facility
-        every { bookingRepository.sumPartySizeOverlapping(facility.id, start, end) } returns 0
+        every { bookingRepository.findAllForFacilityBetween(facility.id, start, end) } returns emptyList()
         every { bookingRepository.save(any()) } answers { firstArg() }
         every { walletRepository.findByOwner(resident.id) } returns residentWallet
         every { walletRepository.findBuildingWallet(buildingId) } returns buildingWallet
@@ -375,7 +380,7 @@ class FacilityBookingServiceTest {
         val residentWallet = Wallet.createForUser(resident.id)
         residentWallet.credit(BigDecimal("10000"))
         every { facilityRepository.findByIdAndBuildingId(facility.id, buildingId) } returns facility
-        every { bookingRepository.sumPartySizeOverlapping(facility.id, start, end) } returns 0
+        every { bookingRepository.findAllForFacilityBetween(facility.id, start, end) } returns emptyList()
         every { bookingRepository.save(any()) } answers { firstArg() }
         every { walletRepository.findByOwner(resident.id) } returns residentWallet
         every { walletRepository.findBuildingWallet(buildingId) } returns Wallet.createBuilding(buildingId)
@@ -422,5 +427,42 @@ class FacilityBookingServiceTest {
         }
         // No refund for time the resident already had the facility.
         verify(exactly = 0) { walletRepository.save(any()) }
+    }
+
+    @Test
+    fun `a booking earlier in the day does not block a later free slot`() {
+        // The bug: an 08:00-09:00 booking used to count against a 09:00-10:00
+        // request, because occupancy was summed across the range rather than
+        // measured at a moment.
+        val facility = facility(capacity = 10)
+        val earlier = FacilityBooking.create(
+            facility.id, UserId(UUID.randomUUID()),
+            start.minus(1, ChronoUnit.HOURS), start, partySize = 10,
+        )
+        every { facilityRepository.findByIdAndBuildingId(facility.id, buildingId) } returns facility
+        every { bookingRepository.findAllForFacilityBetween(facility.id, start, end) } returns listOf(earlier)
+        val saved = slot<FacilityBooking>()
+        every { bookingRepository.save(capture(saved)) } answers { saved.captured }
+
+        service.book(facility.id, BookFacilityCommand(start, end, partySize = 10), resident)
+
+        assertEquals(10, saved.captured.partySize)
+    }
+
+    @Test
+    fun `a cancelled booking frees its seats again`() {
+        val facility = facility(capacity = 10)
+        val cancelled = FacilityBooking.create(
+            facility.id, UserId(UUID.randomUUID()), start, end, partySize = 10,
+        )
+        cancelled.cancel()
+        every { facilityRepository.findByIdAndBuildingId(facility.id, buildingId) } returns facility
+        every { bookingRepository.findAllForFacilityBetween(facility.id, start, end) } returns listOf(cancelled)
+        val saved = slot<FacilityBooking>()
+        every { bookingRepository.save(capture(saved)) } answers { saved.captured }
+
+        service.book(facility.id, BookFacilityCommand(start, end, partySize = 10), resident)
+
+        assertEquals(10, saved.captured.partySize)
     }
 }
