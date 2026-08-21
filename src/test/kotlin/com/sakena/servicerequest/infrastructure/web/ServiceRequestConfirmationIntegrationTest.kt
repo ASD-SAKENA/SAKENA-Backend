@@ -14,9 +14,7 @@ import com.sakena.servicerequest.domain.ServiceRequestRepository
 import com.sakena.servicerequest.domain.ServiceRequestStatus
 import com.sakena.servicerequest.domain.ServiceSubCategory
 import com.sakena.user.domain.UserId
-import com.sakena.user.domain.StaffBuildingMembershipRepository
 import com.sakena.user.domain.UserRepository
-import com.sakena.user.domain.model.StaffBuildingMembership
 import com.sakena.user.infrastructure.web.RegisterRequest
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -47,7 +45,6 @@ class ServiceRequestConfirmationIntegrationTest(
     @Autowired private val mockMvc: MockMvc,
     @Autowired private val objectMapper: ObjectMapper,
     @Autowired private val userRepository: UserRepository,
-    @Autowired private val staffMembershipRepository: StaffBuildingMembershipRepository,
     @Autowired private val serviceRequestRepository: ServiceRequestRepository,
     @Autowired private val apartmentRepository: ApartmentRepository,
     @Autowired private val residencyRepository: ResidencyRepository,
@@ -60,9 +57,6 @@ class ServiceRequestConfirmationIntegrationTest(
         val resident = register("resident-$suffix", "RESIDENT")
         val staff = register("staff-$suffix", "STAFF")
         val manager = register("manager-$suffix", "MANAGER")
-        // Staff reach a building through its invitation; these tests register
-        // them directly, so the membership is granted explicitly.
-        grantStaffMembership(staff, manager)
         val requestingApartmentId = startResidency(resident, suffix, manager)
 
         val createBody = CreateServiceRequestRequest(
@@ -149,9 +143,6 @@ class ServiceRequestConfirmationIntegrationTest(
         val resident = register("resident-$suffix", "RESIDENT")
         val staff = register("staff-$suffix", "STAFF")
         val manager = register("manager-$suffix", "MANAGER")
-        // Staff reach a building through its invitation; these tests register
-        // them directly, so the membership is granted explicitly.
-        grantStaffMembership(staff, manager)
         startResidency(resident, suffix, manager)
 
         val createBody = CreateServiceRequestRequest(
@@ -270,12 +261,6 @@ class ServiceRequestConfirmationIntegrationTest(
 
     private fun bearer(token: String) = "Bearer $token"
 
-    /** Puts a staff account inside the manager's building, as an invitation would. */
-    private fun grantStaffMembership(staff: AuthenticatedUser, manager: AuthenticatedUser) {
-        staffMembershipRepository.save(
-            StaffBuildingMembership.grant(staff.id, manager.managedBuildingId!!),
-        )
-    }
 
     private data class AuthenticatedUser(
         val token: String,

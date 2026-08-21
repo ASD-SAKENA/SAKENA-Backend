@@ -37,15 +37,12 @@ class ServiceRequestServiceTest {
     private val residencyRepository = mockk<ResidencyRepository>()
     private val apartmentRepository = mockk<ApartmentRepository>()
     private val ratingService = mockk<com.sakena.rating.application.RatingService>(relaxed = true)
-    private val staffMembershipRepository =
-        mockk<com.sakena.user.domain.StaffBuildingMembershipRepository>(relaxed = true)
     private val service = ServiceRequestService(
         serviceRequestRepository,
         userRepository,
         residencyRepository,
         apartmentRepository,
         ratingService,
-        staffMembershipRepository,
     )
 
     @Test
@@ -175,6 +172,79 @@ class ServiceRequestServiceTest {
 
         assertEquals(ServiceRequestStatus.IN_PROGRESS, result.status)
         assertEquals(null, result.completionCost)
+    }
+
+    @Test
+    fun `manager assigns an approved request to a staff member`() {
+        val manager = user(Role.MANAGER)
+        val worker = user(Role.STAFF)
+        val apartment = Apartment.create(manager.managedBuildingId!!, "1", 1, BigDecimal("40"), 1)
+        val request = serviceRequest(
+            status = ServiceRequestStatus.APPROVED,
+            completionCost = null,
+            requestingApartmentId = apartment.id,
+        )
+        every { serviceRequestRepository.findById(request.id) } returns request
+        every { apartmentRepository.findById(apartment.id) } returns apartment
+        every { userRepository.findById(manager.id) } returns manager
+        every { userRepository.findById(worker.id) } returns worker
+        every { serviceRequestRepository.save(any()) } answers { firstArg() }
+
+        val result = service.assignRequest(
+            AssignServiceRequestCommand(request.id.value.toString(), worker.id, manager.id),
+        )
+
+        // The worker must end up on the request, or it never reaches their list.
+        assertEquals(worker.id, result.assignedTo)
+        assertEquals(ServiceRequestStatus.ASSIGNED, result.status)
+    }
+
+    @Test
+    fun `staff from any building can be assigned, since they are a shared pool`() {
+        val manager = user(Role.MANAGER)
+        // A worker with no tie to this manager's building is still assignable:
+        // service staff are contractors serving several buildings.
+        val worker = user(Role.STAFF)
+        val apartment = Apartment.create(manager.managedBuildingId!!, "1", 1, BigDecimal("40"), 1)
+        val request = serviceRequest(
+            status = ServiceRequestStatus.APPROVED,
+            completionCost = null,
+            requestingApartmentId = apartment.id,
+        )
+        every { serviceRequestRepository.findById(request.id) } returns request
+        every { apartmentRepository.findById(apartment.id) } returns apartment
+        every { userRepository.findById(manager.id) } returns manager
+        every { userRepository.findById(worker.id) } returns worker
+        every { serviceRequestRepository.save(any()) } answers { firstArg() }
+
+        val result = service.assignRequest(
+            AssignServiceRequestCommand(request.id.value.toString(), worker.id, manager.id),
+        )
+
+        assertEquals(worker.id, result.assignedTo)
+    }
+
+    @Test
+    fun `a request cannot be assigned to a non-staff account`() {
+        val manager = user(Role.MANAGER)
+        val resident = user(Role.RESIDENT)
+        val apartment = Apartment.create(manager.managedBuildingId!!, "1", 1, BigDecimal("40"), 1)
+        val request = serviceRequest(
+            status = ServiceRequestStatus.APPROVED,
+            completionCost = null,
+            requestingApartmentId = apartment.id,
+        )
+        every { serviceRequestRepository.findById(request.id) } returns request
+        every { apartmentRepository.findById(apartment.id) } returns apartment
+        every { userRepository.findById(manager.id) } returns manager
+        every { userRepository.findById(resident.id) } returns resident
+
+        assertFailsWith<DomainValidationException> {
+            service.assignRequest(
+                AssignServiceRequestCommand(request.id.value.toString(), resident.id, manager.id),
+            )
+        }
+        verify(exactly = 0) { serviceRequestRepository.save(any()) }
     }
 
     @Test
