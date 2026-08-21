@@ -142,11 +142,54 @@ class PaymentServiceTest {
     }
 
     @Test
+    fun `submit accepts every supported receipt signature`() {
+        val resident = user(Role.RESIDENT)
+        val invoice = outstandingInvoice()
+        stubSubmitPrerequisites(resident, invoice)
+        every { receiptStorage.store(resident.id, any(), 1024, any()) } returns
+            "payment-receipts/${resident.id}/receipt"
+        every { repository.save(any()) } answers { firstArg() }
+        val supportedReceipts = listOf(
+            receipt(
+                contentType = "image/png; charset=binary",
+                content = byteArrayOf(
+                    0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+                ),
+            ),
+            receipt(
+                contentType = "image/jpeg",
+                content = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte()),
+            ),
+            receipt(
+                contentType = "image/webp",
+                content = byteArrayOf(
+                    0x52, 0x49, 0x46, 0x46,
+                    0x00, 0x00, 0x00, 0x00,
+                    0x57, 0x45, 0x42, 0x50,
+                ),
+            ),
+        )
+
+        supportedReceipts.forEach { supported ->
+            val result = service.submit(command(invoice.id, supported), resident.id)
+
+            assertEquals("payment-receipts/${resident.id}/receipt", result.receiptObjectKey)
+        }
+        verify(exactly = 3) { receiptStorage.store(resident.id, any(), 1024, any()) }
+    }
+
+    @Test
     fun `invalid receipt is rejected before touching object storage`() {
         val resident = user(Role.RESIDENT)
         val invoice = outstandingInvoice()
         stubSubmitPrerequisites(resident, invoice)
 
+        assertFailsWith<DomainValidationException> {
+            service.submit(
+                command(invoice.id, receipt(sizeBytes = 0, content = byteArrayOf())),
+                resident.id,
+            )
+        }
         assertFailsWith<DomainValidationException> {
             service.submit(command(invoice.id, receipt(contentType = "application/pdf")), resident.id)
         }
