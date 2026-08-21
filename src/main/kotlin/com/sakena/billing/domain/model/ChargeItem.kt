@@ -97,11 +97,19 @@ class ChargeItem private constructor(
             return trimmed
         }
 
+        /**
+         * Toman has no sub-unit, so a cost line is always a whole number.
+         * Keeping fractions here would push them through the split and
+         * invoice a unit for an amount it cannot pay.
+         */
         private fun validateAmount(amount: BigDecimal): BigDecimal {
             if (amount <= BigDecimal.ZERO) {
                 throw DomainValidationException("Charge item amount must be greater than zero")
             }
-            return amount
+            if (amount.stripTrailingZeros().scale() > 0) {
+                throw DomainValidationException("Charge item amount must be a whole number of Toman")
+            }
+            return amount.setScale(0)
         }
 
         private fun validateTarget(

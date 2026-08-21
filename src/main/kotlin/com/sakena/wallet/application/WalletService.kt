@@ -27,6 +27,7 @@ import com.sakena.wallet.domain.model.WalletTransaction
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.math.BigDecimal
+import java.math.RoundingMode
 
 /**
  * Application service for wallet use cases. Every balance change is written to
@@ -71,10 +72,12 @@ class WalletService(
         }
 
         val settled = request.settle(settledBy)
+        // The reported cost is a Double, but Toman has no sub-unit: round once
+        // here so the wage paid and the charge billed to the units agree.
         val amount = BigDecimal.valueOf(
             settled.completionCost
                 ?: throw DomainConflictException("Service request has no completion cost"),
-        )
+        ).setScale(0, RoundingMode.HALF_UP)
         val worker = settled.assignedTo
             ?: throw DomainConflictException("Service request has no assigned worker")
         val serviceCharge = when (settled.costResponsibility) {

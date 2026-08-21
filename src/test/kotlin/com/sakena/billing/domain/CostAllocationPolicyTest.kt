@@ -37,8 +37,8 @@ class CostAllocationPolicyTest {
             listOf(unitA, unitB, unitC),
         )
 
-        assertEquals(BigDecimal("300000.00"), shares.getValue(unitA.apartmentId))
-        assertEquals(BigDecimal("300000.00"), shares.getValue(unitB.apartmentId))
+        assertEquals(0, BigDecimal("300000").compareTo(shares.getValue(unitA.apartmentId)))
+        assertEquals(0, BigDecimal("300000").compareTo(shares.getValue(unitB.apartmentId)))
     }
 
     @Test
@@ -48,8 +48,8 @@ class CostAllocationPolicyTest {
             listOf(unitA, unitB, unitC),
         )
 
-        assertEquals(BigDecimal("50000.00"), shares.getValue(unitA.apartmentId))
-        assertEquals(BigDecimal("100000.00"), shares.getValue(unitB.apartmentId))
+        assertEquals(0, BigDecimal("50000").compareTo(shares.getValue(unitA.apartmentId)))
+        assertEquals(0, BigDecimal("100000").compareTo(shares.getValue(unitB.apartmentId)))
     }
 
     @Test
@@ -75,7 +75,7 @@ class CostAllocationPolicyTest {
         )
 
         // 100000 equal share + 50000 area share for the 50m² unit.
-        assertEquals(BigDecimal("150000.00"), shares.getValue(unitA.apartmentId))
+        assertEquals(0, BigDecimal("150000").compareTo(shares.getValue(unitA.apartmentId)))
     }
 
     @Test
@@ -104,6 +104,46 @@ class CostAllocationPolicyTest {
     fun `allocation without units is rejected`() {
         assertFailsWith<com.sakena.shared.domain.DomainConflictException> {
             CostAllocationPolicy.allocate(listOf(item("1000", CostAllocation.EQUAL)), emptyList())
+        }
+    }
+
+    @Test
+    fun `an uneven split produces whole Toman, never fractions`() {
+        // The bug: 100,000 across three units used to invoice 33,333.33 each,
+        // an amount no resident can actually pay.
+        val shares = CostAllocationPolicy.allocate(
+            listOf(item("100000", CostAllocation.EQUAL)),
+            listOf(unitA, unitB, unitC),
+        )
+
+        for (share in shares.values) {
+            assertEquals(0, share.stripTrailingZeros().compareTo(share.toBigInteger().toBigDecimal()), "share $share is not whole")
+        }
+        assertEquals(0, BigDecimal("33333").compareTo(shares.getValue(unitA.apartmentId)))
+        assertEquals(0, BigDecimal("33333").compareTo(shares.getValue(unitB.apartmentId)))
+        // The last unit absorbs the leftover so the total stays exact.
+        assertEquals(0, BigDecimal("33334").compareTo(shares.getValue(unitC.apartmentId)))
+    }
+
+    @Test
+    fun `an uneven area split also stays whole and exact`() {
+        val amount = BigDecimal("100000")
+        val shares = CostAllocationPolicy.allocate(
+            listOf(item("100000", CostAllocation.BY_AREA)),
+            listOf(unitA, unitB, unitC),
+        )
+
+        for (share in shares.values) {
+            assertEquals(0, share.stripTrailingZeros().compareTo(share.toBigInteger().toBigDecimal()), "share $share is not whole")
+        }
+        val total = shares.values.fold(BigDecimal.ZERO) { acc, value -> acc + value }
+        assertEquals(0, amount.compareTo(total))
+    }
+
+    @Test
+    fun `a cost line with a fraction of a Toman is refused`() {
+        assertFailsWith<com.sakena.shared.domain.DomainValidationException> {
+            item("1000.50", CostAllocation.EQUAL)
         }
     }
 }
