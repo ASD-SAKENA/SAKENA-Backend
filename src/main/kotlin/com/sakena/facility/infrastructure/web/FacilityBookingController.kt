@@ -69,9 +69,16 @@ class FacilityBookingController(
         @PathVariable facilityId: String,
         @RequestParam startsAt: Instant,
         @RequestParam endsAt: Instant,
+        @RequestParam(required = false, defaultValue = "1") partySize: Int,
     ): BookingQuoteResponse =
         BookingQuoteResponse(
-            bookingService.quote(FacilityId.from(facilityId), startsAt, endsAt, currentUser()),
+            bookingService.quote(
+                FacilityId.from(facilityId),
+                startsAt,
+                endsAt,
+                currentUser(),
+                partySize,
+            ),
         )
 
     @Operation(summary = "Cancel a booking (your own, or any of them as manager)")

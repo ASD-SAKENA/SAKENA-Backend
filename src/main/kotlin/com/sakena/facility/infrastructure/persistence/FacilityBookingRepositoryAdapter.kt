@@ -40,7 +40,7 @@ class FacilityBookingRepositoryAdapter(
         to: Instant,
     ): Long =
         jpaRepository
-            .countByFacilityIdAndBookedByAndStartsAtGreaterThanEqualAndStartsAtLessThan(
+            .countActiveInWeek(
                 facilityId.value,
                 residentId.value,
                 from,
@@ -67,7 +67,9 @@ class FacilityBookingRepositoryAdapter(
             startsAt = booking.startsAt,
             endsAt = booking.endsAt,
             partySize = booking.partySize,
+            price = booking.price,
             createdAt = booking.createdAt,
+            cancelledAt = booking.cancelledAt,
         )
 
     private fun toDomain(entity: FacilityBookingEntity): FacilityBooking =
@@ -78,6 +80,8 @@ class FacilityBookingRepositoryAdapter(
             startsAt = entity.startsAt,
             endsAt = entity.endsAt,
             partySize = entity.partySize,
+            price = entity.price,
             createdAt = entity.createdAt,
+            cancelledAt = entity.cancelledAt,
         )
 }

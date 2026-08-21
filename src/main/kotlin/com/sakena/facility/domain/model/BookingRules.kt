@@ -92,11 +92,17 @@ data class BookingRules(
     }
 
     /** Price of a slot, rounded to whole currency units. */
-    fun priceFor(startsAt: Instant, endsAt: Instant): BigDecimal {
+    /**
+     * What a booking costs: the hourly rate is per person, so a bigger party
+     * pays proportionally more for the same slot.
+     */
+    fun priceFor(startsAt: Instant, endsAt: Instant, partySize: Int = 1): BigDecimal {
         if (hourlyPrice <= BigDecimal.ZERO) return BigDecimal.ZERO
+        require(partySize >= 1) { "partySize must be at least 1" }
         val minutes = Duration.between(startsAt, endsAt).toMinutes()
         return hourlyPrice
             .multiply(BigDecimal(minutes))
+            .multiply(BigDecimal(partySize))
             .divide(BigDecimal(60), 0, java.math.RoundingMode.HALF_UP)
     }
 

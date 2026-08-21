@@ -29,6 +29,12 @@ class FacilityBookingEntity(
     @Column(name = "party_size", nullable = false)
     var partySize: Int,
 
+    @Column(name = "price", nullable = false)
+    var price: java.math.BigDecimal,
+
+    @Column(name = "cancelled_at")
+    var cancelledAt: Instant?,
+
     @Column(name = "created_at", nullable = false, updatable = false)
     var createdAt: Instant,
 )

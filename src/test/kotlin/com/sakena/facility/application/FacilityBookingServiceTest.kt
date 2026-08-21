@@ -29,18 +29,25 @@ import java.time.LocalTime
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 import kotlin.test.assertEquals
+import com.sakena.wallet.domain.model.Wallet
 import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 
 class FacilityBookingServiceTest {
 
     private val facilityRepository = mockk<FacilityRepository>()
     private val bookingRepository = mockk<FacilityBookingRepository>()
     private val buildingAccess = mockk<BuildingAccess>()
+    private val walletRepository = mockk<com.sakena.wallet.domain.WalletRepository>(relaxed = true)
+    private val transactionRepository =
+        mockk<com.sakena.wallet.domain.WalletTransactionRepository>(relaxed = true)
     private val zone = ZoneId.of(TIMEZONE)
     private val service = FacilityBookingService(
         facilityRepository,
         bookingRepository,
         buildingAccess,
+        walletRepository,
+        transactionRepository,
         TIMEZONE,
     )
 
@@ -222,11 +229,13 @@ class FacilityBookingServiceTest {
         val booking = FacilityBooking.create(facility.id, resident.id, start, end)
         every { facilityRepository.findByIdAndBuildingId(facility.id, buildingId) } returns facility
         every { bookingRepository.findById(booking.id) } returns booking
-        justRun { bookingRepository.deleteById(booking.id) }
+        every { bookingRepository.save(any()) } answers { firstArg() }
 
         service.cancel(facility.id, booking.id, resident)
 
-        verify(exactly = 1) { bookingRepository.deleteById(booking.id) }
+        // Kept, not deleted, so the occupancy history survives.
+        assertTrue(booking.cancelled)
+        verify(exactly = 1) { bookingRepository.save(booking) }
     }
 
     @Test
@@ -235,11 +244,12 @@ class FacilityBookingServiceTest {
         val booking = FacilityBooking.create(facility.id, resident.id, start, end)
         every { facilityRepository.findByIdAndBuildingId(facility.id, buildingId) } returns facility
         every { bookingRepository.findById(booking.id) } returns booking
-        justRun { bookingRepository.deleteById(booking.id) }
+        every { bookingRepository.save(any()) } answers { firstArg() }
 
         service.cancel(facility.id, booking.id, manager)
 
-        verify(exactly = 1) { bookingRepository.deleteById(booking.id) }
+        assertTrue(booking.cancelled)
+        verify(exactly = 1) { bookingRepository.save(booking) }
     }
 
     @Test
@@ -329,5 +339,88 @@ class FacilityBookingServiceTest {
 
     private companion object {
         const val TIMEZONE = "Asia/Tehran"
+    }
+
+    @Test
+    fun `a bigger party pays proportionally more for the same slot`() {
+        val paid = rules(hourlyPrice = BigDecimal("50000"))
+
+        // One hour: 50,000 per person.
+        assertEquals(BigDecimal("50000"), paid.priceFor(start, end, partySize = 1))
+        assertEquals(BigDecimal("200000"), paid.priceFor(start, end, partySize = 4))
+    }
+
+    @Test
+    fun `booking takes the price from the resident and gives it to the building`() {
+        val facility = facility(rules = rules(hourlyPrice = BigDecimal("50000")))
+        val residentWallet = Wallet.createForUser(resident.id)
+        residentWallet.credit(BigDecimal("500000"))
+        val buildingWallet = Wallet.createBuilding(buildingId)
+        every { facilityRepository.findByIdAndBuildingId(facility.id, buildingId) } returns facility
+        every { bookingRepository.sumPartySizeOverlapping(facility.id, start, end) } returns 0
+        every { bookingRepository.save(any()) } answers { firstArg() }
+        every { walletRepository.findByOwner(resident.id) } returns residentWallet
+        every { walletRepository.findBuildingWallet(buildingId) } returns buildingWallet
+
+        service.book(facility.id, BookFacilityCommand(start, end, partySize = 2), resident)
+
+        // Two people for an hour at 50,000 each.
+        assertEquals(BigDecimal("400000"), residentWallet.balance)
+        assertEquals(BigDecimal("100000"), buildingWallet.balance)
+    }
+
+    @Test
+    fun `a resident who cannot afford the slot does not get a booking`() {
+        val facility = facility(rules = rules(hourlyPrice = BigDecimal("50000")))
+        val residentWallet = Wallet.createForUser(resident.id)
+        residentWallet.credit(BigDecimal("10000"))
+        every { facilityRepository.findByIdAndBuildingId(facility.id, buildingId) } returns facility
+        every { bookingRepository.sumPartySizeOverlapping(facility.id, start, end) } returns 0
+        every { bookingRepository.save(any()) } answers { firstArg() }
+        every { walletRepository.findByOwner(resident.id) } returns residentWallet
+        every { walletRepository.findBuildingWallet(buildingId) } returns Wallet.createBuilding(buildingId)
+
+        assertFailsWith<DomainConflictException> {
+            service.book(facility.id, BookFacilityCommand(start, end), resident)
+        }
+    }
+
+    @Test
+    fun `cancelling before the session returns the money to the resident`() {
+        val facility = facility(rules = rules(hourlyPrice = BigDecimal("50000")))
+        val booking = FacilityBooking.create(
+            facility.id, resident.id, start, end, partySize = 2, price = BigDecimal("100000"),
+        )
+        val residentWallet = Wallet.createForUser(resident.id)
+        val buildingWallet = Wallet.createBuilding(buildingId)
+        buildingWallet.credit(BigDecimal("100000"))
+        every { facilityRepository.findByIdAndBuildingId(facility.id, buildingId) } returns facility
+        every { bookingRepository.findById(booking.id) } returns booking
+        every { bookingRepository.save(any()) } answers { firstArg() }
+        every { walletRepository.findByOwner(resident.id) } returns residentWallet
+        every { walletRepository.findBuildingWallet(buildingId) } returns buildingWallet
+
+        service.cancel(facility.id, booking.id, resident)
+
+        // Exactly what was taken comes back — not a recomputed price.
+        assertEquals(BigDecimal("100000"), residentWallet.balance)
+        assertEquals(BigDecimal.ZERO, buildingWallet.balance)
+    }
+
+    @Test
+    fun `a session that has already started cannot be cancelled`() {
+        val facility = facility()
+        val startedAt = Instant.now().minus(10, ChronoUnit.MINUTES)
+        val booking = FacilityBooking.create(
+            facility.id, resident.id, startedAt, startedAt.plus(1, ChronoUnit.HOURS),
+        )
+        every { facilityRepository.findByIdAndBuildingId(facility.id, buildingId) } returns facility
+        every { bookingRepository.findById(booking.id) } returns booking
+
+        assertFailsWith<DomainConflictException> {
+            service.cancel(facility.id, booking.id, resident)
+        }
+        // No refund for time the resident already had the facility.
+        verify(exactly = 0) { walletRepository.save(any()) }
     }
 }
