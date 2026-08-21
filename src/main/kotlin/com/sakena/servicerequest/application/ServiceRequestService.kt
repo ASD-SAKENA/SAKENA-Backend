@@ -17,8 +17,12 @@ import com.sakena.user.domain.Role
 import com.sakena.user.domain.User
 import com.sakena.user.domain.UserId
 import com.sakena.user.domain.UserRepository
+import com.fasterxml.jackson.databind.ObjectMapper
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import com.sakena.servicerequest.domain.ServiceRequestEvent
+import com.sakena.servicerequest.domain.ServiceRequestEventRepository
+import com.sakena.servicerequest.domain.ServiceRequestEventType
 
 @Service
 @Transactional
@@ -28,7 +32,56 @@ class ServiceRequestService(
     private val residencyRepository: ResidencyRepository,
     private val apartmentRepository: ApartmentRepository,
     private val ratingService: RatingService,
+    private val eventRepository: ServiceRequestEventRepository,
+    private val objectMapper: ObjectMapper,
 ) {
+
+    private fun recordEvent(request: ServiceRequest, type: ServiceRequestEventType, performedBy: UserId? = null, payload: String? = null) {
+        // Build a JSON payload that always contains the full request plus
+        // the optional short "note" previously used in several calls.
+        val payloadObj = mapOf(
+            "note" to payload,
+            "request" to serializeRequest(request)
+        )
+        val jsonPayload = try {
+            objectMapper.writeValueAsString(payloadObj)
+        } catch (e: Exception) {
+            // Fallback to the previous simple payload string when serialization fails
+            payload ?: ""
+        }
+
+        val event = ServiceRequestEvent(
+            serviceRequestId = request.id,
+            type = type,
+            performedBy = performedBy,
+            payload = jsonPayload,
+        )
+        eventRepository.save(event)
+    }
+
+    private fun serializeRequest(request: ServiceRequest): Map<String, Any?> {
+        return mapOf(
+            "id" to request.id.value.toString(),
+            "title" to request.title,
+            "description" to request.description,
+            "location" to request.location,
+            "categoryGroup" to request.categoryGroup.name,
+            "subCategory" to request.subCategory.name,
+            "createdBy" to request.createdBy.value.toString(),
+            "updatedBy" to request.updatedBy.value.toString(),
+            "createdAt" to request.createdAt.toString(),
+            "updatedAt" to request.updatedAt.toString(),
+            "status" to request.status.name,
+            "assignedTo" to request.assignedTo?.value?.toString(),
+            "resolvedAt" to request.resolvedAt?.toString(),
+            "expectedCompletionAt" to request.expectedCompletionAt?.toString(),
+            "completionReport" to request.completionReport,
+            "completionCost" to request.completionCost,
+            "costResponsibility" to request.costResponsibility?.name,
+            "requestingApartmentId" to request.requestingApartmentId?.value?.toString(),
+        )
+    }
+
 
     /**
      * A request tied to a resident's apartment belongs to that apartment's
@@ -71,7 +124,9 @@ class ServiceRequestService(
             subCategory = command.subCategory,
             requestingApartmentId = requestingApartmentId,
         )
-        return serviceRequestRepository.save(request)
+        val saved = serviceRequestRepository.save(request)
+        recordEvent(saved, ServiceRequestEventType.CREATED, currentUserId, "title=${saved.title}")
+        return saved
     }
 
     /**
@@ -117,7 +172,9 @@ class ServiceRequestService(
             subCategory = command.subCategory,
             userId = command.userId,
         )
-        return serviceRequestRepository.save(updated)
+        val saved = serviceRequestRepository.save(updated)
+        recordEvent(saved, ServiceRequestEventType.UPDATED, command.userId, "title=${saved.title}")
+        return saved
     }
 
     fun approveRequest(command: ApproveServiceRequestCommand): ServiceRequest {
@@ -126,7 +183,9 @@ class ServiceRequestService(
         requireManagerCanAct(request, command.userId)
 
         val approved = request.approve(command.userId)
-        return serviceRequestRepository.save(approved)
+        val saved = serviceRequestRepository.save(approved)
+        recordEvent(saved, ServiceRequestEventType.APPROVED, command.userId, "status=${saved.status}")
+        return saved
     }
 
     fun rejectRequest(command: RejectServiceRequestCommand): ServiceRequest {
@@ -135,7 +194,9 @@ class ServiceRequestService(
         requireManagerCanAct(request, command.userId)
 
         val rejected = request.reject(command.userId)
-        return serviceRequestRepository.save(rejected)
+        val saved = serviceRequestRepository.save(rejected)
+        recordEvent(saved, ServiceRequestEventType.REJECTED, command.userId, "status=${saved.status}")
+        return saved
     }
 
     fun assignRequest(command: AssignServiceRequestCommand): ServiceRequest {
@@ -152,7 +213,9 @@ class ServiceRequestService(
         }
 
         val assigned = request.assignTo(worker.id, command.userId)
-        return serviceRequestRepository.save(assigned)
+        val saved = serviceRequestRepository.save(assigned)
+        recordEvent(saved, ServiceRequestEventType.ASSIGNED, command.userId, "worker=${worker.id}")
+        return saved
     }
 
     fun startProgress(command: StartProgressCommand): ServiceRequest {
@@ -164,7 +227,9 @@ class ServiceRequestService(
         }
 
         val inProgress = request.startProgress(command.expectedCompletionAt)
-        return serviceRequestRepository.save(inProgress)
+        val saved = serviceRequestRepository.save(inProgress)
+        recordEvent(saved, ServiceRequestEventType.STARTED_PROGRESS, command.userId, "expectedCompletionAt=${saved.expectedCompletionAt}")
+        return saved
     }
 
     fun completeRequest(command: CompleteServiceRequestCommand): ServiceRequest {
@@ -180,7 +245,9 @@ class ServiceRequestService(
             completionReport = command.completionReport,
             completionCost = command.completionCost
         )
-        return serviceRequestRepository.save(completed)
+        val saved = serviceRequestRepository.save(completed)
+        recordEvent(saved, ServiceRequestEventType.COMPLETED, command.userId, "cost=${saved.completionCost}")
+        return saved
     }
 
     fun confirmCompletionAndRate(command: ConfirmCompletionCommand): ServiceRequest {
@@ -191,6 +258,7 @@ class ServiceRequestService(
         val staffId = confirmed.assignedTo
             ?: throw DomainValidationException("Service request has no assigned staff member to rate")
         val saved = serviceRequestRepository.save(confirmed)
+        recordEvent(saved, ServiceRequestEventType.CONFIRMED, command.userId, "confirmedBy=${command.userId}")
         ratingService.rate(saved.id, staffId, command.userId, command.score)
         return saved
     }
@@ -200,7 +268,9 @@ class ServiceRequestService(
             ?: throw EntityNotFoundException("Service request not found")
 
         val rejected = request.rejectCompletion(command.userId)
-        return serviceRequestRepository.save(rejected)
+        val saved = serviceRequestRepository.save(rejected)
+        recordEvent(saved, ServiceRequestEventType.REJECTED_COMPLETION, command.userId, null)
+        return saved
     }
 
     fun assignCostResponsibility(command: AssignServiceCostResponsibilityCommand): ServiceRequest {
@@ -218,7 +288,9 @@ class ServiceRequestService(
             responsibility = command.responsibility,
             userId = command.managerId,
         )
-        return serviceRequestRepository.save(updated)
+        val saved = serviceRequestRepository.save(updated)
+        recordEvent(saved, ServiceRequestEventType.COST_RESPONSIBILITY_ASSIGNED, command.managerId, "responsibility=${saved.costResponsibility}")
+        return saved
     }
 
     fun getCategories(categoryGroupValue: String?): CategoryOptionsResult {
