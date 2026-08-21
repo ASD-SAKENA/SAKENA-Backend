@@ -128,7 +128,11 @@ class ServiceRequestControllerTest {
             active = true
         )
 
-        controller = ServiceRequestController(profileService, serviceRequestService, apartmentRepository, buildingRepository)
+        controller = ServiceRequestController(
+            profileService,
+            serviceRequestService,
+            ServiceRequestResponseAssembler(apartmentRepository, buildingRepository),
+        )
 
         val validator = LocalValidatorFactoryBean()
         validator.afterPropertiesSet()
