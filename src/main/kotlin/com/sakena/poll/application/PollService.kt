@@ -12,7 +12,6 @@ import com.sakena.poll.domain.model.PollId
 import com.sakena.poll.domain.model.PollResults
 import com.sakena.poll.domain.model.PollVote
 import com.sakena.property.domain.BuildingAccess
-import com.sakena.property.domain.model.BuildingId
 import com.sakena.shared.domain.DomainConflictException
 import com.sakena.shared.domain.DomainForbiddenException
 import com.sakena.user.domain.Role
@@ -85,7 +84,7 @@ class PollService(
 
     @Transactional(readOnly = true)
     fun getAll(viewer: User): List<PollResults> =
-        pollRepository.findAllByBuildingNewestFirst(buildingIdFor(viewer))
+        pollRepository.findAllByBuildingNewestFirst(requireBuildingScope(viewer))
             .map { resultsOf(it, viewer.id) }
 
     private fun resultsOf(poll: Poll, viewerId: UserId): PollResults =
@@ -100,17 +99,15 @@ class PollService(
 
     private fun requireAccessiblePoll(id: PollId, user: User): Poll {
         val poll = requirePoll(id)
-        if (poll.buildingId == null || poll.buildingId != buildingIdFor(user)) {
+        if (poll.buildingId == null || poll.buildingId != requireBuildingScope(user)) {
             throw DomainForbiddenException("You cannot access this poll")
         }
         return poll
     }
 
-    private fun buildingIdFor(user: User): BuildingId = when (user.role) {
-        Role.MANAGER -> buildingAccess.managedBuildingId(user.id)
-        Role.RESIDENT -> buildingAccess.residentBuildingId(user.id)
-        Role.STAFF, Role.ADMIN -> throw DomainForbiddenException("You cannot access building polls")
-    }
+    private fun requireBuildingScope(user: User) =
+        buildingAccess.buildingIdFor(user)
+            ?: throw DomainForbiddenException("You cannot access building polls")
 
     private fun requireResident(user: User) {
         if (user.role != Role.RESIDENT) {
