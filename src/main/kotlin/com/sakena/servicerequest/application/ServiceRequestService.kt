@@ -82,6 +82,17 @@ class ServiceRequestService(
         )
     }
 
+    private fun saveAndRecordEvent(
+        request: ServiceRequest,
+        type: ServiceRequestEventType,
+        performedBy: UserId?,
+        noteOf: (ServiceRequest) -> String? = { null },
+    ): ServiceRequest {
+        val saved = serviceRequestRepository.save(request)
+        recordEvent(saved, type, performedBy, noteOf(saved))
+        return saved
+    }
+
 
     /**
      * A request tied to a resident's apartment belongs to that apartment's
@@ -124,9 +135,12 @@ class ServiceRequestService(
             subCategory = command.subCategory,
             requestingApartmentId = requestingApartmentId,
         )
-        val saved = serviceRequestRepository.save(request)
-        recordEvent(saved, ServiceRequestEventType.CREATED, currentUserId, "title=${saved.title}")
-        return saved
+        return saveAndRecordEvent(
+            request = request,
+            type = ServiceRequestEventType.CREATED,
+            performedBy = currentUserId,
+            noteOf = { "title=${it.title}" },
+        )
     }
 
     /**
@@ -172,9 +186,12 @@ class ServiceRequestService(
             subCategory = command.subCategory,
             userId = command.userId,
         )
-        val saved = serviceRequestRepository.save(updated)
-        recordEvent(saved, ServiceRequestEventType.UPDATED, command.userId, "title=${saved.title}")
-        return saved
+        return saveAndRecordEvent(
+            request = updated,
+            type = ServiceRequestEventType.UPDATED,
+            performedBy = command.userId,
+            noteOf = { "title=${it.title}" },
+        )
     }
 
     fun approveRequest(command: ApproveServiceRequestCommand): ServiceRequest {
@@ -183,9 +200,12 @@ class ServiceRequestService(
         requireManagerCanAct(request, command.userId)
 
         val approved = request.approve(command.userId)
-        val saved = serviceRequestRepository.save(approved)
-        recordEvent(saved, ServiceRequestEventType.APPROVED, command.userId, "status=${saved.status}")
-        return saved
+        return saveAndRecordEvent(
+            request = approved,
+            type = ServiceRequestEventType.APPROVED,
+            performedBy = command.userId,
+            noteOf = { "status=${it.status}" },
+        )
     }
 
     fun rejectRequest(command: RejectServiceRequestCommand): ServiceRequest {
@@ -194,9 +214,12 @@ class ServiceRequestService(
         requireManagerCanAct(request, command.userId)
 
         val rejected = request.reject(command.userId)
-        val saved = serviceRequestRepository.save(rejected)
-        recordEvent(saved, ServiceRequestEventType.REJECTED, command.userId, "status=${saved.status}")
-        return saved
+        return saveAndRecordEvent(
+            request = rejected,
+            type = ServiceRequestEventType.REJECTED,
+            performedBy = command.userId,
+            noteOf = { "status=${it.status}" },
+        )
     }
 
     fun assignRequest(command: AssignServiceRequestCommand): ServiceRequest {
@@ -213,9 +236,12 @@ class ServiceRequestService(
         }
 
         val assigned = request.assignTo(worker.id, command.userId)
-        val saved = serviceRequestRepository.save(assigned)
-        recordEvent(saved, ServiceRequestEventType.ASSIGNED, command.userId, "worker=${worker.id}")
-        return saved
+        return saveAndRecordEvent(
+            request = assigned,
+            type = ServiceRequestEventType.ASSIGNED,
+            performedBy = command.userId,
+            noteOf = { "worker=${worker.id}" },
+        )
     }
 
     fun startProgress(command: StartProgressCommand): ServiceRequest {
