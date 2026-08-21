@@ -7,11 +7,13 @@ import com.sakena.billing.domain.ChargeItemNotFoundException
 import com.sakena.billing.domain.ChargeItemRepository
 import com.sakena.billing.domain.ChargePeriodNotFoundException
 import com.sakena.billing.domain.ChargePeriodRepository
+import com.sakena.billing.domain.ServiceChargeRepository
 import com.sakena.billing.domain.UnitInvoiceRepository
 import com.sakena.billing.domain.model.ChargeItem
 import com.sakena.billing.domain.model.ChargeItemId
 import com.sakena.billing.domain.model.ChargePeriod
 import com.sakena.billing.domain.model.ChargePeriodId
+import com.sakena.billing.domain.model.ServiceCharge
 import com.sakena.property.domain.ApartmentNotFoundException
 import com.sakena.property.domain.ApartmentRepository
 import com.sakena.property.domain.BuildingAccess
@@ -32,6 +34,7 @@ class ChargePeriodService(
     private val periodRepository: ChargePeriodRepository,
     private val itemRepository: ChargeItemRepository,
     private val invoiceRepository: UnitInvoiceRepository,
+    private val serviceChargeRepository: ServiceChargeRepository,
     private val apartmentRepository: ApartmentRepository,
     private val buildingAccess: BuildingAccess,
 ) {
@@ -128,6 +131,17 @@ class ChargePeriodService(
         requireManagedPeriod(periodId, managerId)
         return itemRepository.findAllByPeriod(periodId)
     }
+
+    /**
+     * Settled service costs waiting to be attached the next time a draft period
+     * is issued. Visible so managers know wages already paid from the building
+     * wallet will land on unit invoices at issue time.
+     */
+    @Transactional(readOnly = true)
+    fun getPendingServiceCharges(managerId: UserId): List<ServiceCharge> =
+        serviceChargeRepository.findPendingByBuilding(
+            buildingAccess.managedBuildingId(managerId),
+        )
 
     private fun requireManagedPeriod(id: ChargePeriodId, managerId: UserId): ChargePeriod {
         val period = requirePeriod(id)

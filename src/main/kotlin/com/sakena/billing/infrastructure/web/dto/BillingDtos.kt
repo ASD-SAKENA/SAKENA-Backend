@@ -11,6 +11,8 @@ import com.sakena.billing.domain.model.ChargePeriodStatus
 import com.sakena.billing.domain.model.ChargePeriodType
 import com.sakena.billing.domain.model.CostAllocation
 import com.sakena.billing.domain.model.InvoiceStatus
+import com.sakena.billing.domain.model.ServiceCharge
+import com.sakena.billing.domain.model.ServiceChargeTarget
 import com.sakena.billing.domain.model.UnitInvoice
 import com.sakena.property.domain.model.BuildingId
 import com.sakena.property.domain.model.ApartmentId
@@ -167,6 +169,30 @@ data class UnitInvoiceResponse(
             remaining = invoice.remaining,
             status = invoice.status,
             issuedAt = invoice.issuedAt,
+        )
+    }
+}
+
+data class ServiceChargeResponse(
+    val id: UUID,
+    val sourceServiceRequestId: UUID,
+    val buildingId: UUID,
+    val title: String,
+    val amount: BigDecimal,
+    val target: ServiceChargeTarget,
+    val targetApartmentId: UUID?,
+    val createdAt: Instant,
+) {
+    companion object {
+        fun from(charge: ServiceCharge) = ServiceChargeResponse(
+            id = charge.id.value,
+            sourceServiceRequestId = charge.sourceServiceRequestId.value,
+            buildingId = charge.buildingId.value,
+            title = charge.title,
+            amount = charge.amount,
+            target = charge.target,
+            targetApartmentId = charge.targetApartmentId?.value,
+            createdAt = charge.createdAt,
         )
     }
 }

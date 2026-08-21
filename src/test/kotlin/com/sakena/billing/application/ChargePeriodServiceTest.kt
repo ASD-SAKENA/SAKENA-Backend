@@ -5,16 +5,20 @@ import com.sakena.billing.application.command.CreateChargePeriodCommand
 import com.sakena.billing.application.command.UpdateChargePeriodCommand
 import com.sakena.billing.domain.ChargeItemRepository
 import com.sakena.billing.domain.ChargePeriodRepository
+import com.sakena.billing.domain.ServiceChargeRepository
 import com.sakena.billing.domain.UnitInvoiceRepository
 import com.sakena.billing.domain.model.ChargeItemId
 import com.sakena.billing.domain.model.ChargeItemKind
 import com.sakena.billing.domain.model.ChargePeriod
 import com.sakena.billing.domain.model.ChargePeriodType
 import com.sakena.billing.domain.model.CostAllocation
+import com.sakena.billing.domain.model.ServiceCharge
+import com.sakena.billing.domain.model.ServiceChargeTarget
 import com.sakena.property.domain.ApartmentRepository
 import com.sakena.property.domain.BuildingAccess
 import com.sakena.property.domain.model.Apartment
 import com.sakena.property.domain.model.BuildingId
+import com.sakena.servicerequest.domain.ServiceRequestId
 import com.sakena.shared.domain.DomainConflictException
 import com.sakena.shared.domain.DomainForbiddenException
 import com.sakena.user.domain.UserId
@@ -32,12 +36,14 @@ class ChargePeriodServiceTest {
     private val periodRepository = mockk<ChargePeriodRepository>()
     private val itemRepository = mockk<ChargeItemRepository>()
     private val invoiceRepository = mockk<UnitInvoiceRepository>()
+    private val serviceChargeRepository = mockk<ServiceChargeRepository>()
     private val apartmentRepository = mockk<ApartmentRepository>()
     private val buildingAccess = mockk<BuildingAccess>()
     private val service = ChargePeriodService(
         periodRepository,
         itemRepository,
         invoiceRepository,
+        serviceChargeRepository,
         apartmentRepository,
         buildingAccess,
     )
@@ -150,6 +156,29 @@ class ChargePeriodServiceTest {
         }
 
         verify(exactly = 0) { itemRepository.save(any()) }
+    }
+
+    @Test
+    fun `pending service charges come from the manager's building only`() {
+        val charge = ServiceCharge.create(
+            sourceServiceRequestId = ServiceRequestId.generate(),
+            buildingId = buildingId,
+            title = "تعمیر آسانسور",
+            amount = BigDecimal("250000"),
+            target = ServiceChargeTarget.SPECIFIC_UNIT,
+            targetApartmentId = Apartment.create(
+                buildingId = buildingId,
+                unitNumber = "12",
+                floorNumber = 3,
+                areaSquareMeters = BigDecimal("90"),
+                bedrooms = 2,
+            ).id,
+        )
+        every { buildingAccess.managedBuildingId(managerId) } returns buildingId
+        every { serviceChargeRepository.findPendingByBuilding(buildingId) } returns listOf(charge)
+
+        assertEquals(listOf(charge), service.getPendingServiceCharges(managerId))
+        verify(exactly = 1) { serviceChargeRepository.findPendingByBuilding(buildingId) }
     }
 
     private fun createCommand(id: BuildingId) = CreateChargePeriodCommand(
