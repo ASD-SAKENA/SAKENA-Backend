@@ -56,9 +56,7 @@ class InvitationService(
     ): BuildingInvitation {
         val building = buildingRepository.findById(buildingId)
             ?: throw EntityNotFoundException("Building with id '$buildingId' was not found")
-        if (requesterManagedBuildingId != buildingId) {
-            throw DomainForbiddenException("You do not manage building '$buildingId'")
-        }
+        requireManagedBuildingAccess(buildingId, requesterManagedBuildingId)
         command.apartmentId?.let { apartmentId ->
             val apartment = apartmentRepository.findById(apartmentId)
                 ?: throw EntityNotFoundException("Apartment with id '$apartmentId' was not found")
@@ -98,8 +96,7 @@ class InvitationService(
      */
     @Transactional(readOnly = true)
     fun peek(token: String): BuildingInvitation {
-        val invitation = invitationRepository.findByToken(token)
-            ?: throw EntityNotFoundException("This invitation link is not valid")
+        val invitation = requireInvitationByToken(token)
         if (!invitation.isUsableAt(Instant.now())) {
             throw DomainConflictException("This invitation link is no longer valid")
         }
@@ -112,8 +109,7 @@ class InvitationService(
      * a failed move-in never burns the invitation.
      */
     fun accept(token: String, user: User): BuildingInvitation {
-        val invitation = invitationRepository.findByToken(token)
-            ?: throw EntityNotFoundException("This invitation link is not valid")
+        val invitation = requireInvitationByToken(token)
 
         if (!invitation.isAddressedTo(user.email, user.username)) {
             throw DomainConflictException("This invitation was issued for a different person")
@@ -136,21 +132,21 @@ class InvitationService(
         return invitationRepository.save(invitation)
     }
 
+    private fun requireInvitationByToken(token: String): BuildingInvitation =
+        invitationRepository.findByToken(token)
+            ?: throw EntityNotFoundException("This invitation link is not valid")
+
     fun revoke(id: InvitationId, requesterManagedBuildingId: BuildingId?): BuildingInvitation {
         val invitation = invitationRepository.findById(id)
             ?: throw InvitationNotFoundException(id)
-        if (requesterManagedBuildingId != invitation.buildingId) {
-            throw DomainForbiddenException("You do not manage building '${invitation.buildingId}'")
-        }
+        requireManagedBuildingAccess(invitation.buildingId, requesterManagedBuildingId)
         invitation.revoke()
         return invitationRepository.save(invitation)
     }
 
     @Transactional(readOnly = true)
     fun getAll(buildingId: BuildingId, requesterManagedBuildingId: BuildingId?): List<BuildingInvitation> {
-        if (requesterManagedBuildingId != buildingId) {
-            throw DomainForbiddenException("You do not manage building '$buildingId'")
-        }
+        requireManagedBuildingAccess(buildingId, requesterManagedBuildingId)
         return invitationRepository.findAllByBuilding(buildingId)
     }
 
@@ -162,9 +158,7 @@ class InvitationService(
      */
     @Transactional(readOnly = true)
     fun getMembers(buildingId: BuildingId, requesterManagedBuildingId: BuildingId?): List<BuildingMember> {
-        if (requesterManagedBuildingId != buildingId) {
-            throw DomainForbiddenException("You do not manage building '$buildingId'")
-        }
+        requireManagedBuildingAccess(buildingId, requesterManagedBuildingId)
 
         // Staff are never members of a building: they are a separate pool of
         // accounts assigned work across buildings, so an accepted staff
@@ -186,6 +180,15 @@ class InvitationService(
                 unitNumber = residency?.let { apartmentRepository.findById(it.apartmentId)?.unitNumber },
                 tenancy = residency?.tenancy,
             )
+        }
+    }
+
+    private fun requireManagedBuildingAccess(
+        buildingId: BuildingId,
+        requesterManagedBuildingId: BuildingId?,
+    ) {
+        if (requesterManagedBuildingId != buildingId) {
+            throw DomainForbiddenException("You do not manage building '$buildingId'")
         }
     }
 

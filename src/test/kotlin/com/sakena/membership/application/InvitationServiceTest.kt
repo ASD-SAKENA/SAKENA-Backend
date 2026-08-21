@@ -210,7 +210,22 @@ class InvitationServiceTest {
     fun `peek refuses an unknown link`() {
         every { invitationRepository.findByToken("nope") } returns null
 
-        assertFailsWith<EntityNotFoundException> { service.peek("nope") }
+        val error = assertFailsWith<EntityNotFoundException> { service.peek("nope") }
+
+        assertEquals("This invitation link is not valid", error.message)
+    }
+
+    @Test
+    fun `accept refuses an unknown link before changing membership`() {
+        every { invitationRepository.findByToken("nope") } returns null
+
+        val error = assertFailsWith<EntityNotFoundException> {
+            service.accept("nope", user())
+        }
+
+        assertEquals("This invitation link is not valid", error.message)
+        verify(exactly = 0) { invitationRepository.save(any()) }
+        verify(exactly = 0) { residencyService.start(any(), any(), any()) }
     }
 
     @Test
@@ -400,6 +415,10 @@ class InvitationServiceTest {
         assertFailsWith<DomainForbiddenException> {
             service.getMembers(building.id, requesterManagedBuildingId = otherBuilding.id)
         }
+
+        verify(exactly = 0) { invitationRepository.findAllByBuilding(any()) }
+        verify(exactly = 0) { userRepository.findAllByIds(any()) }
+        verify(exactly = 0) { residencyService.getActiveByBuilding(any(), any()) }
     }
 
     @Test
@@ -410,6 +429,7 @@ class InvitationServiceTest {
         assertFailsWith<DomainForbiddenException> {
             service.revoke(invitation.id, requesterManagedBuildingId = com.sakena.property.domain.model.BuildingId.new())
         }
+        verify(exactly = 0) { invitationRepository.save(any()) }
     }
 
     @Test
@@ -417,6 +437,8 @@ class InvitationServiceTest {
         assertFailsWith<DomainForbiddenException> {
             service.getAll(building.id, requesterManagedBuildingId = com.sakena.property.domain.model.BuildingId.new())
         }
+
+        verify(exactly = 0) { invitationRepository.findAllByBuilding(any()) }
     }
 
     private fun pendingInvitation(
