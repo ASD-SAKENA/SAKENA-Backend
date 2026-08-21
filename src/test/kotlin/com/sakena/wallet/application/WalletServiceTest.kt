@@ -102,9 +102,9 @@ class WalletServiceTest {
 
         service.settleServiceRequest(request.id, manager)
 
-        assertEquals(BigDecimal("-250000.0"), building.balance)
+        assertEquals(0, BigDecimal("-250000").compareTo(building.balance))
         val workerWallet = savedWallets.first { it.ownerUserId == worker }
-        assertEquals(BigDecimal("250000.0"), workerWallet.balance)
+        assertEquals(0, BigDecimal("250000").compareTo(workerWallet.balance))
         assertEquals("SETTLED", savedRequest.captured.status.name)
     }
 
@@ -334,8 +334,8 @@ class WalletServiceTest {
         assertEquals(apartment.buildingId, queuedCharge.captured.buildingId)
         assertEquals(ServiceChargeTarget.ALL_UNITS, queuedCharge.captured.target)
         assertEquals(null, queuedCharge.captured.targetApartmentId)
-        assertEquals(BigDecimal("250000.0"), queuedCharge.captured.amount)
-        assertEquals(BigDecimal("-250000.0"), buildingWallet.balance)
+        assertEquals(0, BigDecimal("250000").compareTo(queuedCharge.captured.amount))
+        assertEquals(0, BigDecimal("-250000").compareTo(buildingWallet.balance))
         verify(exactly = 1) { serviceRequestRepository.save(match { it.status.name == "SETTLED" }) }
     }
 
@@ -375,8 +375,8 @@ class WalletServiceTest {
         assertEquals(apartment.buildingId, queuedCharge.captured.buildingId)
         assertEquals(ServiceChargeTarget.SPECIFIC_UNIT, queuedCharge.captured.target)
         assertEquals(apartment.id, queuedCharge.captured.targetApartmentId)
-        assertEquals(BigDecimal("250000.0"), queuedCharge.captured.amount)
-        assertEquals(BigDecimal("-250000.0"), buildingWallet.balance)
+        assertEquals(0, BigDecimal("250000").compareTo(queuedCharge.captured.amount))
+        assertEquals(0, BigDecimal("-250000").compareTo(buildingWallet.balance))
         verify(exactly = 1) { serviceRequestRepository.save(match { it.status.name == "SETTLED" }) }
     }
 

@@ -20,7 +20,13 @@ data class BillableUnit(
  */
 object CostAllocationPolicy {
 
-    private const val SCALE = 2
+    /**
+     * Toman has no sub-unit, so a share is always a whole number. Splitting
+     * 100,000 three ways used to invoice 33,333.33 — an amount nobody can
+     * actually pay. Shares are floored to whole Toman and the leftover goes
+     * to the last unit, which still makes the shares add up exactly.
+     */
+    private const val SCALE = 0
 
     fun allocate(items: List<ChargeItem>, units: List<BillableUnit>): Map<ApartmentId, BigDecimal> {
         if (units.isEmpty()) {
@@ -83,6 +89,7 @@ object CostAllocationPolicy {
         var allocated = BigDecimal.ZERO
         for ((index, unit) in units.withIndex()) {
             val share = if (index == units.lastIndex) {
+                // Whatever the floored shares left over, so nothing is lost.
                 amount - allocated
             } else {
                 shareOf(unit).also { allocated += it }

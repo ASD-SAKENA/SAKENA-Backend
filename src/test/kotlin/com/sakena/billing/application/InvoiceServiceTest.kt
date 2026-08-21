@@ -102,7 +102,7 @@ class InvoiceServiceTest {
         val invoices = service.issue(period.id, managerId)
 
         assertEquals(2, invoices.size)
-        assertEquals(BigDecimal("450000.00"), invoices.first().amount)
+        assertEquals(0, BigDecimal("450000").compareTo(invoices.first().amount))
         assertEquals(ChargePeriodStatus.ISSUED, period.status)
         verify(exactly = 1) { periodRepository.save(period) }
     }
@@ -186,8 +186,8 @@ class InvoiceServiceTest {
 
         val invoices = service.issue(period.id, managerId).associateBy { it.apartmentId }
 
-        assertEquals(BigDecimal("125.00"), invoices.getValue(units.first().id).amount)
-        assertEquals(BigDecimal("50.00"), invoices.getValue(units.last().id).amount)
+        assertEquals(0, BigDecimal("125").compareTo(invoices.getValue(units.first().id).amount))
+        assertEquals(0, BigDecimal("50").compareTo(invoices.getValue(units.last().id).amount))
         assertEquals(period.id, shared.attachedPeriodId)
         assertEquals(period.id, targeted.attachedPeriodId)
         verify(exactly = 2) { itemRepository.save(any()) }
