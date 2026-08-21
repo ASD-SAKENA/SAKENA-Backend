@@ -55,6 +55,7 @@ class PaymentServiceTest {
     private val repository = mockk<PaymentRepository>()
     private val userRepository = mockk<UserRepository>()
     private val receiptStorage = mockk<PaymentReceiptStorage>()
+    private val receiptValidator = PaymentReceiptValidator()
     private val buildingAccess = mockk<BuildingAccess> {
         every { managedBuildingId(any()) } returns buildingId
         every { requireManagerAccess(buildingId, any()) } returns Unit
@@ -68,6 +69,7 @@ class PaymentServiceTest {
         repository,
         userRepository,
         receiptStorage,
+        receiptValidator,
         buildingAccess,
         invoiceRepository,
         periodRepository,
@@ -195,7 +197,7 @@ class PaymentServiceTest {
         }
         assertFailsWith<DomainValidationException> {
             service.submit(
-                command(invoice.id, receipt(sizeBytes = PaymentService.MAX_RECEIPT_BYTES + 1)),
+                command(invoice.id, receipt(sizeBytes = PaymentReceiptValidator.MAX_RECEIPT_BYTES + 1)),
                 resident.id,
             )
         }
