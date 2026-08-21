@@ -49,8 +49,10 @@ class AnnouncementService(
 
     @Transactional(readOnly = true)
     fun getAll(viewer: User): List<Announcement> {
-        val buildingId = buildingAccess.buildingIdFor(viewer)
-            ?: throw DomainForbiddenException("You cannot access building announcements")
+        if (viewer.role == Role.STAFF || viewer.role == Role.ADMIN) {
+            throw DomainForbiddenException("You cannot access building announcements")
+        }
+        val buildingId = buildingAccess.buildingIdFor(viewer) ?: return emptyList()
         return announcementRepository.findAllByBuildingNewestFirst(buildingId)
     }
 }

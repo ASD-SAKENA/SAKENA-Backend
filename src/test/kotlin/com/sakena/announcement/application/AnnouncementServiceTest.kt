@@ -72,6 +72,21 @@ class AnnouncementServiceTest {
     }
 
     @Test
+    fun `getAll returns empty when the resident has no building`() {
+        val resident = user(Role.RESIDENT)
+        val access = object : BuildingAccess {
+            override fun managedBuildingId(managerId: UserId): BuildingId = buildingId
+            override fun residentBuildingId(residentId: UserId): BuildingId = buildingId
+            override fun buildingIdFor(user: User): BuildingId? = null
+            override fun requireManagerAccess(buildingId: BuildingId, managerId: UserId) = Unit
+            override fun requireResidentAccess(buildingId: BuildingId, residentId: UserId) = Unit
+        }
+        val softService = AnnouncementService(repository, access, notificationService)
+
+        assertEquals(emptyList(), softService.getAll(resident))
+    }
+
+    @Test
     fun `staff cannot read building announcements`() {
         val staff = user(Role.STAFF)
 
