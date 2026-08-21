@@ -124,6 +124,35 @@ class InvoiceService(
         return invoiceRepository.findAllByApartment(residency.apartmentId)
     }
 
+    /**
+     * Cost lines that make up a resident's invoice, with that unit's allocated
+     * share. Only lines that contributed a positive share are returned.
+     */
+    @Transactional(readOnly = true)
+    fun getLineItems(invoiceId: UnitInvoiceId, residentId: UserId): List<InvoiceLineItem> {
+        val invoice = invoiceRepository.findById(invoiceId)
+            ?: throw UnitInvoiceNotFoundException(invoiceId)
+        val residency = residencyRepository.findActiveByResident(residentId)
+            ?: throw DomainForbiddenException("You must be an active resident to view invoice details")
+        if (residency.apartmentId != invoice.apartmentId) {
+            throw DomainForbiddenException("You may only view invoices for your own apartment")
+        }
+
+        val period = requirePeriod(invoice.periodId)
+        val items = itemRepository.findAllByPeriod(period.id)
+        if (items.isEmpty()) return emptyList()
+
+        val units = apartmentRepository.findAllByBuildingId(period.buildingId)
+            .map { BillableUnit(apartmentId = it.id, areaSquareMeters = it.areaSquareMeters) }
+
+        return items.mapNotNull { item ->
+            val share = CostAllocationPolicy.allocate(listOf(item), units)[invoice.apartmentId]
+                ?: BigDecimal.ZERO
+            if (share <= BigDecimal.ZERO) null
+            else InvoiceLineItem(item = item, shareAmount = share)
+        }
+    }
+
     @Transactional(readOnly = true)
     fun periodOf(invoice: UnitInvoice): ChargePeriod? =
         periodRepository.findById(invoice.periodId)

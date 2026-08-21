@@ -221,6 +221,69 @@ class InvoiceServiceTest {
     }
 
     @Test
+    fun `getLineItems returns this unit's share of each cost line`() {
+        val period = period().also { it.issue() }
+        val unitA = apartment("1", "50")
+        val unitB = apartment("2", "50")
+        val residentId = UserId.generate()
+        val invoice = UnitInvoice.issue(period.id, unitA.id, BigDecimal("450000"))
+        every { invoiceRepository.findById(invoice.id) } returns invoice
+        every { residencyRepository.findActiveByResident(residentId) } returns
+            Residency.start(unitA.id, residentId, TenancyType.TENANT)
+        every { periodRepository.findById(period.id) } returns period
+        every { itemRepository.findAllByPeriod(period.id) } returns listOf(
+            ChargeItem.create(
+                period.id,
+                "Monthly charge",
+                BigDecimal("900000"),
+                ChargeItemKind.RECURRING_CHARGE,
+                CostAllocation.EQUAL,
+            ),
+            ChargeItem.create(
+                period.id,
+                "Unit A only",
+                BigDecimal("100000"),
+                ChargeItemKind.EXTRAORDINARY_EXPENSE,
+                CostAllocation.SPECIFIC_UNIT,
+                unitA.id,
+            ),
+            ChargeItem.create(
+                period.id,
+                "Unit B only",
+                BigDecimal("50000"),
+                ChargeItemKind.FACILITY_COST,
+                CostAllocation.SPECIFIC_UNIT,
+                unitB.id,
+            ),
+        )
+        every { apartmentRepository.findAllByBuildingId(buildingId) } returns listOf(unitA, unitB)
+
+        val lines = service.getLineItems(invoice.id, residentId)
+
+        assertEquals(2, lines.size)
+        assertEquals("Monthly charge", lines[0].item.title)
+        assertEquals(0, BigDecimal("450000").compareTo(lines[0].shareAmount))
+        assertEquals("Unit A only", lines[1].item.title)
+        assertEquals(0, BigDecimal("100000").compareTo(lines[1].shareAmount))
+    }
+
+    @Test
+    fun `getLineItems rejects another unit's invoice`() {
+        val period = period()
+        val ownUnit = apartment("1", "50")
+        val otherUnit = apartment("2", "50")
+        val residentId = UserId.generate()
+        val invoice = UnitInvoice.issue(period.id, otherUnit.id, BigDecimal("100"))
+        every { invoiceRepository.findById(invoice.id) } returns invoice
+        every { residencyRepository.findActiveByResident(residentId) } returns
+            Residency.start(ownUnit.id, residentId, TenancyType.TENANT)
+
+        assertFailsWith<DomainForbiddenException> {
+            service.getLineItems(invoice.id, residentId)
+        }
+    }
+
+    @Test
     fun `getOutstanding returns unpaid invoices for issued periods`() {
         val issued = period().also { it.issue() }
         val unit = apartment("1", "80")
