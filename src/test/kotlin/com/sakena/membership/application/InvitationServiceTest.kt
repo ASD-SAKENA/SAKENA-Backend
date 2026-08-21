@@ -371,6 +371,29 @@ class InvitationServiceTest {
     }
 
     @Test
+    fun `members never lists service staff`() {
+        // Staff belong to no building — they are a separate pool assigned work
+        // across buildings — so accepting a staff invitation must not make
+        // them show up among the building's residents.
+        val resident = user(username = "9121111111", email = "r@example.com")
+        val staff = user(username = "9123333333", email = "s@example.com", role = Role.STAFF)
+        val residentInvite = pendingInvitation(channel = InvitationChannel.LINK, recipient = null)
+            .also { it.accept(resident.id, Role.RESIDENT) }
+        val staffInvite = pendingInvitation(
+            channel = InvitationChannel.LINK, recipient = null, role = Role.STAFF,
+        ).also { it.accept(staff.id, Role.STAFF) }
+
+        every { invitationRepository.findAllByBuilding(building.id) } returns
+            listOf(residentInvite, staffInvite)
+        every { userRepository.findAllByIds(setOf(resident.id)) } returns listOf(resident)
+        every { residencyService.getActiveByBuilding(building.id, building.id) } returns emptyList()
+
+        val members = service.getMembers(building.id, requesterManagedBuildingId = building.id)
+
+        assertEquals(listOf(resident.id), members.map { it.user.id })
+    }
+
+    @Test
     fun `members is rejected for a manager who does not administer the building`() {
         val otherBuilding = Building.create("Other tower", "Elsewhere")
 

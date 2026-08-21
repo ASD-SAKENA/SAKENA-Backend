@@ -166,7 +166,11 @@ class InvitationService(
             throw DomainForbiddenException("You do not manage building '$buildingId'")
         }
 
+        // Staff are never members of a building: they are a separate pool of
+        // accounts assigned work across buildings, so an accepted staff
+        // invitation grants access to tasks, not membership here.
         val acceptedBy = invitationRepository.findAllByBuilding(buildingId)
+            .filter { it.role != Role.STAFF }
             .mapNotNull { it.acceptedBy }
             .toSet()
         if (acceptedBy.isEmpty()) return emptyList()

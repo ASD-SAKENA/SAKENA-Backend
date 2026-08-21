@@ -2,6 +2,7 @@ package com.sakena.user.application
 
 import com.sakena.property.domain.BuildingRepository
 import com.sakena.property.domain.model.BuildingId
+import com.sakena.residency.domain.ResidencyRepository
 import com.sakena.shared.domain.DomainValidationException
 import com.sakena.shared.domain.EntityNotFoundException
 import com.sakena.user.domain.Role
@@ -17,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional
 class UserAdminService(
     private val userRepository: UserRepository,
     private val buildingRepository: BuildingRepository,
+    private val residencyRepository: ResidencyRepository,
 ) {
 
     @Transactional(readOnly = true)
@@ -55,6 +57,15 @@ class UserAdminService(
                 throw EntityNotFoundException("Building not found: ${buildingId.value}")
             }
             return userRepository.save(user.withRole(role, managedBuildingId = buildingId))
+        }
+        // Staff belong to no building or unit, so becoming staff vacates any
+        // unit the user still occupied — otherwise the residency would quietly
+        // outlive the role that justified it.
+        if (role == Role.STAFF) {
+            residencyRepository.findActiveByResident(userId)?.let { residency ->
+                residency.end()
+                residencyRepository.save(residency)
+            }
         }
         return userRepository.save(user.withRole(role, managedBuildingId = null))
     }
