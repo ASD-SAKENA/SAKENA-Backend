@@ -26,6 +26,9 @@ class PaymentEntity(
     @Column(name = "building_id")
     var buildingId: UUID?,
 
+    @Column(name = "invoice_id")
+    var invoiceId: UUID?,
+
     @Column(name = "payer_id", nullable = false, updatable = false)
     var payerId: UUID,
 

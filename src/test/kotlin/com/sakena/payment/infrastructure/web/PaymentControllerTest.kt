@@ -1,6 +1,7 @@
 package com.sakena.payment.infrastructure.web
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.sakena.billing.domain.model.UnitInvoiceId
 import com.sakena.payment.application.PaymentService
 import com.sakena.payment.domain.PaymentReceiptAccess
 import com.sakena.payment.domain.model.Payment
@@ -50,15 +51,17 @@ class PaymentControllerTest {
     @Test
     fun `resident submits evidence using their authenticated identity`() {
         val resident = authenticate(Role.RESIDENT)
+        val invoiceId = UnitInvoiceId.new()
         val payment = pendingPayment(
             resident.id,
             "TX-123",
             "payment-receipts/${resident.id}/receipt.png",
+            invoiceId = invoiceId,
         )
         every { paymentService.submit(any(), resident.id) } returns payment
         val paymentPart = jsonPart(
             RecordPaymentRequest(
-                title = "Monthly charge",
+                invoiceId = invoiceId.value,
                 amount = BigDecimal("500000"),
                 transactionReference = "TX-123",
             ),
@@ -77,6 +80,7 @@ class PaymentControllerTest {
         )
             .andExpect(status().isCreated)
             .andExpect(jsonPath("$.transactionReference").value("TX-123"))
+            .andExpect(jsonPath("$.invoiceId").value(invoiceId.value.toString()))
             .andExpect(jsonPath("$.hasReceipt").value(true))
             .andExpect(jsonPath("$.receiptObjectKey").doesNotExist())
             .andExpect(jsonPath("$.status").value(PaymentStatus.PENDING.name))
@@ -84,7 +88,8 @@ class PaymentControllerTest {
         verify(exactly = 1) {
             paymentService.submit(
                 match {
-                    it.transactionReference == "TX-123" &&
+                    it.invoiceId == invoiceId &&
+                        it.transactionReference == "TX-123" &&
                         it.receipt?.contentType == MediaType.IMAGE_PNG_VALUE
                 },
                 resident.id,
@@ -97,6 +102,7 @@ class PaymentControllerTest {
         val resident = authenticate(Role.RESIDENT)
         val payment = pendingPayment(resident.id, "TX-PENDING")
         every { paymentService.getSubmissions(resident.id) } returns listOf(payment)
+        every { paymentService.periodTitleOf(payment) } returns payment.title
 
         mockMvc.perform(get("/api/v1/payments/submissions"))
             .andExpect(status().isOk)
@@ -110,6 +116,7 @@ class PaymentControllerTest {
             it.confirm(UserId.generate())
         }
         every { paymentService.getHistory(resident.id) } returns listOf(payment)
+        every { paymentService.periodTitleOf(payment) } returns payment.title
 
         mockMvc.perform(get("/api/v1/payments"))
             .andExpect(status().isOk)
@@ -121,6 +128,7 @@ class PaymentControllerTest {
         val manager = authenticate(Role.MANAGER)
         val payment = pendingPayment(UserId.generate(), "TX-PENDING")
         every { paymentService.getPending(manager.id) } returns listOf(payment)
+        every { paymentService.periodTitleOf(payment) } returns payment.title
 
         mockMvc.perform(get("/api/v1/payments/pending"))
             .andExpect(status().isOk)
@@ -148,6 +156,7 @@ class PaymentControllerTest {
             it.confirm(manager.id)
         }
         every { paymentService.confirm(payment.id, manager.id) } returns payment
+        every { paymentService.periodTitleOf(payment) } returns payment.title
 
         mockMvc.perform(patch("/api/v1/payments/${payment.id}/confirm"))
             .andExpect(status().isOk)
@@ -164,6 +173,7 @@ class PaymentControllerTest {
         every {
             paymentService.reject(payment.id, manager.id, "Reference not found")
         } returns payment
+        every { paymentService.periodTitleOf(payment) } returns payment.title
         val body = objectMapper.writeValueAsString(RejectPaymentRequest("Reference not found"))
 
         mockMvc.perform(
@@ -196,9 +206,11 @@ class PaymentControllerTest {
         payerId: UserId,
         reference: String,
         receiptObjectKey: String? = null,
+        invoiceId: UnitInvoiceId = UnitInvoiceId.new(),
     ): Payment =
         Payment.submit(
             buildingId = BuildingId.new(),
+            invoiceId = invoiceId,
             payerId = payerId,
             title = "Monthly charge",
             amount = BigDecimal("500000"),

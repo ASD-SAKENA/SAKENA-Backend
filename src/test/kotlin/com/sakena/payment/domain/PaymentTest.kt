@@ -1,5 +1,6 @@
 package com.sakena.payment.domain
 
+import com.sakena.billing.domain.model.UnitInvoiceId
 import com.sakena.payment.domain.model.Payment
 import com.sakena.payment.domain.model.PaymentStatus
 import com.sakena.property.domain.model.BuildingId
@@ -18,6 +19,7 @@ class PaymentTest {
     private val payer = UserId.generate()
     private val manager = UserId.generate()
     private val buildingId = BuildingId.new()
+    private val invoiceId = UnitInvoiceId.new()
 
     @Test
     fun `submit creates a pending payment claim with normalized evidence`() {
@@ -29,6 +31,7 @@ class PaymentTest {
 
         assertEquals("Monthly charge", payment.title)
         assertEquals(buildingId, payment.buildingId)
+        assertEquals(invoiceId, payment.invoiceId)
         assertEquals(BigDecimal("850000"), payment.amount)
         assertEquals("TX-123", payment.transactionReference)
         assertEquals("payment-receipts/TX-123.jpg", payment.receiptObjectKey)
@@ -136,6 +139,7 @@ class PaymentTest {
         receiptObjectKey: String? = null,
     ): Payment = Payment.submit(
         buildingId = buildingId,
+        invoiceId = invoiceId,
         payerId = payer,
         title = title,
         amount = amount,

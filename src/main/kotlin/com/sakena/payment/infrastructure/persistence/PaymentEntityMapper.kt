@@ -1,5 +1,6 @@
 package com.sakena.payment.infrastructure.persistence
 
+import com.sakena.billing.domain.model.UnitInvoiceId
 import com.sakena.payment.domain.model.Payment
 import com.sakena.payment.domain.model.PaymentId
 import com.sakena.property.domain.model.BuildingId
@@ -12,6 +13,7 @@ internal object PaymentEntityMapper {
         PaymentEntity(
             id = payment.id.value,
             buildingId = payment.buildingId?.value,
+            invoiceId = payment.invoiceId?.value,
             payerId = payment.payerId.value,
             title = payment.title,
             amount = payment.amount,
@@ -28,6 +30,7 @@ internal object PaymentEntityMapper {
         Payment.reconstitute(
             id = PaymentId(entity.id),
             buildingId = entity.buildingId?.let(::BuildingId),
+            invoiceId = entity.invoiceId?.let(::UnitInvoiceId),
             payerId = UserId(entity.payerId),
             title = entity.title,
             amount = entity.amount,

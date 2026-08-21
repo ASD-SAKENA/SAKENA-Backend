@@ -152,6 +152,9 @@ data class ChargeItemResponse(
 data class UnitInvoiceResponse(
     val id: UUID,
     val periodId: UUID,
+    val periodTitle: String,
+    val startsOn: LocalDate?,
+    val endsOn: LocalDate?,
     val apartmentId: UUID,
     val amount: BigDecimal,
     val paidAmount: BigDecimal,
@@ -160,9 +163,17 @@ data class UnitInvoiceResponse(
     val issuedAt: Instant,
 ) {
     companion object {
-        fun from(invoice: UnitInvoice) = UnitInvoiceResponse(
+        fun from(
+            invoice: UnitInvoice,
+            periodTitle: String = "",
+            startsOn: LocalDate? = null,
+            endsOn: LocalDate? = null,
+        ) = UnitInvoiceResponse(
             id = invoice.id.value,
             periodId = invoice.periodId.value,
+            periodTitle = periodTitle,
+            startsOn = startsOn,
+            endsOn = endsOn,
             apartmentId = invoice.apartmentId.value,
             amount = invoice.amount,
             paidAmount = invoice.paidAmount,

@@ -2,6 +2,7 @@ package com.sakena.payment.infrastructure.web
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.ninjasquad.springmockk.MockkBean
+import com.sakena.billing.domain.model.UnitInvoiceId
 import com.sakena.payment.application.PaymentService
 import com.sakena.payment.domain.model.Payment
 import com.sakena.payment.infrastructure.web.dto.RecordPaymentRequest
@@ -128,7 +129,7 @@ class PaymentAuthorizationTest {
     }
 
     private fun request() = RecordPaymentRequest(
-        title = "Monthly charge",
+        invoiceId = UnitInvoiceId.new().value,
         amount = BigDecimal("500000"),
         transactionReference = "TX-AUTH-123",
     )
@@ -142,6 +143,7 @@ class PaymentAuthorizationTest {
 
     private fun pendingPayment(payerId: UserId): Payment = Payment.submit(
         buildingId = BuildingId.new(),
+        invoiceId = UnitInvoiceId.new(),
         payerId = payerId,
         title = "Monthly charge",
         amount = BigDecimal("500000"),

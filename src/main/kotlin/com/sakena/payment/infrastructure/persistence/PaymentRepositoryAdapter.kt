@@ -1,5 +1,6 @@
 package com.sakena.payment.infrastructure.persistence
 
+import com.sakena.billing.domain.model.UnitInvoiceId
 import com.sakena.payment.domain.PaymentRepository
 import com.sakena.payment.domain.model.Payment
 import com.sakena.payment.domain.model.PaymentId
@@ -29,6 +30,9 @@ class PaymentRepositoryAdapter(
 
     override fun existsByTransactionReference(transactionReference: String): Boolean =
         jpaRepository.existsByTransactionReference(transactionReference)
+
+    override fun existsPendingForInvoice(invoiceId: UnitInvoiceId): Boolean =
+        jpaRepository.existsByInvoiceIdAndStatus(invoiceId.value, PaymentStatus.PENDING)
 
     override fun findAllByPayerNewestFirst(payerId: UserId): List<Payment> =
         jpaRepository.findAllByPayerIdAndStatusOrderByPaidAtDesc(

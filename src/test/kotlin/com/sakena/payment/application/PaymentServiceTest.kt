@@ -1,5 +1,11 @@
 package com.sakena.payment.application
 
+import com.sakena.billing.domain.ChargePeriodRepository
+import com.sakena.billing.domain.UnitInvoiceRepository
+import com.sakena.billing.domain.model.ChargePeriod
+import com.sakena.billing.domain.model.ChargePeriodType
+import com.sakena.billing.domain.model.UnitInvoice
+import com.sakena.billing.domain.model.UnitInvoiceId
 import com.sakena.payment.application.command.PaymentReceiptUpload
 import com.sakena.payment.application.command.SubmitPaymentCommand
 import com.sakena.payment.domain.PaymentRepository
@@ -8,7 +14,11 @@ import com.sakena.payment.domain.PaymentReceiptStorage
 import com.sakena.payment.domain.model.Payment
 import com.sakena.payment.domain.model.PaymentStatus
 import com.sakena.property.domain.BuildingAccess
+import com.sakena.property.domain.model.ApartmentId
 import com.sakena.property.domain.model.BuildingId
+import com.sakena.residency.domain.ResidencyRepository
+import com.sakena.residency.domain.model.Residency
+import com.sakena.residency.domain.model.TenancyType
 import com.sakena.shared.domain.DomainConflictException
 import com.sakena.shared.domain.DomainForbiddenException
 import com.sakena.shared.domain.DomainValidationException
@@ -17,6 +27,7 @@ import com.sakena.user.domain.Role
 import com.sakena.user.domain.User
 import com.sakena.user.domain.UserId
 import com.sakena.user.domain.UserRepository
+import com.sakena.wallet.application.WalletService
 import io.mockk.every
 import io.mockk.justRun
 import io.mockk.mockk
@@ -25,33 +36,56 @@ import io.mockk.verify
 import org.junit.jupiter.api.Test
 import java.math.BigDecimal
 import java.time.Instant
+import java.time.LocalDate
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 
 class PaymentServiceTest {
 
     private val buildingId = BuildingId.new()
+    private val apartmentId = ApartmentId.new()
+    private val period = ChargePeriod.create(
+        buildingId = buildingId,
+        title = "Monthly charge",
+        type = ChargePeriodType.MONTHLY,
+        startsOn = LocalDate.of(2026, 6, 1),
+        endsOn = LocalDate.of(2026, 7, 1),
+    )
     private val repository = mockk<PaymentRepository>()
     private val userRepository = mockk<UserRepository>()
     private val receiptStorage = mockk<PaymentReceiptStorage>()
     private val buildingAccess = mockk<BuildingAccess> {
-        every { residentBuildingId(any()) } returns buildingId
         every { managedBuildingId(any()) } returns buildingId
         every { requireManagerAccess(buildingId, any()) } returns Unit
     }
-    private val service = PaymentService(repository, userRepository, receiptStorage, buildingAccess)
+    private val invoiceRepository = mockk<UnitInvoiceRepository>()
+    private val periodRepository = mockk<ChargePeriodRepository>()
+    private val residencyRepository = mockk<ResidencyRepository>()
+    private val walletService = mockk<WalletService>()
+    private val service = PaymentService(
+        repository,
+        userRepository,
+        receiptStorage,
+        buildingAccess,
+        invoiceRepository,
+        periodRepository,
+        residencyRepository,
+        walletService,
+    )
 
     @Test
     fun `submit persists a pending claim for the authenticated resident`() {
         val resident = user(Role.RESIDENT)
-        every { userRepository.findById(resident.id) } returns resident
-        every { repository.existsByTransactionReference("TX-123") } returns false
+        val invoice = outstandingInvoice()
+        stubSubmitPrerequisites(resident, invoice)
         val saved = slot<Payment>()
         every { repository.save(capture(saved)) } answers { saved.captured }
 
-        val result = service.submit(command(), resident.id)
+        val result = service.submit(command(invoice.id), resident.id)
 
         assertEquals(resident.id, result.payerId)
+        assertEquals(invoice.id, result.invoiceId)
+        assertEquals(period.title, result.title)
         assertEquals("TX-123", result.transactionReference)
         assertEquals(PaymentStatus.PENDING, result.status)
         verify(exactly = 1) { repository.save(any()) }
@@ -60,11 +94,12 @@ class PaymentServiceTest {
     @Test
     fun `submit rejects a duplicate transaction reference`() {
         val resident = user(Role.RESIDENT)
-        every { userRepository.findById(resident.id) } returns resident
+        val invoice = outstandingInvoice()
+        stubSubmitPrerequisites(resident, invoice)
         every { repository.existsByTransactionReference("TX-123") } returns true
 
         assertFailsWith<DomainConflictException> {
-            service.submit(command(receipt()), resident.id)
+            service.submit(command(invoice.id, receipt()), resident.id)
         }
 
         verify(exactly = 0) { repository.save(any()) }
@@ -75,11 +110,15 @@ class PaymentServiceTest {
     fun `submit rejects an unknown or non-resident account`() {
         val unknown = UserId.generate()
         every { userRepository.findById(unknown) } returns null
-        assertFailsWith<EntityNotFoundException> { service.submit(command(), unknown) }
+        assertFailsWith<EntityNotFoundException> {
+            service.submit(command(UnitInvoiceId.new()), unknown)
+        }
 
         val staff = user(Role.STAFF)
         every { userRepository.findById(staff.id) } returns staff
-        assertFailsWith<DomainValidationException> { service.submit(command(), staff.id) }
+        assertFailsWith<DomainValidationException> {
+            service.submit(command(UnitInvoiceId.new()), staff.id)
+        }
 
         verify(exactly = 0) { repository.save(any()) }
     }
@@ -87,14 +126,14 @@ class PaymentServiceTest {
     @Test
     fun `submit stores a valid optional receipt and keeps only its object key`() {
         val resident = user(Role.RESIDENT)
-        every { userRepository.findById(resident.id) } returns resident
-        every { repository.existsByTransactionReference("TX-123") } returns false
+        val invoice = outstandingInvoice()
+        stubSubmitPrerequisites(resident, invoice)
         every {
             receiptStorage.store(resident.id, "image/png", 1024, any())
         } returns "payment-receipts/${resident.id}/receipt.png"
         every { repository.save(any()) } answers { firstArg() }
 
-        val result = service.submit(command(receipt()), resident.id)
+        val result = service.submit(command(invoice.id, receipt()), resident.id)
 
         assertEquals("payment-receipts/${resident.id}/receipt.png", result.receiptObjectKey)
     }
@@ -102,17 +141,23 @@ class PaymentServiceTest {
     @Test
     fun `invalid receipt is rejected before touching object storage`() {
         val resident = user(Role.RESIDENT)
-        every { userRepository.findById(resident.id) } returns resident
-        every { repository.existsByTransactionReference("TX-123") } returns false
+        val invoice = outstandingInvoice()
+        stubSubmitPrerequisites(resident, invoice)
 
         assertFailsWith<DomainValidationException> {
-            service.submit(command(receipt(contentType = "application/pdf")), resident.id)
+            service.submit(command(invoice.id, receipt(contentType = "application/pdf")), resident.id)
         }
         assertFailsWith<DomainValidationException> {
-            service.submit(command(receipt(sizeBytes = PaymentService.MAX_RECEIPT_BYTES + 1)), resident.id)
+            service.submit(
+                command(invoice.id, receipt(sizeBytes = PaymentService.MAX_RECEIPT_BYTES + 1)),
+                resident.id,
+            )
         }
         assertFailsWith<DomainValidationException> {
-            service.submit(command(receipt(content = "not an image".toByteArray())), resident.id)
+            service.submit(
+                command(invoice.id, receipt(content = "not an image".toByteArray())),
+                resident.id,
+            )
         }
 
         verify(exactly = 0) { receiptStorage.store(any(), any(), any(), any()) }
@@ -121,15 +166,15 @@ class PaymentServiceTest {
     @Test
     fun `failed persistence removes the uploaded receipt`() {
         val resident = user(Role.RESIDENT)
+        val invoice = outstandingInvoice()
         val objectKey = "payment-receipts/${resident.id}/receipt.png"
-        every { userRepository.findById(resident.id) } returns resident
-        every { repository.existsByTransactionReference("TX-123") } returns false
+        stubSubmitPrerequisites(resident, invoice)
         every { receiptStorage.store(any(), any(), any(), any()) } returns objectKey
         every { repository.save(any()) } throws RuntimeException("database unavailable")
         justRun { receiptStorage.delete(objectKey) }
 
         assertFailsWith<RuntimeException> {
-            service.submit(command(receipt()), resident.id)
+            service.submit(command(invoice.id, receipt()), resident.id)
         }
 
         verify(exactly = 1) { receiptStorage.delete(objectKey) }
@@ -202,17 +247,36 @@ class PaymentServiceTest {
     }
 
     @Test
-    fun `confirm reviews and saves a pending payment as manager`() {
+    fun `confirm reviews invoice payment and credits the building wallet`() {
         val manager = user(Role.MANAGER)
-        val payment = pendingPayment(UserId.generate(), "TX-CONFIRM")
+        val invoice = outstandingInvoice()
+        val payment = pendingPayment(UserId.generate(), "TX-CONFIRM", invoiceId = invoice.id)
         every { userRepository.findById(manager.id) } returns manager
         every { repository.findById(payment.id) } returns payment
+        every { invoiceRepository.findById(invoice.id) } returns invoice
+        every { invoiceRepository.save(invoice) } returns invoice
+        justRun {
+            walletService.recordChargeCollection(
+                buildingId = buildingId,
+                amount = payment.amount,
+                description = "وصول «${payment.title}»",
+            )
+        }
         every { repository.save(payment) } returns payment
 
         val result = service.confirm(payment.id, manager.id)
 
         assertEquals(PaymentStatus.CONFIRMED, result.status)
         assertEquals(manager.id, result.reviewedBy)
+        assertEquals(payment.amount, invoice.paidAmount)
+        verify(exactly = 1) { invoiceRepository.save(invoice) }
+        verify(exactly = 1) {
+            walletService.recordChargeCollection(
+                buildingId = buildingId,
+                amount = payment.amount,
+                description = "وصول «${payment.title}»",
+            )
+        }
         verify(exactly = 1) { repository.save(payment) }
     }
 
@@ -230,6 +294,7 @@ class PaymentServiceTest {
             service.confirm(payment.id, manager.id)
         }
         verify(exactly = 0) { repository.save(any()) }
+        verify(exactly = 0) { walletService.recordChargeCollection(any(), any(), any()) }
     }
 
     @Test
@@ -270,9 +335,26 @@ class PaymentServiceTest {
         }
     }
 
-    private fun command(receipt: PaymentReceiptUpload? = null) = SubmitPaymentCommand(
-        title = "Monthly charge",
-        amount = BigDecimal("850000"),
+    private fun stubSubmitPrerequisites(resident: User, invoice: UnitInvoice) {
+        every { userRepository.findById(resident.id) } returns resident
+        every { invoiceRepository.findById(invoice.id) } returns invoice
+        every { residencyRepository.findActiveByResident(resident.id) } returns
+            Residency.start(apartmentId, resident.id, TenancyType.TENANT)
+        every { periodRepository.findById(period.id) } returns period
+        every { repository.existsPendingForInvoice(invoice.id) } returns false
+        every { repository.existsByTransactionReference("TX-123") } returns false
+    }
+
+    private fun outstandingInvoice(amount: BigDecimal = BigDecimal("850000")): UnitInvoice =
+        UnitInvoice.issue(period.id, apartmentId, amount)
+
+    private fun command(
+        invoiceId: UnitInvoiceId,
+        receipt: PaymentReceiptUpload? = null,
+        amount: BigDecimal = BigDecimal("850000"),
+    ) = SubmitPaymentCommand(
+        invoiceId = invoiceId,
+        amount = amount,
         transactionReference = "TX-123",
         receipt = receipt,
     )
@@ -294,9 +376,11 @@ class PaymentServiceTest {
         reference: String,
         receiptObjectKey: String? = null,
         buildingId: BuildingId = this.buildingId,
+        invoiceId: UnitInvoiceId = UnitInvoiceId.new(),
     ): Payment =
         Payment.submit(
             buildingId = buildingId,
+            invoiceId = invoiceId,
             payerId = payerId,
             title = "Monthly charge",
             amount = BigDecimal("850000"),

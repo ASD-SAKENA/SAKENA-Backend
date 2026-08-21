@@ -1,5 +1,6 @@
 package com.sakena.payment.domain
 
+import com.sakena.billing.domain.model.UnitInvoiceId
 import com.sakena.payment.domain.model.Payment
 import com.sakena.payment.domain.model.PaymentId
 import com.sakena.property.domain.model.BuildingId
@@ -15,6 +16,8 @@ interface PaymentRepository {
     fun findById(id: PaymentId): Payment?
 
     fun existsByTransactionReference(transactionReference: String): Boolean
+
+    fun existsPendingForInvoice(invoiceId: UnitInvoiceId): Boolean
 
     /** A resident's confirmed permanent payment history, newest first. */
     fun findAllByPayerNewestFirst(payerId: UserId): List<Payment>

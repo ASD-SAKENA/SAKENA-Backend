@@ -25,6 +25,7 @@ import com.sakena.servicerequest.domain.ServiceRequestId
 import com.sakena.shared.domain.DomainConflictException
 import com.sakena.shared.domain.DomainForbiddenException
 import com.sakena.user.domain.UserId
+import com.sakena.wallet.application.WalletService
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
@@ -44,6 +45,7 @@ class InvoiceServiceTest {
     private val serviceChargeRepository = mockk<ServiceChargeRepository>()
     private val buildingAccess = mockk<BuildingAccess>()
     private val residencyRepository = mockk<ResidencyRepository>()
+    private val walletService = mockk<WalletService>()
     private val service = InvoiceService(
         periodRepository,
         itemRepository,
@@ -52,6 +54,7 @@ class InvoiceServiceTest {
         serviceChargeRepository,
         buildingAccess,
         residencyRepository,
+        walletService,
     )
 
     private val managerId = UserId.generate()

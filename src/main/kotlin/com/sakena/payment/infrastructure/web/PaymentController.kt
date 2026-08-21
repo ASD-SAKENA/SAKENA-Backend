@@ -58,17 +58,23 @@ class PaymentController(
     @Operation(summary = "Current resident's confirmed payment history, newest first")
     @GetMapping
     fun history(): List<PaymentResponse> =
-        paymentService.getHistory(getCurrentUserId()).map(PaymentResponse::from)
+        paymentService.getHistory(getCurrentUserId()).map { payment ->
+            PaymentResponse.from(payment, paymentService.periodTitleOf(payment))
+        }
 
     @Operation(summary = "Current resident's submissions in every status, newest first")
     @GetMapping("/submissions")
     fun submissions(): List<PaymentResponse> =
-        paymentService.getSubmissions(getCurrentUserId()).map(PaymentResponse::from)
+        paymentService.getSubmissions(getCurrentUserId()).map { payment ->
+            PaymentResponse.from(payment, paymentService.periodTitleOf(payment))
+        }
 
     @Operation(summary = "Pending payment review queue, newest first (manager)")
     @GetMapping("/pending")
     fun pending(): List<PaymentResponse> =
-        paymentService.getPending(getCurrentUserId()).map(PaymentResponse::from)
+        paymentService.getPending(getCurrentUserId()).map { payment ->
+            PaymentResponse.from(payment, paymentService.periodTitleOf(payment))
+        }
 
     @Operation(summary = "Create a temporary download link for a payment receipt")
     @GetMapping("/{id}/receipt")
@@ -79,20 +85,20 @@ class PaymentController(
 
     @Operation(summary = "Confirm a pending payment (manager)")
     @PatchMapping("/{id}/confirm")
-    fun confirm(@PathVariable id: String): PaymentResponse =
-        PaymentResponse.from(
-            paymentService.confirm(PaymentId.from(id), getCurrentUserId()),
-        )
+    fun confirm(@PathVariable id: String): PaymentResponse {
+        val payment = paymentService.confirm(PaymentId.from(id), getCurrentUserId())
+        return PaymentResponse.from(payment, paymentService.periodTitleOf(payment))
+    }
 
     @Operation(summary = "Reject a pending payment (manager)")
     @PatchMapping("/{id}/reject")
     fun reject(
         @PathVariable id: String,
         @Valid @RequestBody request: RejectPaymentRequest,
-    ): PaymentResponse =
-        PaymentResponse.from(
-            paymentService.reject(PaymentId.from(id), getCurrentUserId(), request.reason),
-        )
+    ): PaymentResponse {
+        val payment = paymentService.reject(PaymentId.from(id), getCurrentUserId(), request.reason)
+        return PaymentResponse.from(payment, paymentService.periodTitleOf(payment))
+    }
 
     private fun getCurrentUserId(): UserId {
         val username = SecurityContextHolder.getContext().authentication.name
