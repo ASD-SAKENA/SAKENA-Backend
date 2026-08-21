@@ -32,6 +32,9 @@ enum class TransactionCategory {
     WAGE_SETTLEMENT,
     OPERATING_EXPENSE,
     ADJUSTMENT,
+
+    /** Paying for — or being refunded for — a shared-facility reservation. */
+    FACILITY_BOOKING,
 }
 
 /**

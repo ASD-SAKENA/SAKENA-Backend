@@ -174,7 +174,7 @@ class FacilityBookingService(
             WalletTransaction.record(
                 walletId = wallet.id,
                 direction = direction,
-                category = TransactionCategory.CHARGE_COLLECTION,
+                category = TransactionCategory.FACILITY_BOOKING,
                 amount = amount,
                 description = description,
                 balanceAfter = wallet.balance,
