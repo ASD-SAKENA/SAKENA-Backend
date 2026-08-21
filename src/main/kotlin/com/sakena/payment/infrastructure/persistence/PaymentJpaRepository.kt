@@ -19,5 +19,7 @@ interface PaymentJpaRepository : JpaRepository<PaymentEntity, UUID> {
         status: PaymentStatus,
     ): List<PaymentEntity>
 
+    fun findAllByBuildingIdOrderByPaidAtDesc(buildingId: UUID): List<PaymentEntity>
+
     fun existsByInvoiceIdAndStatus(invoiceId: UUID, status: PaymentStatus): Boolean
 }

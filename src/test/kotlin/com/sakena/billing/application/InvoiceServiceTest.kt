@@ -46,6 +46,7 @@ class InvoiceServiceTest {
     private val buildingAccess = mockk<BuildingAccess>()
     private val residencyRepository = mockk<ResidencyRepository>()
     private val walletService = mockk<WalletService>()
+    private val userRepository = mockk<com.sakena.user.domain.UserRepository>(relaxed = true)
     private val service = InvoiceService(
         periodRepository,
         itemRepository,
@@ -55,6 +56,7 @@ class InvoiceServiceTest {
         buildingAccess,
         residencyRepository,
         walletService,
+        userRepository,
     )
 
     private val managerId = UserId.generate()
@@ -216,6 +218,28 @@ class InvoiceServiceTest {
             service.getOwnApartment(anotherUnit.id, managerId)
         }
         verify(exactly = 0) { invoiceRepository.findAllByApartment(any()) }
+    }
+
+    @Test
+    fun `getOutstanding returns unpaid invoices for issued periods`() {
+        val issued = period().also { it.issue() }
+        val unit = apartment("1", "80")
+        val unpaid = UnitInvoice.issue(issued.id, unit.id, BigDecimal("100000"))
+        val paid = UnitInvoice.issue(issued.id, apartment("2", "80").id, BigDecimal("100000")).also {
+            it.registerPayment(BigDecimal("100000"))
+        }
+        every { buildingAccess.managedBuildingId(managerId) } returns buildingId
+        every { periodRepository.findAll(buildingId) } returns listOf(issued)
+        every { invoiceRepository.findAllByPeriod(issued.id) } returns listOf(unpaid, paid)
+        every { apartmentRepository.findById(unit.id) } returns unit
+        every { residencyRepository.findActiveByApartment(unit.id) } returns null
+
+        val result = service.getOutstanding(managerId, null)
+
+        assertEquals(1, result.size)
+        assertEquals(unpaid.id, result[0].invoice.id)
+        assertEquals("1", result[0].unitNumber)
+        assertEquals(issued.title, result[0].periodTitle)
     }
 
     private fun allowManager(period: ChargePeriod) {

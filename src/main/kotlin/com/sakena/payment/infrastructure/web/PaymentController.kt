@@ -1,8 +1,11 @@
 package com.sakena.payment.infrastructure.web
 
+import com.sakena.billing.domain.model.ChargePeriodId
+import com.sakena.payment.application.BuildingPaymentQuery
 import com.sakena.payment.application.PaymentService
 import com.sakena.payment.application.command.PaymentReceiptUpload
 import com.sakena.payment.domain.model.PaymentId
+import com.sakena.payment.domain.model.PaymentStatus
 import com.sakena.payment.infrastructure.web.dto.PaymentReceiptResponse
 import com.sakena.payment.infrastructure.web.dto.PaymentResponse
 import com.sakena.payment.infrastructure.web.dto.RecordPaymentRequest
@@ -22,6 +25,7 @@ import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RequestPart
 import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
@@ -59,22 +63,36 @@ class PaymentController(
     @GetMapping
     fun history(): List<PaymentResponse> =
         paymentService.getHistory(getCurrentUserId()).map { payment ->
-            PaymentResponse.from(payment, paymentService.periodTitleOf(payment))
+            PaymentResponse.from(paymentService.detailsOf(payment))
         }
 
     @Operation(summary = "Current resident's submissions in every status, newest first")
     @GetMapping("/submissions")
     fun submissions(): List<PaymentResponse> =
         paymentService.getSubmissions(getCurrentUserId()).map { payment ->
-            PaymentResponse.from(payment, paymentService.periodTitleOf(payment))
+            PaymentResponse.from(paymentService.detailsOf(payment))
         }
 
     @Operation(summary = "Pending payment review queue, newest first (manager)")
     @GetMapping("/pending")
     fun pending(): List<PaymentResponse> =
-        paymentService.getPending(getCurrentUserId()).map { payment ->
-            PaymentResponse.from(payment, paymentService.periodTitleOf(payment))
-        }
+        paymentService.getPending(getCurrentUserId()).map(PaymentResponse::from)
+
+    @Operation(
+        summary = "Building payment ledger for the manager, optionally filtered by status or charge period",
+    )
+    @GetMapping("/building")
+    fun building(
+        @RequestParam(required = false) status: PaymentStatus?,
+        @RequestParam(required = false) periodId: String?,
+    ): List<PaymentResponse> =
+        paymentService.getBuildingPayments(
+            getCurrentUserId(),
+            BuildingPaymentQuery(
+                status = status,
+                periodId = periodId?.let(ChargePeriodId::from),
+            ),
+        ).map(PaymentResponse::from)
 
     @Operation(summary = "Create a temporary download link for a payment receipt")
     @GetMapping("/{id}/receipt")
@@ -87,7 +105,7 @@ class PaymentController(
     @PatchMapping("/{id}/confirm")
     fun confirm(@PathVariable id: String): PaymentResponse {
         val payment = paymentService.confirm(PaymentId.from(id), getCurrentUserId())
-        return PaymentResponse.from(payment, paymentService.periodTitleOf(payment))
+        return PaymentResponse.from(paymentService.detailsOf(payment))
     }
 
     @Operation(summary = "Reject a pending payment (manager)")
@@ -97,7 +115,7 @@ class PaymentController(
         @Valid @RequestBody request: RejectPaymentRequest,
     ): PaymentResponse {
         val payment = paymentService.reject(PaymentId.from(id), getCurrentUserId(), request.reason)
-        return PaymentResponse.from(payment, paymentService.periodTitleOf(payment))
+        return PaymentResponse.from(paymentService.detailsOf(payment))
     }
 
     private fun getCurrentUserId(): UserId {

@@ -51,4 +51,8 @@ class PaymentRepositoryAdapter(
             PaymentStatus.PENDING,
         )
             .map(PaymentEntityMapper::toDomain)
+
+    override fun findAllByBuildingNewestFirst(buildingId: BuildingId): List<Payment> =
+        jpaRepository.findAllByBuildingIdOrderByPaidAtDesc(buildingId.value)
+            .map(PaymentEntityMapper::toDomain)
 }

@@ -3,6 +3,7 @@ package com.sakena.payment.application
 import com.sakena.billing.domain.ChargePeriodRepository
 import com.sakena.billing.domain.UnitInvoiceNotFoundException
 import com.sakena.billing.domain.UnitInvoiceRepository
+import com.sakena.billing.domain.model.ChargePeriodId
 import com.sakena.billing.domain.model.UnitInvoice
 import com.sakena.billing.domain.model.UnitInvoiceId
 import com.sakena.payment.application.command.PaymentReceiptUpload
@@ -12,6 +13,8 @@ import com.sakena.payment.domain.PaymentReceiptAccess
 import com.sakena.payment.domain.PaymentReceiptStorage
 import com.sakena.payment.domain.model.Payment
 import com.sakena.payment.domain.model.PaymentId
+import com.sakena.payment.domain.model.PaymentStatus
+import com.sakena.property.domain.ApartmentRepository
 import com.sakena.property.domain.BuildingAccess
 import com.sakena.residency.domain.ResidencyRepository
 import com.sakena.shared.domain.DomainConflictException
@@ -39,6 +42,7 @@ class PaymentService(
     private val periodRepository: ChargePeriodRepository,
     private val residencyRepository: ResidencyRepository,
     private val walletService: WalletService,
+    private val apartmentRepository: ApartmentRepository,
 ) {
 
     companion object {
@@ -128,19 +132,56 @@ class PaymentService(
         paymentRepository.findAllSubmissionsByPayerNewestFirst(payerId)
 
     @Transactional(readOnly = true)
-    fun getPending(managerId: UserId): List<Payment> {
+    fun getPending(managerId: UserId): List<PaymentDetails> {
         requireManager(managerId)
         return paymentRepository.findAllPendingByBuildingNewestFirst(
             buildingAccess.managedBuildingId(managerId),
-        )
+        ).map(::detailsOf)
+    }
+
+    /**
+     * Full payment ledger for the manager's building — every status, optionally
+     * narrowed to one charge period or review status.
+     */
+    @Transactional(readOnly = true)
+    fun getBuildingPayments(managerId: UserId, query: BuildingPaymentQuery): List<PaymentDetails> {
+        requireManager(managerId)
+        val buildingId = buildingAccess.managedBuildingId(managerId)
+        query.periodId?.let { periodId ->
+            val period = periodRepository.findById(periodId)
+                ?: throw EntityNotFoundException("Charge period with id '$periodId' was not found")
+            buildingAccess.requireManagerAccess(period.buildingId, managerId)
+        }
+        return paymentRepository.findAllByBuildingNewestFirst(buildingId)
+            .asSequence()
+            .filter { payment -> query.status == null || payment.status == query.status }
+            .map(::detailsOf)
+            .filter { details ->
+                query.periodId == null || details.periodId == query.periodId
+            }
+            .toList()
     }
 
     @Transactional(readOnly = true)
     fun periodTitleOf(payment: Payment): String? =
-        payment.invoiceId
-            ?.let(invoiceRepository::findById)
-            ?.let { periodRepository.findById(it.periodId)?.title }
-            ?: payment.title.takeIf { it.isNotBlank() }
+        detailsOf(payment).periodTitle
+
+    @Transactional(readOnly = true)
+    fun detailsOf(payment: Payment): PaymentDetails {
+        val invoice = payment.invoiceId?.let(invoiceRepository::findById)
+        val period = invoice?.periodId?.let(periodRepository::findById)
+        val unitNumber = invoice?.apartmentId
+            ?.let(apartmentRepository::findById)
+            ?.unitNumber
+        val payerUsername = userRepository.findById(payment.payerId)?.username
+        return PaymentDetails(
+            payment = payment,
+            periodId = period?.id ?: invoice?.periodId,
+            periodTitle = period?.title ?: payment.title.takeIf { it.isNotBlank() },
+            unitNumber = unitNumber,
+            payerUsername = payerUsername,
+        )
+    }
 
     @Transactional(readOnly = true)
     fun getReceipt(paymentId: PaymentId, requesterId: UserId): PaymentReceiptAccess {

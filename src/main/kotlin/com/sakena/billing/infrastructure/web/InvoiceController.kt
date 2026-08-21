@@ -1,6 +1,7 @@
 package com.sakena.billing.infrastructure.web
 
 import com.sakena.billing.application.InvoiceService
+import com.sakena.billing.domain.model.ChargePeriodId
 import com.sakena.billing.domain.model.UnitInvoice
 import com.sakena.billing.domain.model.UnitInvoiceId
 import com.sakena.billing.infrastructure.web.dto.PayInvoiceFromWalletRequest
@@ -46,6 +47,24 @@ class InvoiceController(
             throw DomainForbiddenException("Only residents can list their own invoices")
         }
         return invoiceService.getMine(user.id).map(::toResponse)
+    }
+
+    @Operation(
+        summary = "Outstanding invoices across issued periods (manager), optional period filter",
+    )
+    @GetMapping("/outstanding")
+    fun outstanding(
+        @RequestParam(required = false) periodId: String?,
+        principal: Principal,
+    ): List<UnitInvoiceResponse> {
+        val user = currentUser(principal)
+        if (user.role != Role.MANAGER) {
+            throw DomainForbiddenException("Only managers can list outstanding invoices")
+        }
+        return invoiceService.getOutstanding(
+            user.id,
+            periodId?.let(ChargePeriodId::from),
+        ).map(UnitInvoiceResponse::from)
     }
 
     @Operation(summary = "Invoices of a single unit, newest first")
@@ -99,15 +118,8 @@ class InvoiceController(
         )
     }
 
-    private fun toResponse(invoice: UnitInvoice): UnitInvoiceResponse {
-        val period = invoiceService.periodOf(invoice)
-        return UnitInvoiceResponse.from(
-            invoice = invoice,
-            periodTitle = period?.title.orEmpty(),
-            startsOn = period?.startsOn,
-            endsOn = period?.endsOn,
-        )
-    }
+    private fun toResponse(invoice: UnitInvoice): UnitInvoiceResponse =
+        UnitInvoiceResponse.from(invoiceService.detailsOf(invoice))
 
     private fun currentUser(principal: Principal): User =
         profileService.getUserByUsername(principal.name)

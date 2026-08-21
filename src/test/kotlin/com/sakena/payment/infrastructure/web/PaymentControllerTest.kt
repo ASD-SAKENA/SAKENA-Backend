@@ -2,6 +2,7 @@ package com.sakena.payment.infrastructure.web
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.sakena.billing.domain.model.UnitInvoiceId
+import com.sakena.payment.application.PaymentDetails
 import com.sakena.payment.application.PaymentService
 import com.sakena.payment.domain.PaymentReceiptAccess
 import com.sakena.payment.domain.model.Payment
@@ -102,7 +103,7 @@ class PaymentControllerTest {
         val resident = authenticate(Role.RESIDENT)
         val payment = pendingPayment(resident.id, "TX-PENDING")
         every { paymentService.getSubmissions(resident.id) } returns listOf(payment)
-        every { paymentService.periodTitleOf(payment) } returns payment.title
+        every { paymentService.detailsOf(payment) } returns paymentDetails(payment)
 
         mockMvc.perform(get("/api/v1/payments/submissions"))
             .andExpect(status().isOk)
@@ -116,7 +117,7 @@ class PaymentControllerTest {
             it.confirm(UserId.generate())
         }
         every { paymentService.getHistory(resident.id) } returns listOf(payment)
-        every { paymentService.periodTitleOf(payment) } returns payment.title
+        every { paymentService.detailsOf(payment) } returns paymentDetails(payment)
 
         mockMvc.perform(get("/api/v1/payments"))
             .andExpect(status().isOk)
@@ -127,12 +128,27 @@ class PaymentControllerTest {
     fun `manager reads the pending review queue`() {
         val manager = authenticate(Role.MANAGER)
         val payment = pendingPayment(UserId.generate(), "TX-PENDING")
-        every { paymentService.getPending(manager.id) } returns listOf(payment)
-        every { paymentService.periodTitleOf(payment) } returns payment.title
+        every { paymentService.getPending(manager.id) } returns listOf(paymentDetails(payment))
 
         mockMvc.perform(get("/api/v1/payments/pending"))
             .andExpect(status().isOk)
             .andExpect(jsonPath("$[0].transactionReference").value("TX-PENDING"))
+    }
+
+    @Test
+    fun `manager reads the building payment ledger`() {
+        val manager = authenticate(Role.MANAGER)
+        val payment = pendingPayment(UserId.generate(), "TX-LEDGER").also {
+            it.confirm(manager.id)
+        }
+        every {
+            paymentService.getBuildingPayments(manager.id, any())
+        } returns listOf(paymentDetails(payment, unitNumber = "۱۲", payerUsername = "ali"))
+
+        mockMvc.perform(get("/api/v1/payments/building").param("status", "CONFIRMED"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$[0].unitNumber").value("۱۲"))
+            .andExpect(jsonPath("$[0].payerUsername").value("ali"))
     }
 
     @Test
@@ -156,7 +172,7 @@ class PaymentControllerTest {
             it.confirm(manager.id)
         }
         every { paymentService.confirm(payment.id, manager.id) } returns payment
-        every { paymentService.periodTitleOf(payment) } returns payment.title
+        every { paymentService.detailsOf(payment) } returns paymentDetails(payment)
 
         mockMvc.perform(patch("/api/v1/payments/${payment.id}/confirm"))
             .andExpect(status().isOk)
@@ -173,7 +189,7 @@ class PaymentControllerTest {
         every {
             paymentService.reject(payment.id, manager.id, "Reference not found")
         } returns payment
-        every { paymentService.periodTitleOf(payment) } returns payment.title
+        every { paymentService.detailsOf(payment) } returns paymentDetails(payment)
         val body = objectMapper.writeValueAsString(RejectPaymentRequest("Reference not found"))
 
         mockMvc.perform(
@@ -217,6 +233,18 @@ class PaymentControllerTest {
             transactionReference = reference,
             receiptObjectKey = receiptObjectKey,
         )
+
+    private fun paymentDetails(
+        payment: Payment,
+        unitNumber: String? = null,
+        payerUsername: String? = null,
+    ) = PaymentDetails(
+        payment = payment,
+        periodId = null,
+        periodTitle = payment.title,
+        unitNumber = unitNumber,
+        payerUsername = payerUsername,
+    )
 
     private fun jsonPart(request: RecordPaymentRequest) = MockMultipartFile(
         "payment",
