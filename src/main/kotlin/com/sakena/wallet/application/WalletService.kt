@@ -97,30 +97,24 @@ class WalletService(
 
         val buildingWallet = requireBuildingWallet(buildingId)
         val workerWallet = walletRepository.findByOwner(worker) ?: Wallet.createForUser(worker)
-
-        buildingWallet.debit(amount)
-        workerWallet.credit(amount)
-
         serviceCharge?.let(serviceChargeRepository::save)
-        walletRepository.save(buildingWallet)
-        walletRepository.save(workerWallet)
-        serviceRequestRepository.save(settled)
 
         val label = "دستمزد «${settled.title}»"
-        recordTransaction(
-            buildingWallet,
-            TransactionDirection.DEBIT,
-            TransactionCategory.WAGE_SETTLEMENT,
-            amount,
-            label,
+        applyWalletTransaction(
+            wallet = buildingWallet,
+            direction = TransactionDirection.DEBIT,
+            category = TransactionCategory.WAGE_SETTLEMENT,
+            amount = amount,
+            description = label,
         )
-        recordTransaction(
-            workerWallet,
-            TransactionDirection.CREDIT,
-            TransactionCategory.WAGE_SETTLEMENT,
-            amount,
-            label,
+        applyWalletTransaction(
+            wallet = workerWallet,
+            direction = TransactionDirection.CREDIT,
+            category = TransactionCategory.WAGE_SETTLEMENT,
+            amount = amount,
+            description = label,
         )
+        serviceRequestRepository.save(settled)
     }
 
     private fun createServiceCharge(
@@ -150,19 +144,13 @@ class WalletService(
             throw DomainValidationException("Wallet funding is only valid for personal wallets")
         }
         val wallet = requireBuildingWallet(requireManagedBuilding(requesterManagedBuildingId))
-        when (command.direction) {
-            TransactionDirection.CREDIT -> wallet.credit(command.amount)
-            TransactionDirection.DEBIT -> wallet.debit(command.amount)
-        }
-        val saved = walletRepository.save(wallet)
-        recordTransaction(
-            saved,
-            command.direction,
-            command.category,
-            command.amount,
-            command.description,
+        return applyWalletTransaction(
+            wallet = wallet,
+            direction = command.direction,
+            category = command.category,
+            amount = command.amount,
+            description = command.description,
         )
-        return saved
     }
 
     fun fundMyWallet(command: FundWalletCommand, userId: UserId): Wallet {
@@ -173,16 +161,13 @@ class WalletService(
         }
 
         val wallet = walletRepository.findByOwner(userId) ?: Wallet.createForUser(userId)
-        wallet.credit(command.amount)
-        val saved = walletRepository.save(wallet)
-        recordTransaction(
-            saved,
-            TransactionDirection.CREDIT,
-            TransactionCategory.WALLET_FUNDING,
-            command.amount,
-            "Wallet funding",
+        return applyWalletTransaction(
+            wallet = wallet,
+            direction = TransactionDirection.CREDIT,
+            category = TransactionCategory.WALLET_FUNDING,
+            amount = command.amount,
+            description = "Wallet funding",
         )
-        return saved
     }
 
     /**
@@ -195,14 +180,12 @@ class WalletService(
         description: String,
     ) {
         val wallet = requireBuildingWallet(buildingId)
-        wallet.credit(amount)
-        val saved = walletRepository.save(wallet)
-        recordTransaction(
-            saved,
-            TransactionDirection.CREDIT,
-            TransactionCategory.CHARGE_COLLECTION,
-            amount,
-            description,
+        applyWalletTransaction(
+            wallet = wallet,
+            direction = TransactionDirection.CREDIT,
+            category = TransactionCategory.CHARGE_COLLECTION,
+            amount = amount,
+            description = description,
         )
     }
 
@@ -218,25 +201,21 @@ class WalletService(
     ) {
         val personal = walletRepository.findByOwner(residentId)
             ?: throw DomainConflictException("Insufficient wallet balance")
-        personal.debit(amount)
-        walletRepository.save(personal)
-        recordTransaction(
-            personal,
-            TransactionDirection.DEBIT,
-            TransactionCategory.CHARGE_COLLECTION,
-            amount,
-            description,
+        applyWalletTransaction(
+            wallet = personal,
+            direction = TransactionDirection.DEBIT,
+            category = TransactionCategory.CHARGE_COLLECTION,
+            amount = amount,
+            description = description,
         )
 
         val building = requireBuildingWallet(buildingId)
-        building.credit(amount)
-        walletRepository.save(building)
-        recordTransaction(
-            building,
-            TransactionDirection.CREDIT,
-            TransactionCategory.CHARGE_COLLECTION,
-            amount,
-            description,
+        applyWalletTransaction(
+            wallet = building,
+            direction = TransactionDirection.CREDIT,
+            category = TransactionCategory.CHARGE_COLLECTION,
+            amount = amount,
+            description = description,
         )
     }
 
@@ -258,6 +237,22 @@ class WalletService(
     fun getMyLedger(userId: UserId): List<WalletTransaction> {
         val wallet = walletRepository.findByOwner(userId) ?: return emptyList()
         return transactionRepository.findAllByWalletNewestFirst(wallet.id)
+    }
+
+    private fun applyWalletTransaction(
+        wallet: Wallet,
+        direction: TransactionDirection,
+        category: TransactionCategory,
+        amount: BigDecimal,
+        description: String,
+    ): Wallet {
+        when (direction) {
+            TransactionDirection.CREDIT -> wallet.credit(amount)
+            TransactionDirection.DEBIT -> wallet.debit(amount)
+        }
+        val saved = walletRepository.save(wallet)
+        recordTransaction(saved, direction, category, amount, description)
+        return saved
     }
 
     private fun recordTransaction(
