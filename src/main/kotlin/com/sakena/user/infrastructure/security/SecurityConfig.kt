@@ -91,6 +91,7 @@ class SecurityConfig(
                     .requestMatchers("/api/v1/invitations/**").hasRole(manager)
                     .requestMatchers("/api/v1/charge-periods/**").hasRole(manager)
                     .requestMatchers(HttpMethod.POST, "/api/v1/invoices/*/payments").hasRole(manager)
+                    .requestMatchers(HttpMethod.GET, "/api/v1/invoices/*/items").hasRole(resident)
                     .requestMatchers(HttpMethod.GET, "/api/v1/payments/pending").hasRole(manager)
                     .requestMatchers(
                         HttpMethod.PATCH,

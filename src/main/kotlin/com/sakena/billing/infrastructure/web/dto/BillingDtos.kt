@@ -199,6 +199,26 @@ data class UnitInvoiceResponse(
     }
 }
 
+data class InvoiceLineItemResponse(
+    val id: UUID,
+    val title: String,
+    val kind: ChargeItemKind,
+    val allocation: CostAllocation,
+    val totalAmount: BigDecimal,
+    val shareAmount: BigDecimal,
+) {
+    companion object {
+        fun from(line: com.sakena.billing.application.InvoiceLineItem) = InvoiceLineItemResponse(
+            id = line.item.id.value,
+            title = line.item.title,
+            kind = line.item.kind,
+            allocation = line.item.allocation,
+            totalAmount = line.item.amount,
+            shareAmount = line.shareAmount,
+        )
+    }
+}
+
 data class ServiceChargeResponse(
     val id: UUID,
     val sourceServiceRequestId: UUID,

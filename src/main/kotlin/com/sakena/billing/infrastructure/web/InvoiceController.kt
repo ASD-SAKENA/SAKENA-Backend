@@ -4,6 +4,7 @@ import com.sakena.billing.application.InvoiceService
 import com.sakena.billing.domain.model.ChargePeriodId
 import com.sakena.billing.domain.model.UnitInvoice
 import com.sakena.billing.domain.model.UnitInvoiceId
+import com.sakena.billing.infrastructure.web.dto.InvoiceLineItemResponse
 import com.sakena.billing.infrastructure.web.dto.PayInvoiceFromWalletRequest
 import com.sakena.billing.infrastructure.web.dto.RegisterInvoicePaymentRequest
 import com.sakena.billing.infrastructure.web.dto.UnitInvoiceResponse
@@ -47,6 +48,22 @@ class InvoiceController(
             throw DomainForbiddenException("Only residents can list their own invoices")
         }
         return invoiceService.getMine(user.id).map(::toResponse)
+    }
+
+    @Operation(
+        summary = "Cost lines that make up an invoice (resident), with this unit's share",
+    )
+    @GetMapping("/{id}/items")
+    fun lineItems(
+        @PathVariable id: String,
+        principal: Principal,
+    ): List<InvoiceLineItemResponse> {
+        val user = currentUser(principal)
+        if (user.role != Role.RESIDENT) {
+            throw DomainForbiddenException("Only residents can view invoice cost lines")
+        }
+        return invoiceService.getLineItems(UnitInvoiceId.from(id), user.id)
+            .map(InvoiceLineItemResponse::from)
     }
 
     @Operation(
