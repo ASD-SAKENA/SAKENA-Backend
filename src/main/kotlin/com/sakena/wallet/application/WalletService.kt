@@ -94,30 +94,24 @@ class WalletService(
 
         val buildingWallet = requireBuildingWallet(buildingId)
         val workerWallet = walletRepository.findByOwner(worker) ?: Wallet.createForUser(worker)
-
-        buildingWallet.debit(amount)
-        workerWallet.credit(amount)
-
         serviceCharge?.let(serviceChargeRepository::save)
-        walletRepository.save(buildingWallet)
-        walletRepository.save(workerWallet)
-        serviceRequestRepository.save(settled)
 
         val label = "دستمزد «${settled.title}»"
-        recordTransaction(
-            buildingWallet,
-            TransactionDirection.DEBIT,
-            TransactionCategory.WAGE_SETTLEMENT,
-            amount,
-            label,
+        applyWalletTransaction(
+            wallet = buildingWallet,
+            direction = TransactionDirection.DEBIT,
+            category = TransactionCategory.WAGE_SETTLEMENT,
+            amount = amount,
+            description = label,
         )
-        recordTransaction(
-            workerWallet,
-            TransactionDirection.CREDIT,
-            TransactionCategory.WAGE_SETTLEMENT,
-            amount,
-            label,
+        applyWalletTransaction(
+            wallet = workerWallet,
+            direction = TransactionDirection.CREDIT,
+            category = TransactionCategory.WAGE_SETTLEMENT,
+            amount = amount,
+            description = label,
         )
+        serviceRequestRepository.save(settled)
     }
 
     private fun createServiceCharge(
@@ -204,25 +198,21 @@ class WalletService(
     ) {
         val personal = walletRepository.findByOwner(residentId)
             ?: throw DomainConflictException("Insufficient wallet balance")
-        personal.debit(amount)
-        walletRepository.save(personal)
-        recordTransaction(
-            personal,
-            TransactionDirection.DEBIT,
-            TransactionCategory.CHARGE_COLLECTION,
-            amount,
-            description,
+        applyWalletTransaction(
+            wallet = personal,
+            direction = TransactionDirection.DEBIT,
+            category = TransactionCategory.CHARGE_COLLECTION,
+            amount = amount,
+            description = description,
         )
 
         val building = requireBuildingWallet(buildingId)
-        building.credit(amount)
-        walletRepository.save(building)
-        recordTransaction(
-            building,
-            TransactionDirection.CREDIT,
-            TransactionCategory.CHARGE_COLLECTION,
-            amount,
-            description,
+        applyWalletTransaction(
+            wallet = building,
+            direction = TransactionDirection.CREDIT,
+            category = TransactionCategory.CHARGE_COLLECTION,
+            amount = amount,
+            description = description,
         )
     }
 
