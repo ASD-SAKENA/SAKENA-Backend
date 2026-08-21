@@ -102,7 +102,11 @@ class ChatService(
     fun delete(buildingId: BuildingId, id: ChatMessageId, requester: User): ChatMessage {
         requireMembership(buildingId, requester)
         val message = requireMessageInBuilding(id, buildingId)
-        message.delete(requester.id, requester.role == Role.MANAGER)
+        when (requester.role) {
+            Role.MANAGER -> message.deleteByManager(requester.id)
+            Role.RESIDENT -> message.deleteByAuthor(requester.id)
+            Role.STAFF, Role.ADMIN -> error("Chat membership must be verified before deleting a message")
+        }
         val deleted = messageRepository.save(message)
         message.attachment?.let { attachmentStorage.delete(it.storageKey) }
         return deleted
