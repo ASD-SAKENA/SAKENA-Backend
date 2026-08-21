@@ -1,5 +1,9 @@
 package com.sakena.user.application
 
+import com.sakena.residency.domain.ResidencyRepository
+import com.sakena.residency.domain.model.Residency
+import com.sakena.residency.domain.model.TenancyType
+import com.sakena.property.domain.model.ApartmentId
 import com.sakena.property.domain.BuildingRepository
 import com.sakena.property.domain.model.BuildingId
 import com.sakena.shared.domain.DomainValidationException
@@ -22,13 +26,16 @@ class UserAdminServiceTest {
 
     private lateinit var userRepository: UserRepository
     private lateinit var buildingRepository: BuildingRepository
+    private lateinit var residencyRepository: ResidencyRepository
     private lateinit var userAdminService: UserAdminService
 
     @BeforeEach
     fun setup() {
         userRepository = mockk()
         buildingRepository = mockk()
-        userAdminService = UserAdminService(userRepository, buildingRepository)
+        residencyRepository = mockk(relaxed = true)
+        every { residencyRepository.findActiveByResident(any()) } returns null
+        userAdminService = UserAdminService(userRepository, buildingRepository, residencyRepository)
     }
 
     private fun createUser(
@@ -159,6 +166,34 @@ class UserAdminServiceTest {
         assertEquals(Role.STAFF, result.role)
         assertEquals(Role.STAFF, savedUserSlot.captured.role)
         verify(exactly = 1) { userRepository.save(any()) }
+    }
+
+    @Test
+    fun `changeRole to staff vacates the unit the user occupied`() {
+        // Staff belong to no unit, so the residency cannot outlive the role
+        // that justified it.
+        val user = createUser(role = Role.RESIDENT)
+        val residency = Residency.start(ApartmentId.new(), user.id, TenancyType.TENANT)
+        every { userRepository.findById(user.id) } returns user
+        every { userRepository.save(any()) } answers { firstArg() }
+        every { residencyRepository.findActiveByResident(user.id) } returns residency
+        every { residencyRepository.save(any()) } answers { firstArg() }
+
+        userAdminService.changeRole(user.id, Role.STAFF, managedBuildingId = null)
+
+        assertEquals(false, residency.active)
+        verify(exactly = 1) { residencyRepository.save(residency) }
+    }
+
+    @Test
+    fun `changeRole to admin leaves the residency alone`() {
+        val user = createUser(role = Role.RESIDENT)
+        every { userRepository.findById(user.id) } returns user
+        every { userRepository.save(any()) } answers { firstArg() }
+
+        userAdminService.changeRole(user.id, Role.ADMIN, managedBuildingId = null)
+
+        verify(exactly = 0) { residencyRepository.save(any()) }
     }
 
     @Test
