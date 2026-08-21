@@ -12,6 +12,7 @@ interface FacilityBookingJpaRepository : JpaRepository<FacilityBookingEntity, UU
         """
         SELECT b FROM FacilityBookingEntity b
         WHERE b.facilityId = :facilityId AND b.startsAt < :to AND b.endsAt > :from
+          AND b.cancelledAt IS NULL
         ORDER BY b.startsAt
         """
     )
@@ -26,6 +27,7 @@ interface FacilityBookingJpaRepository : JpaRepository<FacilityBookingEntity, UU
         """
         SELECT COALESCE(SUM(b.partySize), 0) FROM FacilityBookingEntity b
         WHERE b.facilityId = :facilityId AND b.startsAt < :endsAt AND b.endsAt > :startsAt
+          AND b.cancelledAt IS NULL
         """
     )
     fun sumPartySizeOverlapping(
@@ -34,11 +36,20 @@ interface FacilityBookingJpaRepository : JpaRepository<FacilityBookingEntity, UU
         @Param("endsAt") endsAt: Instant,
     ): Long
 
-    fun countByFacilityIdAndBookedByAndStartsAtGreaterThanEqualAndStartsAtLessThan(
-        facilityId: UUID,
-        bookedBy: UUID,
-        from: Instant,
-        to: Instant,
+    /** Weekly quota — a cancelled booking must not count against the resident. */
+    @Query(
+        """
+        SELECT COUNT(b) FROM FacilityBookingEntity b
+        WHERE b.facilityId = :facilityId AND b.bookedBy = :bookedBy
+          AND b.startsAt >= :from AND b.startsAt < :to
+          AND b.cancelledAt IS NULL
+        """
+    )
+    fun countActiveInWeek(
+        @Param("facilityId") facilityId: UUID,
+        @Param("bookedBy") bookedBy: UUID,
+        @Param("from") from: Instant,
+        @Param("to") to: Instant,
     ): Long
 
     @Query(
@@ -46,6 +57,7 @@ interface FacilityBookingJpaRepository : JpaRepository<FacilityBookingEntity, UU
         SELECT b FROM FacilityBookingEntity b
         WHERE b.bookedBy = :bookedBy
           AND b.startsAt >= :from
+          AND b.cancelledAt IS NULL
           AND b.facilityId IN (
               SELECT f.id FROM FacilityEntity f WHERE f.buildingId = :buildingId
           )

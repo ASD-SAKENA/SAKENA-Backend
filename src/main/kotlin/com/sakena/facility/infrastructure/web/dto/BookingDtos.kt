@@ -34,6 +34,7 @@ data class BookingResponse(
     val startsAt: Instant,
     val endsAt: Instant,
     val partySize: Int,
+    val price: BigDecimal,
 ) {
     companion object {
         fun from(booking: FacilityBooking) = BookingResponse(
@@ -43,6 +44,7 @@ data class BookingResponse(
             startsAt = booking.startsAt,
             endsAt = booking.endsAt,
             partySize = booking.partySize,
+            price = booking.price,
         )
     }
 }
@@ -70,7 +72,7 @@ data class MyBookingResponse(
             startsAt = booking.startsAt,
             endsAt = booking.endsAt,
             partySize = booking.partySize,
-            price = facility.rules.priceFor(booking.startsAt, booking.endsAt),
+            price = booking.price,
         )
     }
 }

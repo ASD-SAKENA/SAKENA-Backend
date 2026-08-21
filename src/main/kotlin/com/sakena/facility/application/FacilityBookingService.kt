@@ -13,6 +13,7 @@ import com.sakena.property.domain.BuildingAccess
 import com.sakena.property.domain.model.BuildingId
 import com.sakena.shared.domain.DomainConflictException
 import com.sakena.shared.domain.DomainForbiddenException
+import com.sakena.shared.domain.EntityNotFoundException
 import com.sakena.shared.domain.DomainValidationException
 import com.sakena.user.domain.Role
 import com.sakena.user.domain.User
@@ -23,6 +24,12 @@ import org.springframework.transaction.annotation.Transactional
 import java.math.BigDecimal
 import java.time.DayOfWeek
 import java.time.Instant
+import com.sakena.wallet.domain.WalletRepository
+import com.sakena.wallet.domain.WalletTransactionRepository
+import com.sakena.wallet.domain.model.TransactionCategory
+import com.sakena.wallet.domain.model.TransactionDirection
+import com.sakena.wallet.domain.model.Wallet
+import com.sakena.wallet.domain.model.WalletTransaction
 import java.time.ZoneId
 import java.time.temporal.TemporalAdjusters
 
@@ -32,6 +39,8 @@ class FacilityBookingService(
     private val facilityRepository: FacilityRepository,
     private val bookingRepository: FacilityBookingRepository,
     private val buildingAccess: BuildingAccess,
+    private val walletRepository: WalletRepository,
+    private val transactionRepository: WalletTransactionRepository,
     @Value("\${app.timezone:Asia/Tehran}")
     private val timezone: String,
 ) {
@@ -70,14 +79,27 @@ class FacilityBookingService(
             )
         }
 
-        val booking = FacilityBooking.create(
-            facilityId = facilityId,
-            bookedBy = requestedBy.id,
-            startsAt = command.startsAt,
-            endsAt = command.endsAt,
-            partySize = command.partySize,
+        val price = facility.rules.priceFor(command.startsAt, command.endsAt, command.partySize)
+        val booking = bookingRepository.save(
+            FacilityBooking.create(
+                facilityId = facilityId,
+                bookedBy = requestedBy.id,
+                startsAt = command.startsAt,
+                endsAt = command.endsAt,
+                partySize = command.partySize,
+                price = price,
+            ),
         )
-        return bookingRepository.save(booking)
+        // Paid up front from the resident's wallet, which refuses to go
+        // negative — so a booking never exists without the money behind it.
+        moveMoney(
+            residentId = requestedBy.id,
+            buildingId = buildingId,
+            amount = price,
+            towardsBuilding = true,
+            description = "رزرو «${facility.name}»",
+        )
+        return booking
     }
 
     /** The owner cancels their own booking; a manager may cancel any. */
@@ -91,7 +113,68 @@ class FacilityBookingService(
                 "Only the resident who made a booking, or the building manager, can cancel it",
             )
         }
-        bookingRepository.deleteById(bookingId)
+
+        // The aggregate refuses a session that has already started, so the
+        // refund below only ever runs for a slot the resident never used.
+        booking.cancel()
+        bookingRepository.save(booking)
+        moveMoney(
+            residentId = booking.bookedBy,
+            buildingId = accessibleBuildingId(requestedBy),
+            amount = booking.price,
+            towardsBuilding = false,
+            description = "لغو رزرو — بازگشت وجه",
+        )
+    }
+
+    /**
+     * Moves a booking's price between the resident and the building account,
+     * writing both sides to the ledger so the movement is always explainable.
+     * A free facility moves nothing.
+     */
+    private fun moveMoney(
+        residentId: UserId,
+        buildingId: BuildingId,
+        amount: BigDecimal,
+        towardsBuilding: Boolean,
+        description: String,
+    ) {
+        if (amount <= BigDecimal.ZERO) return
+        val residentWallet = walletRepository.findByOwner(residentId)
+            ?: Wallet.createForUser(residentId)
+        val buildingWallet = walletRepository.findBuildingWallet(buildingId)
+            ?: throw EntityNotFoundException("Building wallet was not found")
+
+        if (towardsBuilding) {
+            residentWallet.debit(amount)
+            buildingWallet.credit(amount)
+        } else {
+            buildingWallet.debit(amount)
+            residentWallet.credit(amount)
+        }
+        walletRepository.save(residentWallet)
+        walletRepository.save(buildingWallet)
+
+        recordTransaction(residentWallet, if (towardsBuilding) TransactionDirection.DEBIT else TransactionDirection.CREDIT, amount, description)
+        recordTransaction(buildingWallet, if (towardsBuilding) TransactionDirection.CREDIT else TransactionDirection.DEBIT, amount, description)
+    }
+
+    private fun recordTransaction(
+        wallet: Wallet,
+        direction: TransactionDirection,
+        amount: BigDecimal,
+        description: String,
+    ) {
+        transactionRepository.save(
+            WalletTransaction.record(
+                walletId = wallet.id,
+                direction = direction,
+                category = TransactionCategory.CHARGE_COLLECTION,
+                amount = amount,
+                description = description,
+                balanceAfter = wallet.balance,
+            ),
+        )
     }
 
     @Transactional(readOnly = true)
@@ -124,9 +207,10 @@ class FacilityBookingService(
         startsAt: Instant,
         endsAt: Instant,
         requestedBy: User,
+        partySize: Int = 1,
     ): BigDecimal {
         val facility = requireFacility(facilityId, accessibleBuildingId(requestedBy))
-        return facility.rules.priceFor(startsAt, endsAt)
+        return facility.rules.priceFor(startsAt, endsAt, partySize)
     }
 
     private fun requireFacility(facilityId: FacilityId, buildingId: BuildingId): Facility =
