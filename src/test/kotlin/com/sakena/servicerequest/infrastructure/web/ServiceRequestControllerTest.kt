@@ -31,6 +31,7 @@ import com.sakena.user.domain.UserId
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
+import org.hamcrest.Matchers.nullValue
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.BeforeEach
@@ -390,6 +391,54 @@ class ServiceRequestControllerTest {
                 .andExpect(jsonPath("$.requestingUnit.unitNumber").value("12"))
                 .andExpect(jsonPath("$.requestingUnit.floorNumber").value(3))
                 .andExpect(jsonPath("$.requestingUnit.buildingName").value("برج نیلوفر"))
+        } finally {
+            cleanupSecurityContext()
+        }
+    }
+
+    @Test
+    fun `createRequest keeps the apartment id when its building cannot be resolved`() {
+        try {
+            setupSecurityContext()
+
+            val apartmentId = ApartmentId.new()
+            val buildingId = com.sakena.property.domain.model.BuildingId.new()
+            val request = CreateServiceRequestRequest(
+                title = "Fix AC",
+                description = "AC not cooling",
+                location = "Building A, Floor 2",
+                categoryGroup = ServiceCategoryGroup.FACILITIES,
+                subCategory = ServiceSubCategory.ELECTRICAL,
+            )
+            val createdRequest = createMockServiceRequest(
+                title = request.title!!,
+                description = request.description!!,
+                location = request.location!!,
+                createdBy = testUserId,
+                status = ServiceRequestStatus.PENDING,
+                categoryGroup = ServiceCategoryGroup.FACILITIES,
+                subCategory = ServiceSubCategory.ELECTRICAL,
+                requestingApartmentId = apartmentId,
+            )
+
+            every { profileService.getUserByUsername(testUsername) } returns testUser
+            every {
+                serviceRequestService.create(any<CreateServiceRequestCommand>(), testUserId)
+            } returns createdRequest
+            every { apartmentRepository.findById(apartmentId) } returns
+                com.sakena.property.domain.model.Apartment.create(
+                    buildingId, "12", 3, java.math.BigDecimal("85"), 2,
+                )
+            every { buildingRepository.findById(buildingId) } returns null
+
+            mockMvc.perform(
+                post("/api/v1/service-requests")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)),
+            )
+                .andExpect(status().isCreated)
+                .andExpect(jsonPath("$.requestingApartmentId").value(apartmentId.value.toString()))
+                .andExpect(jsonPath("$.requestingUnit").value(nullValue()))
         } finally {
             cleanupSecurityContext()
         }
@@ -855,6 +904,7 @@ class ServiceRequestControllerTest {
                     jsonPath("$.requestingApartmentId")
                         .value(requestingApartmentId.value.toString()),
                 )
+                .andExpect(jsonPath("$.requestingUnit").value(nullValue()))
 
             assertEquals(completedRequest.id, commandSlot.captured.serviceRequestId)
             assertEquals(ServiceCostResponsibility.ALL_UNITS, commandSlot.captured.responsibility)
