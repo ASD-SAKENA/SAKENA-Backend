@@ -8,6 +8,7 @@ import com.sakena.billing.infrastructure.web.dto.AddChargeItemRequest
 import com.sakena.billing.infrastructure.web.dto.ChargeItemResponse
 import com.sakena.billing.infrastructure.web.dto.ChargePeriodResponse
 import com.sakena.billing.infrastructure.web.dto.CreateChargePeriodRequest
+import com.sakena.billing.infrastructure.web.dto.ServiceChargeResponse
 import com.sakena.billing.infrastructure.web.dto.UnitInvoiceResponse
 import com.sakena.billing.infrastructure.web.dto.UpdateChargePeriodRequest
 import com.sakena.property.domain.model.BuildingId
@@ -60,6 +61,14 @@ class ChargePeriodController(
             currentManagerId(principal),
         )
             .map(ChargePeriodResponse::from)
+
+    @Operation(
+        summary = "Pending service costs waiting to attach on the next period issue (manager)",
+    )
+    @GetMapping("/pending-service-charges")
+    fun pendingServiceCharges(principal: Principal): List<ServiceChargeResponse> =
+        chargePeriodService.getPendingServiceCharges(currentManagerId(principal))
+            .map(ServiceChargeResponse::from)
 
     @Operation(summary = "Get a charge period by id")
     @GetMapping("/{id}")
