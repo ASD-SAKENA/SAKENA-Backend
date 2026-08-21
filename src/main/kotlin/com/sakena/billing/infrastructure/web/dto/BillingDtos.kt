@@ -156,6 +156,8 @@ data class UnitInvoiceResponse(
     val startsOn: LocalDate?,
     val endsOn: LocalDate?,
     val apartmentId: UUID,
+    val unitNumber: String?,
+    val residentUsername: String?,
     val amount: BigDecimal,
     val paidAmount: BigDecimal,
     val remaining: BigDecimal,
@@ -168,6 +170,8 @@ data class UnitInvoiceResponse(
             periodTitle: String = "",
             startsOn: LocalDate? = null,
             endsOn: LocalDate? = null,
+            unitNumber: String? = null,
+            residentUsername: String? = null,
         ) = UnitInvoiceResponse(
             id = invoice.id.value,
             periodId = invoice.periodId.value,
@@ -175,11 +179,22 @@ data class UnitInvoiceResponse(
             startsOn = startsOn,
             endsOn = endsOn,
             apartmentId = invoice.apartmentId.value,
+            unitNumber = unitNumber,
+            residentUsername = residentUsername,
             amount = invoice.amount,
             paidAmount = invoice.paidAmount,
             remaining = invoice.remaining,
             status = invoice.status,
             issuedAt = invoice.issuedAt,
+        )
+
+        fun from(details: com.sakena.billing.application.InvoiceDetails) = from(
+            invoice = details.invoice,
+            periodTitle = details.periodTitle,
+            startsOn = details.startsOn,
+            endsOn = details.endsOn,
+            unitNumber = details.unitNumber,
+            residentUsername = details.residentUsername,
         )
     }
 }

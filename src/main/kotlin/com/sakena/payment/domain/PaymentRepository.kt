@@ -27,4 +27,7 @@ interface PaymentRepository {
 
     /** Pending claims for one building's manager review queue. */
     fun findAllPendingByBuildingNewestFirst(buildingId: BuildingId): List<Payment>
+
+    /** Every payment claim for a building, any status, newest first. */
+    fun findAllByBuildingNewestFirst(buildingId: BuildingId): List<Payment>
 }

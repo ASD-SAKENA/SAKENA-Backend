@@ -11,6 +11,7 @@ import com.sakena.billing.domain.UnitInvoiceNotFoundException
 import com.sakena.billing.domain.UnitInvoiceRepository
 import com.sakena.billing.domain.model.ChargePeriod
 import com.sakena.billing.domain.model.ChargePeriodId
+import com.sakena.billing.domain.model.ChargePeriodStatus
 import com.sakena.billing.domain.model.UnitInvoice
 import com.sakena.billing.domain.model.UnitInvoiceId
 import com.sakena.property.domain.ApartmentNotFoundException
@@ -22,6 +23,7 @@ import com.sakena.residency.domain.ResidencyRepository
 import com.sakena.shared.domain.DomainConflictException
 import com.sakena.shared.domain.DomainForbiddenException
 import com.sakena.user.domain.UserId
+import com.sakena.user.domain.UserRepository
 import com.sakena.wallet.application.WalletService
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -43,6 +45,7 @@ class InvoiceService(
     private val buildingAccess: BuildingAccess,
     private val residencyRepository: ResidencyRepository,
     private val walletService: WalletService,
+    private val userRepository: UserRepository,
 ) {
 
     fun issue(periodId: ChargePeriodId, managerId: UserId): List<UnitInvoice> {
@@ -124,6 +127,46 @@ class InvoiceService(
     @Transactional(readOnly = true)
     fun periodOf(invoice: UnitInvoice): ChargePeriod? =
         periodRepository.findById(invoice.periodId)
+
+    /**
+     * Issued invoices still carrying a balance — optionally narrowed to one
+     * charge period. Used by the manager to chase unpaid units.
+     */
+    @Transactional(readOnly = true)
+    fun getOutstanding(managerId: UserId, periodId: ChargePeriodId?): List<InvoiceDetails> {
+        val periods = if (periodId != null) {
+            listOf(requireManagedPeriod(periodId, managerId))
+        } else {
+            val buildingId = buildingAccess.managedBuildingId(managerId)
+            periodRepository.findAll(buildingId)
+                .filter { it.status != ChargePeriodStatus.DRAFT }
+        }
+        return periods
+            .flatMap { period ->
+                invoiceRepository.findAllByPeriod(period.id)
+                    .filter { it.remaining > BigDecimal.ZERO }
+                    .map { invoice -> detailsOf(invoice, period) }
+            }
+            .sortedByDescending { it.invoice.issuedAt }
+    }
+
+    @Transactional(readOnly = true)
+    fun detailsOf(invoice: UnitInvoice): InvoiceDetails =
+        detailsOf(invoice, periodOf(invoice))
+
+    private fun detailsOf(invoice: UnitInvoice, period: ChargePeriod?): InvoiceDetails {
+        val apartment = apartmentRepository.findById(invoice.apartmentId)
+        val residentId = residencyRepository.findActiveByApartment(invoice.apartmentId)?.residentId
+        val residentUsername = residentId?.let { userRepository.findById(it)?.username }
+        return InvoiceDetails(
+            invoice = invoice,
+            periodTitle = period?.title.orEmpty(),
+            startsOn = period?.startsOn,
+            endsOn = period?.endsOn,
+            unitNumber = apartment?.unitNumber,
+            residentUsername = residentUsername,
+        )
+    }
 
     /**
      * Resident pays an outstanding invoice from their personal wallet balance.

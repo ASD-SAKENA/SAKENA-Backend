@@ -13,6 +13,7 @@ import com.sakena.payment.domain.PaymentReceiptAccess
 import com.sakena.payment.domain.PaymentReceiptStorage
 import com.sakena.payment.domain.model.Payment
 import com.sakena.payment.domain.model.PaymentStatus
+import com.sakena.property.domain.ApartmentRepository
 import com.sakena.property.domain.BuildingAccess
 import com.sakena.property.domain.model.ApartmentId
 import com.sakena.property.domain.model.BuildingId
@@ -62,6 +63,7 @@ class PaymentServiceTest {
     private val periodRepository = mockk<ChargePeriodRepository>()
     private val residencyRepository = mockk<ResidencyRepository>()
     private val walletService = mockk<WalletService>()
+    private val apartmentRepository = mockk<ApartmentRepository>(relaxed = true)
     private val service = PaymentService(
         repository,
         userRepository,
@@ -71,6 +73,7 @@ class PaymentServiceTest {
         periodRepository,
         residencyRepository,
         walletService,
+        apartmentRepository,
     )
 
     @Test
@@ -239,11 +242,47 @@ class PaymentServiceTest {
     @Test
     fun `getPending returns the manager review queue newest first`() {
         val manager = user(Role.MANAGER)
-        val pending = listOf(pendingPayment(UserId.generate(), "TX-PENDING"))
+        val payer = user(Role.RESIDENT)
+        val pending = listOf(pendingPayment(payer.id, "TX-PENDING"))
         every { userRepository.findById(manager.id) } returns manager
+        every { userRepository.findById(payer.id) } returns payer
         every { repository.findAllPendingByBuildingNewestFirst(buildingId) } returns pending
+        every { invoiceRepository.findById(any()) } returns outstandingInvoice()
+        every { periodRepository.findById(period.id) } returns period
 
-        assertEquals(pending, service.getPending(manager.id))
+        val result = service.getPending(manager.id)
+        assertEquals(1, result.size)
+        assertEquals(pending[0].id, result[0].payment.id)
+        assertEquals(period.title, result[0].periodTitle)
+        assertEquals(payer.username, result[0].payerUsername)
+    }
+
+    @Test
+    fun `getBuildingPayments filters by status and period`() {
+        val manager = user(Role.MANAGER)
+        val payer = user(Role.RESIDENT)
+        val invoice = outstandingInvoice()
+        val confirmed = pendingPayment(payer.id, "TX-OK", invoiceId = invoice.id).also {
+            it.confirm(manager.id)
+        }
+        val other = pendingPayment(payer.id, "TX-WAIT", invoiceId = invoice.id)
+        every { userRepository.findById(manager.id) } returns manager
+        every { userRepository.findById(payer.id) } returns payer
+        every { repository.findAllByBuildingNewestFirst(buildingId) } returns listOf(confirmed, other)
+        every { invoiceRepository.findById(invoice.id) } returns invoice
+        every { periodRepository.findById(period.id) } returns period
+
+        val confirmedOnly = service.getBuildingPayments(
+            manager.id,
+            BuildingPaymentQuery(status = PaymentStatus.CONFIRMED),
+        )
+        assertEquals(listOf(confirmed.id), confirmedOnly.map { it.payment.id })
+
+        val byPeriod = service.getBuildingPayments(
+            manager.id,
+            BuildingPaymentQuery(periodId = period.id),
+        )
+        assertEquals(2, byPeriod.size)
     }
 
     @Test
