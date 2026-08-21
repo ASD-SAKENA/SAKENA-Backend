@@ -26,6 +26,9 @@ class UserRepositoryAdapter(
         return jpaRepo.findAllById(ids.map { it.value }).map { toDomain(it) }
     }
 
+    override fun findManagersOfBuilding(buildingId: BuildingId): List<User> =
+        jpaRepo.findAllByRoleAndManagedBuildingId(Role.MANAGER, buildingId.value).map { toDomain(it) }
+
     override fun findByUsername(username: String): User? {
         return jpaRepo.findByUsername(username)?.let { toDomain(it) }
     }

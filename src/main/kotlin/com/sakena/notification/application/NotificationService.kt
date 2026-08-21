@@ -9,6 +9,7 @@ import com.sakena.property.domain.model.BuildingId
 import com.sakena.residency.domain.ResidencyRepository
 import com.sakena.shared.domain.DomainForbiddenException
 import com.sakena.user.domain.UserId
+import com.sakena.user.domain.UserRepository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 
@@ -17,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional
 class NotificationService(
     private val notificationRepository: NotificationRepository,
     private val residencyRepository: ResidencyRepository,
+    private val userRepository: UserRepository,
 ) {
 
     fun notifyUser(
@@ -41,6 +43,21 @@ class NotificationService(
         val recipientIds = residencyRepository.findActiveByBuilding(buildingId)
             .map { it.residentId }
             .distinct()
+        if (recipientIds.isEmpty()) return emptyList()
+        return notificationRepository.saveAll(
+            recipientIds.map { Notification.create(it, title, body, type, href) },
+        )
+    }
+
+    /** One notification per manager administering the building. */
+    fun notifyBuildingManagers(
+        buildingId: BuildingId,
+        title: String,
+        body: String,
+        type: NotificationType,
+        href: String? = null,
+    ): List<Notification> {
+        val recipientIds = userRepository.findManagersOfBuilding(buildingId).map { it.id }
         if (recipientIds.isEmpty()) return emptyList()
         return notificationRepository.saveAll(
             recipientIds.map { Notification.create(it, title, body, type, href) },

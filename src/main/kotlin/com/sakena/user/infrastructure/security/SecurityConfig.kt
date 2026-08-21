@@ -108,6 +108,14 @@ class SecurityConfig(
                         "/api/v1/service-requests/*/assign",
                         "/api/v1/service-requests/*/cost-responsibility"
                     ).hasRole(manager)
+                    // Support tickets are a resident-to-manager conversation:
+                    // staff are refused here as well as in the service.
+                    .requestMatchers(HttpMethod.POST, "/api/v1/support-tickets").hasRole(resident)
+                    .requestMatchers(HttpMethod.GET, "/api/v1/support-tickets/mine").hasRole(resident)
+                    .requestMatchers(HttpMethod.GET, "/api/v1/support-tickets").hasRole(manager)
+                    .requestMatchers(HttpMethod.PATCH, "/api/v1/support-tickets/*/answer").hasRole(manager)
+                    .requestMatchers("/api/v1/support-tickets/**")
+                    .hasAnyRole(resident, manager)
                     .requestMatchers(HttpMethod.POST, "/api/v1/announcements").hasRole(manager)
                     .requestMatchers(HttpMethod.POST, "/api/v1/polls").hasRole(manager)
                     .requestMatchers(HttpMethod.POST, "/api/v1/polls/*/close").hasRole(manager)

@@ -20,7 +20,8 @@ class NotificationServiceTest {
 
     private val notificationRepository = mockk<NotificationRepository>()
     private val residencyRepository = mockk<ResidencyRepository>()
-    private val service = NotificationService(notificationRepository, residencyRepository)
+    private val userRepository = mockk<com.sakena.user.domain.UserRepository>(relaxed = true)
+    private val service = NotificationService(notificationRepository, residencyRepository, userRepository)
 
     @Test
     fun `notifyBuildingResidents creates one notification per active resident`() {
