@@ -18,4 +18,6 @@ interface PaymentJpaRepository : JpaRepository<PaymentEntity, UUID> {
         buildingId: UUID,
         status: PaymentStatus,
     ): List<PaymentEntity>
+
+    fun existsByInvoiceIdAndStatus(invoiceId: UUID, status: PaymentStatus): Boolean
 }

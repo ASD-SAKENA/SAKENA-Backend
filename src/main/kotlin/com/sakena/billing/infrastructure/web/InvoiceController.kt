@@ -1,7 +1,9 @@
 package com.sakena.billing.infrastructure.web
 
 import com.sakena.billing.application.InvoiceService
+import com.sakena.billing.domain.model.UnitInvoice
 import com.sakena.billing.domain.model.UnitInvoiceId
+import com.sakena.billing.infrastructure.web.dto.PayInvoiceFromWalletRequest
 import com.sakena.billing.infrastructure.web.dto.RegisterInvoicePaymentRequest
 import com.sakena.billing.infrastructure.web.dto.UnitInvoiceResponse
 import com.sakena.property.domain.model.ApartmentId
@@ -36,6 +38,16 @@ class InvoiceController(
     private val profileService: ProfileService,
 ) {
 
+    @Operation(summary = "Signed-in resident's invoices for their current unit")
+    @GetMapping("/mine")
+    fun mine(principal: Principal): List<UnitInvoiceResponse> {
+        val user = currentUser(principal)
+        if (user.role != Role.RESIDENT) {
+            throw DomainForbiddenException("Only residents can list their own invoices")
+        }
+        return invoiceService.getMine(user.id).map(::toResponse)
+    }
+
     @Operation(summary = "Invoices of a single unit, newest first")
     @GetMapping
     fun listByApartment(
@@ -49,7 +61,7 @@ class InvoiceController(
             Role.RESIDENT -> invoiceService.getOwnApartment(id, user.id)
             Role.STAFF, Role.ADMIN -> throw DomainForbiddenException("You may not access apartment invoices")
         }
-        return invoices.map(UnitInvoiceResponse::from)
+        return invoices.map(::toResponse)
     }
 
     @Operation(summary = "Register a payment against an invoice (manager)")
@@ -59,13 +71,43 @@ class InvoiceController(
         @Valid @RequestBody request: RegisterInvoicePaymentRequest,
         principal: Principal,
     ): UnitInvoiceResponse =
-        UnitInvoiceResponse.from(
+        toResponse(
             invoiceService.registerPayment(
                 UnitInvoiceId.from(id),
                 request.toCommand(),
                 currentUser(principal).id,
             ),
         )
+
+    @Operation(summary = "Pay an outstanding invoice from the resident wallet (instant)")
+    @PostMapping("/{id}/pay-from-wallet")
+    fun payFromWallet(
+        @PathVariable id: String,
+        @Valid @RequestBody(required = false) request: PayInvoiceFromWalletRequest?,
+        principal: Principal,
+    ): UnitInvoiceResponse {
+        val user = currentUser(principal)
+        if (user.role != Role.RESIDENT) {
+            throw DomainForbiddenException("Only residents can pay from their wallet")
+        }
+        return toResponse(
+            invoiceService.payFromWallet(
+                UnitInvoiceId.from(id),
+                user.id,
+                request?.amount,
+            ),
+        )
+    }
+
+    private fun toResponse(invoice: UnitInvoice): UnitInvoiceResponse {
+        val period = invoiceService.periodOf(invoice)
+        return UnitInvoiceResponse.from(
+            invoice = invoice,
+            periodTitle = period?.title.orEmpty(),
+            startsOn = period?.startsOn,
+            endsOn = period?.endsOn,
+        )
+    }
 
     private fun currentUser(principal: Principal): User =
         profileService.getUserByUsername(principal.name)

@@ -22,6 +22,7 @@ import com.sakena.residency.domain.ResidencyRepository
 import com.sakena.shared.domain.DomainConflictException
 import com.sakena.shared.domain.DomainForbiddenException
 import com.sakena.user.domain.UserId
+import com.sakena.wallet.application.WalletService
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.math.BigDecimal
@@ -41,6 +42,7 @@ class InvoiceService(
     private val serviceChargeRepository: ServiceChargeRepository,
     private val buildingAccess: BuildingAccess,
     private val residencyRepository: ResidencyRepository,
+    private val walletService: WalletService,
 ) {
 
     fun issue(periodId: ChargePeriodId, managerId: UserId): List<UnitInvoice> {
@@ -109,6 +111,46 @@ class InvoiceService(
             throw DomainForbiddenException("You may only access invoices for your own apartment")
         }
         return invoiceRepository.findAllByApartment(apartmentId)
+    }
+
+    /** Every invoice for the signed-in resident's current unit, newest first. */
+    @Transactional(readOnly = true)
+    fun getMine(residentId: UserId): List<UnitInvoice> {
+        val residency = residencyRepository.findActiveByResident(residentId)
+            ?: return emptyList()
+        return invoiceRepository.findAllByApartment(residency.apartmentId)
+    }
+
+    @Transactional(readOnly = true)
+    fun periodOf(invoice: UnitInvoice): ChargePeriod? =
+        periodRepository.findById(invoice.periodId)
+
+    /**
+     * Resident pays an outstanding invoice from their personal wallet balance.
+     * Settles immediately — no manager review queue.
+     */
+    fun payFromWallet(
+        invoiceId: UnitInvoiceId,
+        residentId: UserId,
+        amount: BigDecimal?,
+    ): UnitInvoice {
+        val invoice = invoiceRepository.findById(invoiceId)
+            ?: throw UnitInvoiceNotFoundException(invoiceId)
+        val residency = residencyRepository.findActiveByResident(residentId)
+            ?: throw DomainForbiddenException("You must be an active resident to pay an invoice")
+        if (residency.apartmentId != invoice.apartmentId) {
+            throw DomainForbiddenException("You may only pay invoices for your own apartment")
+        }
+        val period = requirePeriod(invoice.periodId)
+        val payAmount = amount ?: invoice.remaining
+        invoice.registerPayment(payAmount)
+        walletService.payInvoiceFromWallet(
+            buildingId = period.buildingId,
+            residentId = residentId,
+            amount = payAmount,
+            description = "پرداخت «${period.title}» از کیف پول",
+        )
+        return invoiceRepository.save(invoice)
     }
 
     private fun requireManagedPeriod(id: ChargePeriodId, managerId: UserId): ChargePeriod {

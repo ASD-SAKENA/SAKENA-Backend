@@ -3,6 +3,9 @@ package com.sakena.payment.infrastructure.web
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.ninjasquad.springmockk.MockkBean
 import com.sakena.IntegrationTest
+import com.sakena.billing.domain.model.ChargeItemKind
+import com.sakena.billing.domain.model.ChargePeriodType
+import com.sakena.billing.domain.model.CostAllocation
 import com.sakena.payment.domain.PaymentReceiptAccess
 import com.sakena.payment.domain.PaymentReceiptStorage
 import com.sakena.payment.infrastructure.persistence.PaymentJpaRepository
@@ -26,6 +29,7 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import java.math.BigDecimal
+import java.time.LocalDate
 import java.util.UUID
 
 @AutoConfigureMockMvc
@@ -47,6 +51,8 @@ class PaymentControllerIntegrationTest(
         val managerToken = register("manager-$suffix", "MANAGER")
         val otherManagerToken = register("other-manager-$suffix", "MANAGER")
         createBuildingWithResident(managerToken, "resident-$suffix", suffix)
+        val firstInvoiceId = issueInvoiceForResident(managerToken, residentToken, "1-$suffix")
+        val secondInvoiceId = issueInvoiceForResident(managerToken, residentToken, "2-$suffix")
         val confirmedReference = "TX-CONFIRM-$suffix"
         val rejectedReference = "TX-REJECT-$suffix"
         val objectKey = "payment-receipts/$suffix/receipt.png"
@@ -56,6 +62,7 @@ class PaymentControllerIntegrationTest(
 
         val paymentId = submitPayment(
             token = residentToken,
+            invoiceId = firstInvoiceId,
             reference = confirmedReference,
             receipt = pngReceipt(),
         )
@@ -104,7 +111,7 @@ class PaymentControllerIntegrationTest(
         mockMvc.perform(authorizedGet("/api/v1/payments/$paymentId/receipt", otherResidentToken))
             .andExpect(status().isForbidden)
 
-        submitPaymentRequest(residentToken, confirmedReference, pngReceipt())
+        submitPaymentRequest(residentToken, firstInvoiceId, confirmedReference, pngReceipt())
             .andExpect(status().isConflict)
         verify(exactly = 1) { receiptStorage.store(any(), any(), any(), any()) }
 
@@ -121,6 +128,7 @@ class PaymentControllerIntegrationTest(
 
         val rejectedPaymentId = submitPayment(
             token = residentToken,
+            invoiceId = secondInvoiceId,
             reference = rejectedReference,
             receipt = null,
         )
@@ -203,18 +211,76 @@ class PaymentControllerIntegrationTest(
         ).andExpect(status().isCreated)
     }
 
+    private fun issueInvoiceForResident(
+        managerToken: String,
+        residentToken: String,
+        suffix: String,
+    ): String {
+        val buildingId = managedBuildingId(managerToken)
+        val periodBody = mapOf(
+            "buildingId" to buildingId,
+            "title" to "Charge $suffix",
+            "type" to ChargePeriodType.MONTHLY.name,
+            "startsOn" to LocalDate.of(2026, 6, 1).plusDays(suffix.hashCode().toLong().mod(20L)),
+            "endsOn" to LocalDate.of(2026, 7, 1).plusDays(suffix.hashCode().toLong().mod(20L)),
+        )
+        val period = mockMvc.perform(
+            post("/api/v1/charge-periods")
+                .header(HttpHeaders.AUTHORIZATION, bearer(managerToken))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsBytes(periodBody)),
+        )
+            .andExpect(status().isCreated)
+            .andReturn()
+        val periodId = objectMapper.readTree(period.response.contentAsString).get("id").asText()
+
+        val itemBody = mapOf(
+            "title" to "Monthly charge",
+            "amount" to BigDecimal("850000"),
+            "kind" to ChargeItemKind.RECURRING_CHARGE.name,
+            "allocation" to CostAllocation.EQUAL.name,
+        )
+        mockMvc.perform(
+            post("/api/v1/charge-periods/$periodId/items")
+                .header(HttpHeaders.AUTHORIZATION, bearer(managerToken))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsBytes(itemBody)),
+        ).andExpect(status().isCreated)
+
+        mockMvc.perform(
+            post("/api/v1/charge-periods/$periodId/issue")
+                .header(HttpHeaders.AUTHORIZATION, bearer(managerToken)),
+        ).andExpect(status().isCreated)
+
+        val invoices = mockMvc.perform(
+            get("/api/v1/invoices/mine")
+                .header(HttpHeaders.AUTHORIZATION, bearer(residentToken)),
+        )
+            .andExpect(status().isOk)
+            .andReturn()
+        val invoiceNode = objectMapper.readTree(invoices.response.contentAsString)
+            .firstOrNull { it.get("periodId").asText() == periodId && it.get("remaining").decimalValue() > BigDecimal.ZERO }
+            ?: error("Issued invoice for period $periodId was not found")
+        return invoiceNode.get("id").asText()
+    }
+
     private fun managedBuildingId(token: String): String {
         val result = mockMvc.perform(
             get("/api/v1/profile")
-                .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                .header(HttpHeaders.AUTHORIZATION, bearer(token)),
         )
             .andExpect(status().isOk)
             .andReturn()
         return objectMapper.readTree(result.response.contentAsString).get("managedBuildingId").asText()
     }
 
-    private fun submitPayment(token: String, reference: String, receipt: MockMultipartFile?): String {
-        val result = submitPaymentRequest(token, reference, receipt)
+    private fun submitPayment(
+        token: String,
+        invoiceId: String,
+        reference: String,
+        receipt: MockMultipartFile?,
+    ): String {
+        val result = submitPaymentRequest(token, invoiceId, reference, receipt)
             .andExpect(status().isCreated)
             .andExpect(jsonPath("$.transactionReference").value(reference))
             .andReturn()
@@ -223,11 +289,12 @@ class PaymentControllerIntegrationTest(
 
     private fun submitPaymentRequest(
         token: String,
+        invoiceId: String,
         reference: String,
         receipt: MockMultipartFile?,
     ): org.springframework.test.web.servlet.ResultActions {
         val request = RecordPaymentRequest(
-            title = "Monthly charge",
+            invoiceId = UUID.fromString(invoiceId),
             amount = BigDecimal("850000"),
             transactionReference = reference,
         )

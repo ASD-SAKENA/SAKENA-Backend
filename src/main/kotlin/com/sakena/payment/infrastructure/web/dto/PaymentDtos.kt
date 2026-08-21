@@ -1,5 +1,6 @@
 package com.sakena.payment.infrastructure.web.dto
 
+import com.sakena.billing.domain.model.UnitInvoiceId
 import com.sakena.payment.application.command.PaymentReceiptUpload
 import com.sakena.payment.application.command.SubmitPaymentCommand
 import com.sakena.payment.domain.PaymentReceiptAccess
@@ -14,9 +15,8 @@ import java.time.Instant
 import java.util.UUID
 
 data class RecordPaymentRequest(
-    @field:NotBlank(message = "title must not be blank")
-    @field:Size(max = 200, message = "title must be at most 200 characters")
-    val title: String,
+    @field:NotNull(message = "invoiceId must not be null")
+    val invoiceId: UUID,
 
     @field:NotNull(message = "amount must not be null")
     @field:DecimalMin(value = "0.01", message = "amount must be greater than zero")
@@ -27,7 +27,7 @@ data class RecordPaymentRequest(
     val transactionReference: String,
 ) {
     fun toCommand(receipt: PaymentReceiptUpload?) = SubmitPaymentCommand(
-        title = title,
+        invoiceId = UnitInvoiceId(invoiceId),
         amount = amount,
         transactionReference = transactionReference,
         receipt = receipt,
@@ -42,6 +42,8 @@ data class RejectPaymentRequest(
 
 data class PaymentResponse(
     val id: UUID,
+    val invoiceId: UUID?,
+    val periodTitle: String?,
     val title: String,
     val amount: BigDecimal,
     val transactionReference: String,
@@ -53,8 +55,10 @@ data class PaymentResponse(
     val rejectionReason: String?,
 ) {
     companion object {
-        fun from(payment: Payment) = PaymentResponse(
+        fun from(payment: Payment, periodTitle: String? = null) = PaymentResponse(
             id = payment.id.value,
+            invoiceId = payment.invoiceId?.value,
+            periodTitle = periodTitle,
             title = payment.title,
             amount = payment.amount,
             transactionReference = payment.transactionReference,

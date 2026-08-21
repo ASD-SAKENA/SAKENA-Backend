@@ -150,7 +150,15 @@ class ChargePeriodController(
     @ResponseStatus(HttpStatus.CREATED)
     fun issue(@PathVariable id: String, principal: Principal): List<UnitInvoiceResponse> =
         invoiceService.issue(ChargePeriodId.from(id), currentManagerId(principal))
-            .map(UnitInvoiceResponse::from)
+            .map { invoice ->
+                val period = invoiceService.periodOf(invoice)
+                UnitInvoiceResponse.from(
+                    invoice = invoice,
+                    periodTitle = period?.title.orEmpty(),
+                    startsOn = period?.startsOn,
+                    endsOn = period?.endsOn,
+                )
+            }
 
     @Operation(summary = "Close a fully settled charge period (manager)")
     @PostMapping("/{id}/close")
@@ -163,7 +171,15 @@ class ChargePeriodController(
     @GetMapping("/{id}/invoices")
     fun invoices(@PathVariable id: String, principal: Principal): List<UnitInvoiceResponse> =
         invoiceService.getByPeriod(ChargePeriodId.from(id), currentManagerId(principal))
-            .map(UnitInvoiceResponse::from)
+            .map { invoice ->
+                val period = invoiceService.periodOf(invoice)
+                UnitInvoiceResponse.from(
+                    invoice = invoice,
+                    periodTitle = period?.title.orEmpty(),
+                    startsOn = period?.startsOn,
+                    endsOn = period?.endsOn,
+                )
+            }
 
     private fun currentManagerId(principal: Principal): UserId =
         profileService.getUserByUsername(principal.name)?.id

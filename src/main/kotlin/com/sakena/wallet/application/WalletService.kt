@@ -182,6 +182,61 @@ class WalletService(
         return saved
     }
 
+    /**
+     * Credits the building account when a manager confirms a resident paid a
+     * charge invoice (bank-transfer evidence or equivalent).
+     */
+    fun recordChargeCollection(
+        buildingId: BuildingId,
+        amount: BigDecimal,
+        description: String,
+    ) {
+        val wallet = requireBuildingWallet(buildingId)
+        wallet.credit(amount)
+        val saved = walletRepository.save(wallet)
+        recordTransaction(
+            saved,
+            TransactionDirection.CREDIT,
+            TransactionCategory.CHARGE_COLLECTION,
+            amount,
+            description,
+        )
+    }
+
+    /**
+     * Instantly settles an invoice from the resident's personal wallet balance:
+     * debit resident, credit building, no manager review step.
+     */
+    fun payInvoiceFromWallet(
+        buildingId: BuildingId,
+        residentId: UserId,
+        amount: BigDecimal,
+        description: String,
+    ) {
+        val personal = walletRepository.findByOwner(residentId)
+            ?: throw DomainConflictException("Insufficient wallet balance")
+        personal.debit(amount)
+        walletRepository.save(personal)
+        recordTransaction(
+            personal,
+            TransactionDirection.DEBIT,
+            TransactionCategory.CHARGE_COLLECTION,
+            amount,
+            description,
+        )
+
+        val building = requireBuildingWallet(buildingId)
+        building.credit(amount)
+        walletRepository.save(building)
+        recordTransaction(
+            building,
+            TransactionDirection.CREDIT,
+            TransactionCategory.CHARGE_COLLECTION,
+            amount,
+            description,
+        )
+    }
+
     @Transactional(readOnly = true)
     fun getBuildingWallet(requesterManagedBuildingId: BuildingId?): Wallet =
         requireBuildingWallet(requireManagedBuilding(requesterManagedBuildingId))

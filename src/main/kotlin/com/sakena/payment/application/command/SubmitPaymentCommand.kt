@@ -1,5 +1,6 @@
 package com.sakena.payment.application.command
 
+import com.sakena.billing.domain.model.UnitInvoiceId
 import java.io.InputStream
 import java.math.BigDecimal
 
@@ -10,7 +11,7 @@ data class PaymentReceiptUpload(
 )
 
 data class SubmitPaymentCommand(
-    val title: String,
+    val invoiceId: UnitInvoiceId,
     val amount: BigDecimal,
     val transactionReference: String,
     val receipt: PaymentReceiptUpload?,

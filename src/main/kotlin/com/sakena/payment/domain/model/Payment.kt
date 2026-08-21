@@ -1,8 +1,9 @@
 package com.sakena.payment.domain.model
 
+import com.sakena.billing.domain.model.UnitInvoiceId
+import com.sakena.property.domain.model.BuildingId
 import com.sakena.shared.domain.DomainConflictException
 import com.sakena.shared.domain.DomainValidationException
-import com.sakena.property.domain.model.BuildingId
 import com.sakena.user.domain.UserId
 import java.math.BigDecimal
 import java.time.Instant
@@ -14,12 +15,14 @@ enum class PaymentStatus {
 }
 
 /**
- * A resident's payment claim. It enters the system as pending and becomes part
- * of the permanent payment history only after a manager confirms it.
+ * A resident's claim that they paid a specific unit invoice. It stays pending
+ * until a manager confirms it; confirmation settles the invoice and credits the
+ * building wallet.
  */
 class Payment private constructor(
     val id: PaymentId,
     val buildingId: BuildingId?,
+    val invoiceId: UnitInvoiceId?,
     val payerId: UserId,
     val title: String,
     val amount: BigDecimal,
@@ -85,6 +88,7 @@ class Payment private constructor(
 
         fun submit(
             buildingId: BuildingId,
+            invoiceId: UnitInvoiceId,
             payerId: UserId,
             title: String,
             amount: BigDecimal,
@@ -94,6 +98,7 @@ class Payment private constructor(
             Payment(
                 id = PaymentId.new(),
                 buildingId = buildingId,
+                invoiceId = invoiceId,
                 payerId = payerId,
                 title = validateTitle(title),
                 amount = validateAmount(amount),
@@ -110,6 +115,7 @@ class Payment private constructor(
         fun reconstitute(
             id: PaymentId,
             buildingId: BuildingId?,
+            invoiceId: UnitInvoiceId?,
             payerId: UserId,
             title: String,
             amount: BigDecimal,
@@ -123,6 +129,7 @@ class Payment private constructor(
         ): Payment = Payment(
             id = id,
             buildingId = buildingId,
+            invoiceId = invoiceId,
             payerId = payerId,
             title = title,
             amount = amount,
