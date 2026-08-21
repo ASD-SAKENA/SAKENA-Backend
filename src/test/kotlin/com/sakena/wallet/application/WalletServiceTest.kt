@@ -245,6 +245,60 @@ class WalletServiceTest {
     }
 
     @Test
+    fun `charge collection credits the building wallet and records its new balance`() {
+        val building = Wallet.createBuilding(buildingId)
+        every { walletRepository.findBuildingWallet(buildingId) } returns building
+        every { walletRepository.save(any()) } answers { firstArg() }
+        val ledger = slot<WalletTransaction>()
+        every { transactionRepository.save(capture(ledger)) } answers { ledger.captured }
+
+        service.recordChargeCollection(
+            buildingId = buildingId,
+            amount = BigDecimal("125000"),
+            description = "Invoice collection",
+        )
+
+        assertEquals(BigDecimal("125000"), building.balance)
+        assertEquals(TransactionDirection.CREDIT, ledger.captured.direction)
+        assertEquals(TransactionCategory.CHARGE_COLLECTION, ledger.captured.category)
+        assertEquals(BigDecimal("125000"), ledger.captured.amount)
+        assertEquals("Invoice collection", ledger.captured.description)
+        assertEquals(building.balance, ledger.captured.balanceAfter)
+    }
+
+    @Test
+    fun `invoice payment transfers wallet balance and records both ledger lines`() {
+        val residentId = UserId.generate()
+        val personal = Wallet.createForUser(residentId).apply { credit(BigDecimal("300000")) }
+        val building = Wallet.createBuilding(buildingId)
+        every { walletRepository.findByOwner(residentId) } returns personal
+        every { walletRepository.findBuildingWallet(buildingId) } returns building
+        every { walletRepository.save(any()) } answers { firstArg() }
+        val ledger = mutableListOf<WalletTransaction>()
+        every { transactionRepository.save(capture(ledger)) } answers { ledger.last() }
+
+        service.payInvoiceFromWallet(
+            buildingId = buildingId,
+            residentId = residentId,
+            amount = BigDecimal("100000"),
+            description = "Wallet invoice payment",
+        )
+
+        assertEquals(BigDecimal("200000"), personal.balance)
+        assertEquals(BigDecimal("100000"), building.balance)
+        assertEquals(2, ledger.size)
+        assertEquals(TransactionDirection.DEBIT, ledger.first().direction)
+        assertEquals(personal.balance, ledger.first().balanceAfter)
+        assertEquals(TransactionDirection.CREDIT, ledger.last().direction)
+        assertEquals(building.balance, ledger.last().balanceAfter)
+        ledger.forEach {
+            assertEquals(TransactionCategory.CHARGE_COLLECTION, it.category)
+            assertEquals(BigDecimal("100000"), it.amount)
+            assertEquals("Wallet invoice payment", it.description)
+        }
+    }
+
+    @Test
     fun `non-resident cannot fund a personal wallet`() {
         every { userRepository.findById(manager) } returns managerUser
 
