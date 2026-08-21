@@ -47,6 +47,14 @@ class UnitInvoice private constructor(
         if (payment <= BigDecimal.ZERO) {
             throw DomainValidationException("Payment amount must be greater than zero")
         }
+        // Invoices issued before charges were split in whole Toman can still
+        // carry a fraction, so a payment may too — but never more precision
+        // than the currency column holds.
+        if (payment.stripTrailingZeros().scale() > MAX_PAYMENT_SCALE) {
+            throw DomainValidationException(
+                "Payment amount must have at most $MAX_PAYMENT_SCALE decimal places",
+            )
+        }
         if (status == InvoiceStatus.PAID) {
             throw DomainConflictException("Invoice is already fully paid")
         }
@@ -58,6 +66,9 @@ class UnitInvoice private constructor(
     }
 
     companion object {
+        /** Matches the NUMERIC(18, 2) the amount is stored in. */
+        const val MAX_PAYMENT_SCALE = 2
+
         fun issue(
             periodId: ChargePeriodId,
             apartmentId: ApartmentId,
