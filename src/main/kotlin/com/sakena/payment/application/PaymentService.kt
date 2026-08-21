@@ -6,7 +6,6 @@ import com.sakena.billing.domain.UnitInvoiceRepository
 import com.sakena.billing.domain.model.ChargePeriodId
 import com.sakena.billing.domain.model.UnitInvoice
 import com.sakena.billing.domain.model.UnitInvoiceId
-import com.sakena.payment.application.command.PaymentReceiptUpload
 import com.sakena.payment.application.command.SubmitPaymentCommand
 import com.sakena.payment.domain.PaymentRepository
 import com.sakena.payment.domain.PaymentReceiptAccess
@@ -27,8 +26,6 @@ import com.sakena.user.domain.UserRepository
 import com.sakena.wallet.application.WalletService
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
-import java.io.BufferedInputStream
-import java.io.InputStream
 
 /** Application use cases for resident payment submission and manager review. */
 @Service
@@ -37,6 +34,7 @@ class PaymentService(
     private val paymentRepository: PaymentRepository,
     private val userRepository: UserRepository,
     private val receiptStorage: PaymentReceiptStorage,
+    private val receiptValidator: PaymentReceiptValidator,
     private val buildingAccess: BuildingAccess,
     private val invoiceRepository: UnitInvoiceRepository,
     private val periodRepository: ChargePeriodRepository,
@@ -44,11 +42,6 @@ class PaymentService(
     private val walletService: WalletService,
     private val apartmentRepository: ApartmentRepository,
 ) {
-
-    companion object {
-        const val MAX_RECEIPT_BYTES = 5L * 1024 * 1024
-        private val ALLOWED_RECEIPT_TYPES = setOf("image/jpeg", "image/png", "image/webp")
-    }
 
     fun submit(command: SubmitPaymentCommand, payerId: UserId): Payment {
         requireRole(payerId, Role.RESIDENT, "Payments can only be submitted by residents")
@@ -79,7 +72,7 @@ class PaymentService(
             receiptObjectKey = null,
         )
         val objectKey = command.receipt?.let { receipt ->
-            val validatedContent = validateReceipt(receipt)
+            val validatedContent = receiptValidator.validate(receipt)
             receiptStorage.store(
                 payerId = payerId,
                 contentType = receipt.contentType,
@@ -233,37 +226,4 @@ class PaymentService(
             ?: throw DomainForbiddenException("This legacy payment is not assigned to a building")
         buildingAccess.requireManagerAccess(buildingId, managerId)
     }
-
-    private fun validateReceipt(receipt: PaymentReceiptUpload): InputStream {
-        if (receipt.sizeBytes <= 0) throw DomainValidationException("Receipt file must not be empty")
-        if (receipt.sizeBytes > MAX_RECEIPT_BYTES) {
-            throw DomainValidationException("Receipt file must be at most 5 MB")
-        }
-        val baseType = receipt.contentType.substringBefore(';').trim().lowercase()
-        if (baseType !in ALLOWED_RECEIPT_TYPES) {
-            throw DomainValidationException("Unsupported receipt type '$baseType'")
-        }
-        val content = BufferedInputStream(receipt.content)
-        content.mark(12)
-        val signature = content.readNBytes(12)
-        content.reset()
-        val signatureMatches = when (baseType) {
-            "image/png" -> signature.startsWith(0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A)
-            "image/jpeg" -> signature.startsWith(0xFF, 0xD8, 0xFF)
-            "image/webp" ->
-                signature.startsWith(0x52, 0x49, 0x46, 0x46) &&
-                    signature.sliceArray(8 until minOf(12, signature.size))
-                        .startsWith(0x57, 0x45, 0x42, 0x50)
-            else -> false
-        }
-        if (!signatureMatches) {
-            throw DomainValidationException("Receipt content does not match type '$baseType'")
-        }
-        return content
-    }
-
-    private fun ByteArray.startsWith(vararg expected: Int): Boolean =
-        size >= expected.size && expected.indices.all {
-            (this[it].toInt() and 0xFF) == expected[it]
-        }
 }
