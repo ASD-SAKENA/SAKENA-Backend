@@ -92,6 +92,27 @@ class UnitInvoiceTest {
     }
 
     @Test
+    fun `a fractional invoice can be paid off exactly`() {
+        // Invoices issued before charges were split in whole Toman still carry
+        // a fraction; refusing it would leave those residents unable to pay.
+        val invoice = UnitInvoice.issue(periodId, apartmentId, BigDecimal("33333.33"))
+
+        invoice.registerPayment(BigDecimal("33333.33"))
+
+        assertEquals(com.sakena.billing.domain.model.InvoiceStatus.PAID, invoice.status)
+        assertEquals(0, BigDecimal.ZERO.compareTo(invoice.remaining))
+    }
+
+    @Test
+    fun `a payment finer than the currency is refused`() {
+        val invoice = UnitInvoice.issue(periodId, apartmentId, BigDecimal("33333.33"))
+
+        assertFailsWith<DomainValidationException> {
+            invoice.registerPayment(BigDecimal("100.005"))
+        }
+    }
+
+    @Test
     fun `a partial payment moves the invoice to partially paid`() {
         val invoice = invoice()
 
