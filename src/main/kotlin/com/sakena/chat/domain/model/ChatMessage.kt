@@ -114,18 +114,6 @@ class ChatMessage private constructor(
         markDeletedBy(managerId)
     }
 
-    /**
-     * Compatibility entry point while callers migrate to the intention-revealing
-     * author and manager operations.
-     */
-    fun delete(requesterId: UserId, requesterIsManager: Boolean) {
-        if (requesterIsManager) {
-            deleteByManager(requesterId)
-        } else {
-            deleteByAuthor(requesterId)
-        }
-    }
-
     private fun markDeletedBy(requesterId: UserId) {
         deletedAt = Instant.now()
         deletedBy = requesterId
