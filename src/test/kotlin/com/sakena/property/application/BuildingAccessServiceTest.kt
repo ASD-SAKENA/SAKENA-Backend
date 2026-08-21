@@ -19,6 +19,7 @@ import java.math.BigDecimal
 import java.time.Instant
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNull
 
 class BuildingAccessServiceTest {
 
@@ -38,11 +39,12 @@ class BuildingAccessServiceTest {
         every { userRepository.findById(manager.id) } returns manager
 
         assertEquals(building.id, service.managedBuildingId(manager.id))
+        assertEquals(building.id, service.buildingIdFor(manager))
     }
 
     @Test
     fun `resolves a resident building through the active apartment`() {
-        val residentId = UserId.generate()
+        val resident = user(Role.RESIDENT)
         val building = Building.create("Tower", "Address")
         val apartment = Apartment.create(
             building.id,
@@ -51,11 +53,18 @@ class BuildingAccessServiceTest {
             BigDecimal("80.00"),
             2,
         )
-        val residency = Residency.start(apartment.id, residentId, TenancyType.TENANT)
-        every { residencyRepository.findActiveByResident(residentId) } returns residency
+        val residency = Residency.start(apartment.id, resident.id, TenancyType.TENANT)
+        every { residencyRepository.findActiveByResident(resident.id) } returns residency
         every { apartmentRepository.findById(apartment.id) } returns apartment
 
-        assertEquals(building.id, service.residentBuildingId(residentId))
+        assertEquals(building.id, service.residentBuildingId(resident.id))
+        assertEquals(building.id, service.buildingIdFor(resident))
+    }
+
+    @Test
+    fun `staff and administrators have no building scope`() {
+        assertNull(service.buildingIdFor(user(Role.STAFF)))
+        assertNull(service.buildingIdFor(user(Role.ADMIN)))
     }
 
     @Test
