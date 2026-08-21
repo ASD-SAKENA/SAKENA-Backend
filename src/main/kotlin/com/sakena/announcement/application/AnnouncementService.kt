@@ -6,7 +6,6 @@ import com.sakena.announcement.domain.model.Announcement
 import com.sakena.notification.application.NotificationService
 import com.sakena.notification.domain.model.NotificationType
 import com.sakena.property.domain.BuildingAccess
-import com.sakena.property.domain.model.BuildingId
 import com.sakena.shared.domain.DomainForbiddenException
 import com.sakena.user.domain.Role
 import com.sakena.user.domain.User
@@ -49,12 +48,9 @@ class AnnouncementService(
     }
 
     @Transactional(readOnly = true)
-    fun getAll(viewer: User): List<Announcement> =
-        announcementRepository.findAllByBuildingNewestFirst(buildingIdFor(viewer))
-
-    private fun buildingIdFor(user: User): BuildingId = when (user.role) {
-        Role.MANAGER -> buildingAccess.managedBuildingId(user.id)
-        Role.RESIDENT -> buildingAccess.residentBuildingId(user.id)
-        Role.STAFF, Role.ADMIN -> throw DomainForbiddenException("You cannot access building announcements")
+    fun getAll(viewer: User): List<Announcement> {
+        val buildingId = buildingAccess.buildingIdFor(viewer)
+            ?: throw DomainForbiddenException("You cannot access building announcements")
+        return announcementRepository.findAllByBuildingNewestFirst(buildingId)
     }
 }

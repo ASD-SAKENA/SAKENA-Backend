@@ -24,14 +24,21 @@ class AnnouncementServiceTest {
 
     private val repository = mockk<AnnouncementRepository>()
     private val buildingId = BuildingId.new()
-    private val buildingAccess = mockk<BuildingAccess>()
+    private val buildingAccess = object : BuildingAccess {
+        override fun managedBuildingId(managerId: UserId): BuildingId = buildingId
+
+        override fun residentBuildingId(residentId: UserId): BuildingId = buildingId
+
+        override fun requireManagerAccess(buildingId: BuildingId, managerId: UserId) = Unit
+
+        override fun requireResidentAccess(buildingId: BuildingId, residentId: UserId) = Unit
+    }
     private val notificationService = mockk<NotificationService>(relaxed = true)
     private val service = AnnouncementService(repository, buildingAccess, notificationService)
 
     @Test
     fun `create persists a new announcement for the author`() {
         val author = user(Role.MANAGER)
-        every { buildingAccess.managedBuildingId(author.id) } returns buildingId
         val saved = slot<Announcement>()
         every { repository.save(capture(saved)) } answers { saved.captured }
 
@@ -57,7 +64,6 @@ class AnnouncementServiceTest {
         val resident = user(Role.RESIDENT)
         val newest = Announcement.create("New", "body", UserId.generate(), buildingId)
         val oldest = Announcement.create("Old", "body", UserId.generate(), buildingId)
-        every { buildingAccess.residentBuildingId(resident.id) } returns buildingId
         every { repository.findAllByBuildingNewestFirst(buildingId) } returns listOf(newest, oldest)
 
         val result = service.getAll(resident)
@@ -69,7 +75,18 @@ class AnnouncementServiceTest {
     fun `staff cannot read building announcements`() {
         val staff = user(Role.STAFF)
 
-        assertFailsWith<DomainForbiddenException> { service.getAll(staff) }
+        val exception = assertFailsWith<DomainForbiddenException> { service.getAll(staff) }
+
+        assertEquals("You cannot access building announcements", exception.message)
+    }
+
+    @Test
+    fun `administrators cannot read building announcements`() {
+        val admin = user(Role.ADMIN)
+
+        val exception = assertFailsWith<DomainForbiddenException> { service.getAll(admin) }
+
+        assertEquals("You cannot access building announcements", exception.message)
     }
 
     private fun user(role: Role): User {
