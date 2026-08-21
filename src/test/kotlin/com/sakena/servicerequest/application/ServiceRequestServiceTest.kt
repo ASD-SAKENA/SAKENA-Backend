@@ -25,6 +25,7 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import org.junit.jupiter.api.Test
+import com.fasterxml.jackson.databind.ObjectMapper
 import java.math.BigDecimal
 import java.time.Instant
 import kotlin.test.assertEquals
@@ -37,12 +38,16 @@ class ServiceRequestServiceTest {
     private val residencyRepository = mockk<ResidencyRepository>()
     private val apartmentRepository = mockk<ApartmentRepository>()
     private val ratingService = mockk<com.sakena.rating.application.RatingService>(relaxed = true)
+    private val objectMapper = ObjectMapper()
     private val service = ServiceRequestService(
         serviceRequestRepository,
         userRepository,
         residencyRepository,
         apartmentRepository,
         ratingService,
+        // eventRepository is not required for most unit tests; we pass a noop via mockk when needed
+        mockk(relaxed = true),
+        objectMapper,
     )
 
     @Test
