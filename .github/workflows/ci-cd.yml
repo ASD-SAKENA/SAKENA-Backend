@@ -153,12 +153,35 @@ jobs:
       - name: Smoke test
         run: |
           set -euo pipefail
-          for i in $(seq 1 15); do
-            if curl -fsS https://api.sakena.aptcodegen.online/actuator/health | grep -q '"status":"UP"'; then
-              echo "Backend is healthy"
-              exit 0
-            fi
-            sleep 4
-          done
-          echo "::error::Smoke test failed - backend did not report healthy after rollout"
-          exit 1
+
+          # Actuator lives on the management port, which the public ingress
+          # deliberately does not route, and the ci-deployer token is not
+          # allowed to port-forward. The readiness probe already polls
+          # /actuator/health on that port, so a Ready pod IS a healthy pod —
+          # this asserts that rather than re-checking health over the network.
+          # `rollout status` above already waited for the new ReplicaSet, so
+          # this only has to confirm the result. It checks "at least one
+          # ready" rather than ready == desired: the HPA can add a replica at
+          # any moment, and a pod that is still starting is not a failed
+          # deploy.
+          ready=$(kubectl -n "$NAMESPACE" get "deployment/$DEPLOYMENT" \
+            -o jsonpath='{.status.readyReplicas}')
+          if [ "${ready:-0}" -lt 1 ]; then
+            echo "::error::Smoke test failed - no replica passed its readiness probe"
+            kubectl -n "$NAMESPACE" describe "deployment/$DEPLOYMENT" || true
+            kubectl -n "$NAMESPACE" logs -l app="$DEPLOYMENT" --tail=100 --since=5m || true
+            exit 1
+          fi
+          echo "$ready replica(s) passed the readiness probe on the management port"
+
+          # Readiness proves the app is up, not that anyone can reach it: that
+          # is a different port and never touches the ingress. /v3/api-docs is
+          # served without a token, so it works as a public liveness signal.
+          public_status=$(curl -s --max-time 10 -o /dev/null -w '%{http_code}' \
+            https://api.sakena.aptcodegen.online/v3/api-docs)
+          if [ "$public_status" != "200" ]; then
+            echo "::error::Public ingress is not serving the API (got $public_status)"
+            kubectl -n "$NAMESPACE" logs -l app="$DEPLOYMENT" --tail=50 --since=5m || true
+            exit 1
+          fi
+          echo "Public ingress is serving the API"
