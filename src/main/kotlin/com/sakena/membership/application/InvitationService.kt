@@ -98,8 +98,7 @@ class InvitationService(
      */
     @Transactional(readOnly = true)
     fun peek(token: String): BuildingInvitation {
-        val invitation = invitationRepository.findByToken(token)
-            ?: throw EntityNotFoundException("This invitation link is not valid")
+        val invitation = requireInvitationByToken(token)
         if (!invitation.isUsableAt(Instant.now())) {
             throw DomainConflictException("This invitation link is no longer valid")
         }
@@ -112,8 +111,7 @@ class InvitationService(
      * a failed move-in never burns the invitation.
      */
     fun accept(token: String, user: User): BuildingInvitation {
-        val invitation = invitationRepository.findByToken(token)
-            ?: throw EntityNotFoundException("This invitation link is not valid")
+        val invitation = requireInvitationByToken(token)
 
         if (!invitation.isAddressedTo(user.email, user.username)) {
             throw DomainConflictException("This invitation was issued for a different person")
@@ -135,6 +133,10 @@ class InvitationService(
         }
         return invitationRepository.save(invitation)
     }
+
+    private fun requireInvitationByToken(token: String): BuildingInvitation =
+        invitationRepository.findByToken(token)
+            ?: throw EntityNotFoundException("This invitation link is not valid")
 
     fun revoke(id: InvitationId, requesterManagedBuildingId: BuildingId?): BuildingInvitation {
         val invitation = invitationRepository.findById(id)
