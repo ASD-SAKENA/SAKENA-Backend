@@ -99,12 +99,34 @@ class ChatMessage private constructor(
         editedAt = Instant.now()
     }
 
-    /** The author may delete their own message; a manager may delete any message. */
-    fun delete(requesterId: UserId, requesterIsManager: Boolean) {
+    /** Deletes a message at its author's request. */
+    fun deleteByAuthor(authorId: UserId) {
         requireNotDeleted()
-        if (senderId != requesterId && !requesterIsManager) {
+        if (senderId != authorId) {
             throw DomainConflictException("Only the author or the building manager can delete this message")
         }
+        markDeletedBy(authorId)
+    }
+
+    /** Deletes a message as a building-manager moderation action. */
+    fun deleteByManager(managerId: UserId) {
+        requireNotDeleted()
+        markDeletedBy(managerId)
+    }
+
+    /**
+     * Compatibility entry point while callers migrate to the intention-revealing
+     * author and manager operations.
+     */
+    fun delete(requesterId: UserId, requesterIsManager: Boolean) {
+        if (requesterIsManager) {
+            deleteByManager(requesterId)
+        } else {
+            deleteByAuthor(requesterId)
+        }
+    }
+
+    private fun markDeletedBy(requesterId: UserId) {
         deletedAt = Instant.now()
         deletedBy = requesterId
     }
