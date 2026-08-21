@@ -28,10 +28,18 @@ class PollServiceTest {
 
     private val pollRepository = mockk<PollRepository>(relaxed = true)
     private val voteRepository = mockk<PollVoteRepository>(relaxed = true)
-    private val buildingAccess = mockk<BuildingAccess>()
+    private val buildingId = BuildingId.new()
+    private val buildingAccess = object : BuildingAccess {
+        override fun managedBuildingId(managerId: UserId): BuildingId = buildingId
+
+        override fun residentBuildingId(residentId: UserId): BuildingId = buildingId
+
+        override fun requireManagerAccess(buildingId: BuildingId, managerId: UserId) = Unit
+
+        override fun requireResidentAccess(buildingId: BuildingId, residentId: UserId) = Unit
+    }
     private val service = PollService(pollRepository, voteRepository, buildingAccess)
 
-    private val buildingId = BuildingId.new()
     private val manager = user(Role.MANAGER)
     private val resident = user(Role.RESIDENT)
 
@@ -45,7 +53,6 @@ class PollServiceTest {
     @Test
     fun `create persists a poll for the manager`() {
         val saved = slot<Poll>()
-        every { buildingAccess.managedBuildingId(manager.id) } returns buildingId
         every { pollRepository.save(capture(saved)) } answers { saved.captured }
 
         val poll = service.create(CreatePollCommand("Replace the carpet?", listOf("Yes", "No")), manager)
@@ -60,7 +67,6 @@ class PollServiceTest {
         val poll = poll()
         val yes = poll.options.first().id
         every { pollRepository.findById(poll.id) } returns poll
-        every { buildingAccess.residentBuildingId(resident.id) } returns buildingId
         every { voteRepository.findByPollAndVoter(poll.id, resident.id) } returns null andThen
             PollVote.cast(poll.id, yes, resident.id)
         every { voteRepository.countByOption(poll.id) } returns mapOf(yes to 1L)
@@ -77,7 +83,6 @@ class PollServiceTest {
         val poll = poll()
         val yes = poll.options.first().id
         every { pollRepository.findById(poll.id) } returns poll
-        every { buildingAccess.residentBuildingId(resident.id) } returns buildingId
         every { voteRepository.findByPollAndVoter(poll.id, resident.id) } returns
             PollVote.cast(poll.id, yes, resident.id)
 
@@ -93,7 +98,6 @@ class PollServiceTest {
         val yes = poll.options.first().id
         poll.close()
         every { pollRepository.findById(poll.id) } returns poll
-        every { buildingAccess.residentBuildingId(resident.id) } returns buildingId
 
         assertFailsWith<DomainConflictException> {
             service.vote(poll.id, CastVoteCommand(yes), resident)
@@ -116,7 +120,18 @@ class PollServiceTest {
     fun `staff cannot read building polls`() {
         val staff = user(Role.STAFF)
 
-        assertFailsWith<DomainForbiddenException> { service.getAll(staff) }
+        val exception = assertFailsWith<DomainForbiddenException> { service.getAll(staff) }
+
+        assertEquals("You cannot access building polls", exception.message)
+    }
+
+    @Test
+    fun `administrators cannot read building polls`() {
+        val admin = user(Role.ADMIN)
+
+        val exception = assertFailsWith<DomainForbiddenException> { service.getAll(admin) }
+
+        assertEquals("You cannot access building polls", exception.message)
     }
 
     private fun user(role: Role): User {
