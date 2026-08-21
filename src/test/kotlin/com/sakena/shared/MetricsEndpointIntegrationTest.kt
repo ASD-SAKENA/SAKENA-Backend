@@ -45,6 +45,24 @@ class MetricsEndpointIntegrationTest(
     }
 
     @Test
+    fun `request latency is published as histogram buckets`() {
+        // histogram_quantile() in the Grafana latency panels needs buckets;
+        // Micrometer publishes only count/sum/max unless asked, so without
+        // this those panels stay empty forever.
+        restTemplate.getForEntity("/actuator/health", String::class.java)
+
+        val body = restTemplate.getForEntity(
+            "http://localhost:$managementPort/actuator/prometheus",
+            String::class.java,
+        ).body ?: ""
+
+        assertTrue(
+            body.contains("http_server_requests_seconds_bucket"),
+            "latency histogram buckets missing",
+        )
+    }
+
+    @Test
     fun `health is served on the management port for the kubelet probes`() {
         val response = restTemplate.getForEntity(
             "http://localhost:$managementPort/actuator/health",

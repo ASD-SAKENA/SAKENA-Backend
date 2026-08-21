@@ -67,6 +67,18 @@ management:
       # Every series is labelled with its service, so one Grafana datasource
       # can serve dashboards for more than one app later.
       application: sakena-backend
+    distribution:
+      # Micrometer publishes only count/sum/max by default, and
+      # histogram_quantile() needs buckets — without this the latency panels
+      # are permanently empty.
+      percentiles-histogram:
+        http.server.requests: true
+      # Bound the bucket count: unbounded histograms are the usual cause of
+      # runaway cardinality in a small TSDB.
+      minimum-expected-value:
+        http.server.requests: 5ms
+      maximum-expected-value:
+        http.server.requests: 10s
 
 springdoc:
   swagger-ui:
