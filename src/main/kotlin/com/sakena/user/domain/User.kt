@@ -13,6 +13,7 @@ data class User(
     val updatedAt: Instant,
     val active: Boolean = true,
     val specialty: String? = null,
+    val avatarObjectKey: String? = null,
     /** The single building this manager administers. Null for every other role. */
     val managedBuildingId: BuildingId? = null
 ) {
@@ -67,8 +68,23 @@ data class User(
             updatedAt: Instant,
             active: Boolean,
             specialty: String? = null,
-            managedBuildingId: BuildingId? = null
-        ) = User(id, username, email, passwordHash, role, createdAt, updatedAt, active, specialty, managedBuildingId)
+            managedBuildingId: BuildingId? = null,
+            avatarObjectKey: String? = null
+            // Named rather than positional: adding a field to User must not
+            // silently shift what every existing caller passes.
+        ) = User(
+            id = id,
+            username = username,
+            email = email,
+            passwordHash = passwordHash,
+            role = role,
+            createdAt = createdAt,
+            updatedAt = updatedAt,
+            active = active,
+            specialty = specialty,
+            avatarObjectKey = avatarObjectKey,
+            managedBuildingId = managedBuildingId,
+        )
     }
 
     fun verifyPassword(rawPassword: String, passwordMatcher: (String, String) -> Boolean): Boolean =
@@ -77,6 +93,12 @@ data class User(
     fun deactivate(): User = copy(active = false, updatedAt = Instant.now())
 
     fun activate(): User = copy(active = true, updatedAt = Instant.now())
+
+    /** Sets or clears the profile picture. Passing null removes it. */
+    fun withAvatar(objectKey: String?): User = copy(
+        avatarObjectKey = objectKey?.trim()?.takeIf { it.isNotEmpty() },
+        updatedAt = Instant.now()
+    )
 
     fun withSpecialty(specialty: String?): User = copy(
         specialty = specialty?.trim()?.takeIf { it.isNotEmpty() },

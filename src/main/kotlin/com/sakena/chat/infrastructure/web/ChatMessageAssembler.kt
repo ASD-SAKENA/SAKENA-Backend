@@ -19,11 +19,15 @@ class ChatMessageAssembler(
 
     fun toResponses(messages: List<ChatMessage>, viewerId: UserId): List<ChatMessageResponse> {
         if (messages.isEmpty()) return emptyList()
-        val names = userDirectory.usernamesByIds(messages.map { it.senderId }.toSet())
+        val senderIds = messages.map { it.senderId }.toSet()
+        val names = userDirectory.usernamesByIds(senderIds)
+        // Resolved in one pass for the whole page rather than per message.
+        val avatars = userDirectory.avatarUrlsByIds(senderIds)
         return messages.map { message ->
             ChatMessageResponse.from(
                 message = message,
                 senderName = names[message.senderId] ?: "کاربر حذف‌شده",
+                senderAvatarUrl = avatars[message.senderId],
                 attachmentUrl = chatService.attachmentUrl(message),
                 viewerIsSender = message.senderId == viewerId,
             )

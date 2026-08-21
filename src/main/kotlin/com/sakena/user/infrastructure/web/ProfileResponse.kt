@@ -12,5 +12,10 @@ data class ProfileResponse(
     val createdAt: Instant,
     val active: Boolean,
     /** The building this manager administers. Null for every other role. */
-    val managedBuildingId: UUID?
+    val managedBuildingId: UUID?,
+    /**
+     * Short-lived URL of the profile picture, or null when none is set — in
+     * which case the client keeps showing the user's initial.
+     */
+    val avatarUrl: String? = null,
 )

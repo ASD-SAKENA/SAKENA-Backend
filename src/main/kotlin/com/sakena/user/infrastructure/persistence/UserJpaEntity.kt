@@ -37,5 +37,8 @@ class UserJpaEntity(
     var specialty: String? = null,
 
     @Column(name = "managed_building_id")
-    var managedBuildingId: UUID? = null
+    var managedBuildingId: UUID? = null,
+
+    @Column(name = "avatar_object_key", length = 500)
+    var avatarObjectKey: String? = null
 )

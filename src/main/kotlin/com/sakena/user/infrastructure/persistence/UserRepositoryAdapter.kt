@@ -58,7 +58,8 @@ class UserRepositoryAdapter(
             updatedAt = user.updatedAt,
             active = user.active,
             specialty = user.specialty,
-            managedBuildingId = user.managedBuildingId?.value
+            managedBuildingId = user.managedBuildingId?.value,
+            avatarObjectKey = user.avatarObjectKey
         )
     }
 
@@ -73,7 +74,8 @@ class UserRepositoryAdapter(
             updatedAt = entity.updatedAt,
             active = entity.active,
             specialty = entity.specialty,
-            managedBuildingId = entity.managedBuildingId?.let(::BuildingId)
+            managedBuildingId = entity.managedBuildingId?.let(::BuildingId),
+            avatarObjectKey = entity.avatarObjectKey
         )
     }
 }

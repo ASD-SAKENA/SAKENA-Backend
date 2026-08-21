@@ -35,6 +35,8 @@ data class ChatMessageResponse(
     val buildingId: UUID,
     val senderId: UUID,
     val senderName: String,
+    /** Short-lived URL, or null when the sender has no picture. */
+    val senderAvatarUrl: String?,
     val kind: ChatMessageKind,
     val body: String?,
     val attachmentUrl: String?,
@@ -52,6 +54,7 @@ data class ChatMessageResponse(
         fun from(
             message: ChatMessage,
             senderName: String,
+            senderAvatarUrl: String?,
             attachmentUrl: String?,
             viewerIsSender: Boolean,
         ) = ChatMessageResponse(
@@ -59,6 +62,7 @@ data class ChatMessageResponse(
             buildingId = message.buildingId.value,
             senderId = message.senderId.value,
             senderName = senderName,
+            senderAvatarUrl = senderAvatarUrl,
             kind = message.kind,
             body = if (message.deleted) null else message.body,
             attachmentUrl = attachmentUrl,
