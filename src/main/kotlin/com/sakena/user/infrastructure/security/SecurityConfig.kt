@@ -50,7 +50,14 @@ class SecurityConfig(
                         "/swagger-ui.html",
                         "/swagger-ui/**",
                         "/v3/api-docs/**",
+                        // Actuator listens on its own port (management.server.port),
+                        // which the public ingress does not route — so these are
+                        // reachable from inside the cluster only: kubelet probes
+                        // and the in-cluster Prometheus scraper.
                         "/actuator/health",
+                        "/actuator/health/**",
+                        "/actuator/info",
+                        "/actuator/prometheus",
                         // The join screen reads the invitation before the invitee signs in.
                         "/api/v1/invitations/preview"
                     ).permitAll()
