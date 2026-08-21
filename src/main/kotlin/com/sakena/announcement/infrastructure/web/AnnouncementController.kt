@@ -3,6 +3,7 @@ package com.sakena.announcement.infrastructure.web
 import com.sakena.announcement.application.AnnouncementService
 import com.sakena.announcement.infrastructure.web.dto.AnnouncementResponse
 import com.sakena.announcement.infrastructure.web.dto.CreateAnnouncementRequest
+import com.sakena.shared.domain.AuthenticatedUserNotFoundException
 import com.sakena.user.application.ProfileService
 import com.sakena.user.domain.User
 import io.swagger.v3.oas.annotations.Operation
@@ -48,7 +49,7 @@ class AnnouncementController(
     private fun getCurrentUser(): User {
         val username = SecurityContextHolder.getContext().authentication.name
         val user = profileService.getUserByUsername(username)
-            ?: throw RuntimeException("User not found")
+            ?: throw AuthenticatedUserNotFoundException()
         return user
     }
 }

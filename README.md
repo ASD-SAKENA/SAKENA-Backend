@@ -78,6 +78,14 @@ This is what lets us refactor aggressively and, later, swap delivery/persistence
 
 ---
 
+## Decisions
+
+Decisions that were expensive to make and would be expensive to reverse are
+recorded in [docs/adr/](docs/adr/) — including why money is whole Toman, why
+actuator sits on a private port, and why service staff belong to no building.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
+
 ## Prerequisites
 
 You only need two things installed:

@@ -1,6 +1,7 @@
 package com.sakena.wallet.infrastructure.web
 
 import com.sakena.servicerequest.domain.ServiceRequestId
+import com.sakena.shared.domain.AuthenticatedUserNotFoundException
 import com.sakena.user.application.ProfileService
 import com.sakena.user.domain.User
 import com.sakena.user.domain.UserId
@@ -89,12 +90,12 @@ class WalletController(
 
     private fun currentUser(): User = SecurityContextHolder.getContext().authentication.name
         .let { username -> profileService.getUserByUsername(username) }
-        ?: throw RuntimeException("User not found")
+        ?: throw AuthenticatedUserNotFoundException()
 
     private fun getCurrentUserId(): UserId {
         val username = SecurityContextHolder.getContext().authentication.name
         val user = profileService.getUserByUsername(username)
-            ?: throw RuntimeException("User not found")
+            ?: throw AuthenticatedUserNotFoundException()
         return user.id
     }
 }

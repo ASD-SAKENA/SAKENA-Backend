@@ -1,5 +1,6 @@
 package com.sakena.user.infrastructure.web
 
+import com.sakena.shared.domain.AuthenticatedUserNotFoundException
 import com.sakena.user.application.ChangePasswordCommand
 import com.sakena.user.application.ProfileService
 import com.sakena.user.application.UpdateProfileCommand
@@ -48,7 +49,7 @@ class ProfileController(
     private fun getCurrentUserId(): UserId {
         val username = SecurityContextHolder.getContext().authentication.name
         val user = profileService.getUserByUsername(username)
-            ?: throw RuntimeException("User not found")
+            ?: throw AuthenticatedUserNotFoundException()
         return user.id
     }
 

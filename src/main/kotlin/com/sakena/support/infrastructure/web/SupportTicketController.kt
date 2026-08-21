@@ -1,5 +1,6 @@
 package com.sakena.support.infrastructure.web
 
+import com.sakena.shared.domain.AuthenticatedUserNotFoundException
 import com.sakena.shared.domain.DomainValidationException
 import com.sakena.support.application.SupportTicketService
 import com.sakena.support.application.command.TicketAttachmentUpload
@@ -129,6 +130,6 @@ class SupportTicketController(
     private fun currentUser(): User {
         val username = SecurityContextHolder.getContext().authentication.name
         return profileService.getUserByUsername(username)
-            ?: throw RuntimeException("User not found")
+            ?: throw AuthenticatedUserNotFoundException()
     }
 }

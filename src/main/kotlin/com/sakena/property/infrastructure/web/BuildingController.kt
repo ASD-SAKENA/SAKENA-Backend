@@ -4,6 +4,7 @@ import com.sakena.property.application.BuildingService
 import com.sakena.property.domain.model.BuildingId
 import com.sakena.property.infrastructure.web.dto.BuildingResponse
 import com.sakena.property.infrastructure.web.dto.UpdateBuildingRequest
+import com.sakena.shared.domain.AuthenticatedUserNotFoundException
 import com.sakena.user.application.ProfileService
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.tags.Tag
@@ -56,5 +57,5 @@ class BuildingController(
 
     private fun currentUser() = SecurityContextHolder.getContext().authentication.name
         .let { username -> profileService.getUserByUsername(username) }
-        ?: throw RuntimeException("User not found")
+        ?: throw AuthenticatedUserNotFoundException()
 }

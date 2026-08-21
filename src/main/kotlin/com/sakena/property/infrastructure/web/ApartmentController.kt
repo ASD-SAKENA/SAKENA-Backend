@@ -6,6 +6,7 @@ import com.sakena.property.domain.model.BuildingId
 import com.sakena.property.infrastructure.web.dto.ApartmentResponse
 import com.sakena.property.infrastructure.web.dto.CreateApartmentRequest
 import com.sakena.property.infrastructure.web.dto.UpdateApartmentRequest
+import com.sakena.shared.domain.AuthenticatedUserNotFoundException
 import com.sakena.user.application.ProfileService
 import com.sakena.user.domain.User
 import io.swagger.v3.oas.annotations.Operation
@@ -79,5 +80,5 @@ class ApartmentController(
 
     private fun currentUser(): User = SecurityContextHolder.getContext().authentication.name
         .let { username -> profileService.getUserByUsername(username) }
-        ?: throw RuntimeException("User not found")
+        ?: throw AuthenticatedUserNotFoundException()
 }

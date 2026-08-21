@@ -16,6 +16,7 @@ import com.sakena.servicerequest.domain.ServiceRequestFilters
 import com.sakena.servicerequest.domain.ServiceRequestId
 import com.sakena.servicerequest.domain.ServiceRequestStatus
 import com.sakena.servicerequest.domain.ServiceSubCategory
+import com.sakena.shared.domain.AuthenticatedUserNotFoundException
 import com.sakena.user.application.ProfileService
 import com.sakena.user.domain.UserId
 import io.swagger.v3.oas.annotations.Operation
@@ -296,7 +297,7 @@ class ServiceRequestController(
     private fun getCurrentUserId(): UserId {
         val username = SecurityContextHolder.getContext().authentication.name
         val user = profileService.getUserByUsername(username)
-            ?: throw RuntimeException("User not found")
+            ?: throw AuthenticatedUserNotFoundException()
         return user.id
     }
 }

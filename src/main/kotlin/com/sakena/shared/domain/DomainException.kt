@@ -21,3 +21,11 @@ open class DomainUnauthorizedException(message: String) : DomainException(messag
 
 /** The caller is authenticated but may not perform this operation. Maps to HTTP 403. */
 open class DomainForbiddenException(message: String) : DomainException(message)
+
+/**
+ * The request carried a valid token, but the user it names no longer exists —
+ * deleted or renamed since the token was issued. That is a stale credential
+ * (401), not a server fault, so it must not surface as a 500.
+ */
+class AuthenticatedUserNotFoundException :
+    DomainUnauthorizedException("The signed-in user no longer exists")

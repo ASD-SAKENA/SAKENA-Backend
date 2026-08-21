@@ -5,6 +5,7 @@ import com.sakena.poll.domain.model.PollId
 import com.sakena.poll.infrastructure.web.dto.CastVoteRequest
 import com.sakena.poll.infrastructure.web.dto.CreatePollRequest
 import com.sakena.poll.infrastructure.web.dto.PollResponse
+import com.sakena.shared.domain.AuthenticatedUserNotFoundException
 import com.sakena.user.application.ProfileService
 import com.sakena.user.domain.User
 import io.swagger.v3.oas.annotations.Operation
@@ -83,7 +84,7 @@ class PollController(
     private fun getCurrentUser(): User {
         val username = SecurityContextHolder.getContext().authentication.name
         val user = profileService.getUserByUsername(username)
-            ?: throw RuntimeException("User not found")
+            ?: throw AuthenticatedUserNotFoundException()
         return user
     }
 }

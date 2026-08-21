@@ -6,6 +6,7 @@ import com.sakena.residency.application.ResidencyService
 import com.sakena.residency.domain.model.Residency
 import com.sakena.residency.infrastructure.web.dto.ResidencyResponse
 import com.sakena.residency.infrastructure.web.dto.StartResidencyRequest
+import com.sakena.shared.domain.AuthenticatedUserNotFoundException
 import com.sakena.user.application.ProfileService
 import com.sakena.user.application.UserDirectory
 import com.sakena.user.domain.User
@@ -103,6 +104,6 @@ class ResidencyController(
     private fun currentUser(): User {
         val username = SecurityContextHolder.getContext().authentication.name
         return profileService.getUserByUsername(username)
-            ?: throw RuntimeException("User not found")
+            ?: throw AuthenticatedUserNotFoundException()
     }
 }

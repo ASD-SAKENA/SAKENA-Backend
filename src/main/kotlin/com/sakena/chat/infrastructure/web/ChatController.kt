@@ -8,6 +8,7 @@ import com.sakena.chat.infrastructure.web.dto.ChatMessageResponse
 import com.sakena.chat.infrastructure.web.dto.EditMessageRequest
 import com.sakena.chat.infrastructure.web.dto.SendMessageRequest
 import com.sakena.property.domain.model.BuildingId
+import com.sakena.shared.domain.AuthenticatedUserNotFoundException
 import com.sakena.shared.domain.DomainValidationException
 import com.sakena.user.application.ProfileService
 import com.sakena.user.domain.User
@@ -141,6 +142,6 @@ class ChatController(
     private fun currentUser(): User {
         val username = SecurityContextHolder.getContext().authentication.name
         return profileService.getUserByUsername(username)
-            ?: throw RuntimeException("User not found")
+            ?: throw AuthenticatedUserNotFoundException()
     }
 }
