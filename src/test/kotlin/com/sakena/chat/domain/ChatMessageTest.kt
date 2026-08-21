@@ -73,7 +73,7 @@ class ChatMessageTest {
     fun `the author can delete their own message`() {
         val message = text()
 
-        message.delete(author, requesterIsManager = false)
+        message.deleteByAuthor(author)
 
         assertTrue(message.deleted)
         assertEquals(author, message.deletedBy)
@@ -83,7 +83,7 @@ class ChatMessageTest {
     fun `the manager can delete anyone's message`() {
         val message = text()
 
-        message.delete(manager, requesterIsManager = true)
+        message.deleteByManager(manager)
 
         assertTrue(message.deleted)
         assertEquals(manager, message.deletedBy)
@@ -94,18 +94,18 @@ class ChatMessageTest {
         val message = text()
 
         assertFailsWith<DomainConflictException> {
-            message.delete(neighbour, requesterIsManager = false)
+            message.deleteByAuthor(neighbour)
         }
     }
 
     @Test
     fun `a deleted message can neither be edited nor deleted again`() {
         val message = text()
-        message.delete(author, requesterIsManager = false)
+        message.deleteByAuthor(author)
 
         assertFailsWith<DomainConflictException> { message.editBody("Back", author) }
         assertFailsWith<DomainConflictException> {
-            message.delete(manager, requesterIsManager = true)
+            message.deleteByManager(manager)
         }
     }
 
