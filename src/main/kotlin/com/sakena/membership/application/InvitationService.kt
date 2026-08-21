@@ -17,11 +17,9 @@ import com.sakena.shared.domain.DomainForbiddenException
 import com.sakena.shared.domain.DomainValidationException
 import com.sakena.shared.domain.EntityNotFoundException
 import com.sakena.user.domain.Role
-import com.sakena.user.domain.StaffBuildingMembershipRepository
 import com.sakena.user.domain.User
 import com.sakena.user.domain.UserId
 import com.sakena.user.domain.UserRepository
-import com.sakena.user.domain.model.StaffBuildingMembership
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
@@ -43,7 +41,6 @@ class InvitationService(
     private val apartmentRepository: ApartmentRepository,
     private val residencyService: ResidencyService,
     private val userRepository: UserRepository,
-    private val staffMembershipRepository: StaffBuildingMembershipRepository,
     private val notifier: InvitationNotifier,
     @Value("\${app.frontend-url:http://localhost:3000}")
     private val frontendUrl: String,
@@ -134,16 +131,6 @@ class InvitationService(
                     tenancy = invitation.tenancy ?: TenancyType.TENANT,
                 ),
                 requesterManagedBuildingId = invitation.buildingId,
-            )
-        }
-
-        // Staff have no unit, so the membership is what puts them inside the
-        // building — without it they would never appear in its work picker.
-        if (invitation.role == Role.STAFF &&
-            !staffMembershipRepository.exists(user.id, invitation.buildingId)
-        ) {
-            staffMembershipRepository.save(
-                StaffBuildingMembership.grant(user.id, invitation.buildingId),
             )
         }
         return invitationRepository.save(invitation)

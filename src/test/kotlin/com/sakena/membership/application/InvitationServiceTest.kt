@@ -38,8 +38,6 @@ class InvitationServiceTest {
     private val apartmentRepository = mockk<ApartmentRepository>()
     private val residencyService = mockk<ResidencyService>()
     private val userRepository = mockk<com.sakena.user.domain.UserRepository>()
-    private val staffMembershipRepository =
-        mockk<com.sakena.user.domain.StaffBuildingMembershipRepository>(relaxed = true)
     private val notifier = mockk<InvitationNotifier>(relaxed = true)
     private val service = InvitationService(
         invitationRepository,
@@ -47,7 +45,6 @@ class InvitationServiceTest {
         apartmentRepository,
         residencyService,
         userRepository,
-        staffMembershipRepository,
         notifier,
         "https://sakena.app/",
     )
@@ -325,39 +322,7 @@ class InvitationServiceTest {
         verify(exactly = 0) { invitationRepository.save(any()) }
     }
 
-    @Test
-    fun `accepting a staff invitation puts the worker inside the building`() {
-        val invitation = pendingInvitation(
-            channel = InvitationChannel.LINK,
-            recipient = null,
-            role = Role.STAFF,
-        )
-        val staff = user(role = Role.STAFF)
-        every { invitationRepository.findByToken(invitation.token) } returns invitation
-        every { staffMembershipRepository.exists(staff.id, building.id) } returns false
-        givenSavePassesThrough()
 
-        service.accept(invitation.token, staff)
-
-        verify(exactly = 1) { staffMembershipRepository.save(any()) }
-    }
-
-    @Test
-    fun `re-accepting does not duplicate a staff member's building membership`() {
-        val invitation = pendingInvitation(
-            channel = InvitationChannel.LINK,
-            recipient = null,
-            role = Role.STAFF,
-        )
-        val staff = user(role = Role.STAFF)
-        every { invitationRepository.findByToken(invitation.token) } returns invitation
-        every { staffMembershipRepository.exists(staff.id, building.id) } returns true
-        givenSavePassesThrough()
-
-        service.accept(invitation.token, staff)
-
-        verify(exactly = 0) { staffMembershipRepository.save(any()) }
-    }
 
     @Test
     fun `staff may accept an invitation that assigns no unit`() {
