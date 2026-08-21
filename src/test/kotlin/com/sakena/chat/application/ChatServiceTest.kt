@@ -245,7 +245,7 @@ class ChatServiceTest {
     @Test
     fun `a deleted message exposes no attachment url`() {
         val message = ChatMessage.text(buildingId, author.id, "Bye")
-        message.delete(author.id, requesterIsManager = false)
+        message.deleteByAuthor(author.id)
 
         assertEquals(null, service.attachmentUrl(message))
     }
