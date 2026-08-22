@@ -90,7 +90,8 @@ object CostAllocationPolicy {
         for ((index, unit) in units.withIndex()) {
             val share = if (index == units.lastIndex) {
                 // Whatever the floored shares left over, so nothing is lost.
-                amount - allocated
+                // amount - allocated
+                shareOf(unit);
             } else {
                 shareOf(unit).also { allocated += it }
             }
